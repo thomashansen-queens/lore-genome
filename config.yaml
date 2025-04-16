@@ -1,0 +1,24 @@
+--- # Pipeline config
+# This YAML should be configured each time you run the pipeline.
+download_dir: ~/Downloads/adhesins/
+# NCBI API
+ncbi:
+  api_key:
+    cookieAuth: paste_your_ncbi_api_key_here
+refseq_only: False
+# Genome reports
+taxons: Escherichia coli
+search_terms: # each entry is a separate search, each search can have multiple terms
+  - PacBio
+  - Nanopore
+assembly_level: # Permitted values: complete_genome, chromosome, scaffold, contig
+  - complete_genome
+  - chromosome
+# Some columns to consider: assembly_info__bioproject_accession, assembly_info__biosample__accession, assembly_info__biosample__submission_date
+genome_limit: 50
+sampling_strategy:
+  - default
+# Clustering
+mmseqs: "C:/path/to/mmseqs.bat"
+cluster_residues: -800  # Use negative for C-terminal
+min_seq_id: 0.8

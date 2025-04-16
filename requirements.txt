@@ -1,0 +1,8 @@
+logging
+numpy
+pandas
+pydantic
+pyyaml
+requests
+ncbi-datasets-pylib==1.0.0
+click
