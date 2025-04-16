@@ -10,7 +10,7 @@ LoRe (LOng-REad genomes) is a command-line tool for filtering and retrieving ann
 4. Review the output `.csv` files containing the results
 
 ## Install
-This assumes that you already have git and python installed on your system.
+This assumes that you already have git and python installed on your system. For the full pipeline, you will also need a copy of [MMseqs2](https://github.com/soedinglab/MMseqs2).
 (Optional but recommended: create a virtual environment with python -m venv lore && source lore/bin/activate)
 ```
 git clone https://github.com/thomashansen-queens/lore-genome.git
