@@ -153,6 +153,7 @@ class GenomePipeline:
             cluster_prefix=self.cache_dir / "proteins" / f"{cluster_label}",
             fasta_path=self.cache_dir / "proteins" / f"{cluster_label}.faa",
             fetch_func=cluster_mmseqs,
+            min_seq_id=self.config.min_seq_id,
         )
         return cluster_df
 
