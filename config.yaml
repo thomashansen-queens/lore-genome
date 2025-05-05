@@ -11,6 +11,7 @@ taxons: Escherichia coli
 search_terms: # each entry is a separate search, each search can have multiple terms
   - PacBio
   - Nanopore
+search_stage: post  # api: fetch genomes only. post: fetch all genomes, then filter
 assembly_level: # Permitted values: complete_genome, chromosome, scaffold, contig
   - complete_genome
   - chromosome

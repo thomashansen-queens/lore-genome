@@ -13,6 +13,9 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     :param df (DataFrame): DataFrame containing all API results.
     :return DataFrame: Filtered DataFrame.
     """
+    # If post-API filtereing is enabled, filter by search terms
+    if config.search_stage == 'post':
+        df = filter_by_search_terms(df, config.search_terms)
     # Typical genomes have no data in these columns
     if 'assembly_info__atypical__is_atypical' in df.columns:
         # This column contains either TRUE or null/NaN values, so fillna
@@ -53,6 +56,34 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
         deduplicated_df = deduplicated_df[deduplicated_df['average_nucleotide_identity__best_ani_match__organism_name'].isin(config.taxons)]
     logging.info("Number of genome reports after filtering: %s", len(deduplicated_df))
     return deduplicated_df
+
+
+def filter_by_search_terms(
+        df: pd.DataFrame,
+        search_terms: list[str] | None = None,
+        columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Filter a DataFrame down to rows where *any* of the search_terms
+    appear (case-insensitive) in *any* of the given columns.
+    
+    :param df: DataFrame to filter.
+    :param columns: List of column names (strings) to search in.
+    :param search_terms: List of substrings to match (using OR logic).
+    :returns: DataFrame containing search terms.
+    """
+    if not search_terms or search_terms == ['']:
+        return df
+    if not columns or columns == ['']:
+        columns = df.columns.tolist()
+
+    mask = pd.Series(False, index=df.index)
+    for term in search_terms:
+        pattern = rf"(?i){term}"   # case-insensitive
+        for col in columns:
+            if col in df.columns:
+                mask |= df[col].astype(str).str.contains(pattern, na=False)
+    return df[mask]
 
 
 def filter_gene_annotations(df: pd.DataFrame) -> pd.DataFrame:

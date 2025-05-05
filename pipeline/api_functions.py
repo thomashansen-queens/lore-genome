@@ -51,7 +51,7 @@ def get_genome_reports(api: GenomeApi, config: PipelineConfig) -> pd.DataFrame:
     """
     taxons = config.taxons
     assembly_level = config.assembly_level
-    search_terms = config.search_terms
+    search_terms = config.search_terms if config.search_stage == 'api' else ['']
     page_size = config.page_size
     refseq_only = config.refseq_only
 

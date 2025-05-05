@@ -4,6 +4,7 @@ Configuration for the protein classification pipeline.
 
 from pathlib import Path
 import logging
+from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from ncbi.datasets.openapi.configuration import Configuration as NcbiConfig
@@ -23,6 +24,10 @@ class PipelineConfig(BaseModel):
     assembly_level: list[V2reportsAssemblyLevel]
     refseq_only: bool = Field(False, description="Whether to fetch only 'refseq' source records")
     search_terms: list[list[str]] = Field([['']], description="Terms to include in genome search.")
+    search_stage: Literal["api", "post"] = Field(
+        "api",
+        description="Where to apply the text‐search filtering: at the NCBI API (`api`) or after fetching (`post`)."
+    )
     sampling_strategy: list[str] = Field(
         default_factory=lambda: ["default"],
         description="List of columns to use for stratified sampling. "
