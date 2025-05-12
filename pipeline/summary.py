@@ -66,7 +66,7 @@ def make_protein_report(
     summary_df['sequence'] = summary_df['proteins__accessionVersion'].map(
         lambda x: fasta_dict.get(x, None)
     )
-    # 8. Sort by protein length
+    # Sort by protein length
     summary_df = summary_df.sort_values(by=['proteins__length'], ascending=False)
     # Rename columns for clarity
     summary_df = summary_df.rename(columns={

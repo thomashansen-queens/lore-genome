@@ -47,10 +47,11 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     duplicated = df[df['accession'].isin(gcf_pairs)]
     logging.info("GCA genomes already in GCF (RefSeq): %s", len(duplicated))
     deduplicated_df = df[~df['accession'].isin(gcf_pairs)]
-    if not deduplicated_df['average_nucleotide_identity__best_ani_match__organism_name'].isin(config.taxons).all():
+    if len(config.taxons[0].split(' ')) == 1:  # Ignore ANI match if only a genus is provided
+        logging.info("Taxon assumed to be a genus. Ignoring best ANI match.")
+    elif not deduplicated_df['average_nucleotide_identity__best_ani_match__organism_name'].isin(config.taxons).all():
         logging.warning(
-            "Some assemblies' average nucleotide identity (ANIs) are best matched \
-            to a different organism and will be removed. Matched organisms: %s",
+            "Some assemblies' average nucleotide identity (ANIs) are best matched to a different organism and will be removed. Matched organisms: %s",
             deduplicated_df['average_nucleotide_identity__best_ani_match__organism_name'].unique()
         )
         deduplicated_df = deduplicated_df[deduplicated_df['average_nucleotide_identity__best_ani_match__organism_name'].isin(config.taxons)]
@@ -167,7 +168,7 @@ def sci_namer(full_name: str, style='snake') -> str:
     :return str: Formatted species name
     """
     split = re.split(r'\W+', full_name.strip())
-    if len(split) >= 2:
+    if len(split) >= 2:  # Genus species
         genus, species = split[0], split[1]
         if style == 'snake':
             return genus.lower()[0] + '_' + species.lower()
@@ -175,7 +176,7 @@ def sci_namer(full_name: str, style='snake') -> str:
             return genus[0].upper() + '. ' + species.lower()
         else:
             raise ValueError("Invalid style. Choose 'snake' or 'scientific'.")
-    elif len(split) == 1:
+    elif len(split) == 1:  # Genus only
         if style == 'snake':
             return split[0].lower()
         elif style == 'scientific':
