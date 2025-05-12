@@ -15,7 +15,7 @@ This assumes that you already have git and python installed on your system. For 
 ```
 git clone https://github.com/thomashansen-queens/lore-genome.git
 cd lore-genome
-pip install --find-links wheels ncbi-datasets-pylib
+pip install ./wheels/ncbi_datasets_pylib-1.0.0-py3-none-any.whl
 pip install .
 lore --help
 ```
