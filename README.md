@@ -24,7 +24,7 @@ lore --help
 The pipeline gets its instructions from a configuration file (`config.yaml`). It should be updated each time you run the pipeline. Configuration options include:
 - **download_dir**: Local directory where results will be stored and data will be cached.
 - **ncbi.api_key.cookieAuth**: Paste your [NCBI API](https://support.nlm.nih.gov/knowledgebase/article/KA-05317/en-us) key here.
-- **refseq_only**: Boolean indicating whether to fetch only RefSeq (GCF) records or also include INSDC (GCA).
+- **refseq_only**: Boolean indicating whether to fetch only RefSeq (GCF) records or also include GenBank (GCA).
 - **taxons**: The scientific name of the target species.
 - **search_terms**: A list of one or more sets of [search terms] to select genome assemblies.
 - **genome_limit**: Creates a representative sample of genomes of a given size. This is recommended for practical reasons.
