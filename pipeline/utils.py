@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import re
 import subprocess
+from typing import Sequence, Union
 import pandas as pd
 from pipeline.config import PipelineConfig
 
@@ -15,6 +16,7 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     """
     # If post-API filtereing is enabled, filter by search terms
     if config.search_stage == 'post':
+        logging.info("Filtering genome reports by search terms...")
         df = filter_by_search_terms(df, config.search_terms)
     # Typical genomes have no data in these columns
     if 'assembly_info__atypical__is_atypical' in df.columns:
@@ -61,7 +63,7 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
 
 def filter_by_search_terms(
         df: pd.DataFrame,
-        search_terms: list[str] | None = None,
+        search_terms: Sequence[Union[str, Sequence[str]]] | None = None,
         columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
@@ -79,11 +81,21 @@ def filter_by_search_terms(
         columns = df.columns.tolist()
 
     mask = pd.Series(False, index=df.index)
-    for term in search_terms:
-        pattern = rf"(?i){term}"   # case-insensitive
-        for col in columns:
-            if col in df.columns:
-                mask |= df[col].astype(str).str.contains(pattern, na=False)
+    for search_term_set in search_terms:
+        if isinstance(search_term_set, str):
+            search_term_set = [search_term_set]
+        set_mask = pd.Series(True, index=df.index)
+        for term in search_term_set:
+            term_mask = pd.Series(False, index=df.index)
+            pattern = rf"(?i)\b{re.escape(term)}\b"   # case-insensitive
+            for col in columns:
+                if col in df.columns:
+                    term_mask |= df[col].astype(str).str.contains(pattern, na=False)
+            set_mask &= term_mask  # AND logic (all terms must match)    
+        logging.info("%s entries match search term set %s", set_mask.sum(), search_term_set)
+        prev_num_hits = mask.sum()
+        mask |= set_mask  # OR logic (include matches from each search term set)
+        logging.info("%s hits total (+%s)", mask.sum(), mask.sum() - prev_num_hits)
     return df[mask]
 
 
