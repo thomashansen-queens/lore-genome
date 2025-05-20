@@ -67,9 +67,8 @@ def filter_by_search_terms(
         columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Filter a DataFrame down to rows where *any* of the search_terms
-    appear (case-insensitive) in *any* of the given columns.
-    
+    Filter a DataFrame down to rows where *any* of the search_terms appear
+    (case-insensitive) in *any* of the given columns (word only, no substrings).
     :param df: DataFrame to filter.
     :param columns: List of column names (strings) to search in.
     :param search_terms: List of substrings to match (using OR logic).
@@ -290,6 +289,7 @@ def sample_genome_reports(
     a diverse group of genomes based on their biosample location and collection date.
     :param reports_df (DataFrame): DataFrame containing genome reports.
     :param genome_limit (int): Maximum number of genomes to sample.
+    :param samping_strategy (list): List of columns to use for sampling diversity.
     :param random_state (int): Random seed for reproducibility.
     :return list: List of sampled genome reports.
     """
@@ -306,23 +306,24 @@ def sample_genome_reports(
         ]
     else:
         group_cols = sampling_strategy
+    df = reports_df.copy()  # avoid modifying the original DataFrame
     # split geo_loc_name by : to isolate country/state if present
-    if 'assembly_info__biosample__geo_loc_name' in reports_df.columns:
-        reports_df['assembly_info__biosample__geo_loc_name'] = reports_df['assembly_info__biosample__geo_loc_name'].apply(
+    if 'assembly_info__biosample__geo_loc_name' in df.columns:
+        df['assembly_info__biosample__geo_loc_name'] = df['assembly_info__biosample__geo_loc_name'].apply(
             lambda x: x.split(':')[0] if isinstance(x, str) else x
         )
-    # automatically include reference genome(s) then remove from pool for sampling
-    references = []
-    if 'assembly_info__refseq_category' in reports_df.columns:
-        reference_df = reports_df[reports_df['assembly_info__refseq_category'] == 'reference genome']
-        if not reference_df.empty:
-            references = reference_df['accession'].to_list()
-            logging.info("Reference genome auto-included: %s", references)
-            reports_df = reports_df[~reports_df['accession'].isin(references)]
-            genome_limit -= len(references)
+    # if present, include reference genome(s) then remove from pool for sampling
+    reference_df = pd.DataFrame([])
+    if 'assembly_info__refseq_category' in df:
+        ref_mask = df['assembly_info__refseq_category']=='reference genome'
+        reference_df = df[ref_mask].copy()
+        logging.info("Auto-included %s reference genomes: %s",
+                     len(reference_df), reference_df['accession'].to_list())
+        df = df[~ref_mask]  # pop reference genomes from the pool
+        genome_limit -= len(reference_df)
     # beyond the reference, use stratified sampling, prioritizing diverse biosamples
-    reports_df = reports_df.sort_values(by=group_cols, ascending=True)  # sort for reproducibility
-    groups = reports_df.groupby(group_cols)
+    df = df.sort_values(by=group_cols, ascending=True)  # sort for reproducibility
+    groups = df.groupby(group_cols)
     group_reps = []
     for _, group_df in groups:
         # Pick one representative from each group.
@@ -333,10 +334,9 @@ def sample_genome_reports(
         final_sample = reps_df.sample(n=genome_limit, random_state=random_state)
     else:
         remaining_needed = genome_limit - len(reps_df)
-        reports_df = reports_df.drop(reps_df.index)
-        additional_sample = reports_df.sample(n=remaining_needed, random_state=random_state)
+        df = df.drop(reps_df.index)
+        additional_sample = df.sample(n=remaining_needed, random_state=random_state)
         final_sample = pd.concat([reps_df, additional_sample])
-    if references:
-        final_sample = pd.concat([final_sample, reports_df.loc[reports_df['accession'].isin(references)]])
+    final_sample = pd.concat([reference_df, final_sample])
     logging.info("Sampling %s genomes...", len(final_sample))
     return final_sample
