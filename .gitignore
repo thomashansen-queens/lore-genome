@@ -1,5 +1,6 @@
 .vscode/
 *.ipynb
+config.yaml
 
 # GitHub prebuilt Python .gitignore file https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
