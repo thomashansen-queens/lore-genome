@@ -21,9 +21,9 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     # Typical genomes have no data in these columns
     if 'assembly_info__atypical__is_atypical' in df.columns:
         # This column contains either TRUE or null/NaN values, so fillna
-        mask = df['assembly_info__atypical__is_atypical'].fillna(False).infer_objects(copy=False)
+        mask = df['assembly_info__atypical__is_atypical'].fillna(False).astype(bool)
         atypical = df[mask]
-        logging.warning(
+        logging.info(
             "Found %s atypical records. Filtering out:\n%s",
             len(atypical), atypical['accession'].to_list()
         )
@@ -31,11 +31,11 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     if 'assembly_info__genome_notes' in df.columns:
         mask = df['assembly_info__genome_notes'].notnull()
         notes = df[mask]
-        logging.warning(
+        logging.info(
             "Found %s records with notes. Filtering out:\n%s",
             {len(notes)}, notes['accession'].to_list()
         )
-        logging.warning("Notes:\n%s", notes['assembly_info__genome_notes'].to_list())
+        logging.info("Notes:\n%s", notes['assembly_info__genome_notes'].to_list())
         df = df[~mask]
     # Preferentially keep GCF (RefSeq) genomes over GCA (INSDC)
     logging.info("Number of genome reports: %s", len(df))
@@ -138,7 +138,7 @@ def filter_gene_annotations(df: pd.DataFrame) -> pd.DataFrame:
     return filtered_df
 
 
-def trim_fasta(fasta_lines: str, keep_residues: int) -> list:
+def trim_fasta(fasta_lines: str, keep_residues: int) -> str:
     """
     Filters and trims sequences based on the cluster_tail parameter.
     :param fasta_lines (list): List FASTA lines, with alternating headers and sequences
@@ -281,7 +281,7 @@ def parse_fasta(fasta_str: str) -> dict:
 def sample_genome_reports(
     reports_df: pd.DataFrame,
     genome_limit: int = 50,
-    sampling_strategy: list[str] = None,
+    sampling_strategy: list[str] | None = None,
     random_state: int = 42,
 ) -> pd.DataFrame:
     """
