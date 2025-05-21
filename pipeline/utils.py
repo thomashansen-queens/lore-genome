@@ -11,6 +11,7 @@ def filter_genome_reports(df: pd.DataFrame, config: PipelineConfig) -> pd.DataFr
     """
     Filters atypical and duplicated genomes from NCBI Datasets genome reports.
     Preferentially keeps GCF over GCA.
+
     :param df (DataFrame): DataFrame containing all API results.
     :return DataFrame: Filtered DataFrame.
     """
@@ -69,6 +70,7 @@ def filter_by_search_terms(
     """
     Filter a DataFrame down to rows where *any* of the search_terms appear
     (case-insensitive) in *any* of the given columns (word only, no substrings).
+
     :param df: DataFrame to filter.
     :param columns: List of column names (strings) to search in.
     :param search_terms: List of substrings to match (using OR logic).
@@ -101,6 +103,7 @@ def filter_by_search_terms(
 def filter_gene_annotations(df: pd.DataFrame) -> pd.DataFrame:
     """
     Filters gene annotations to keep only those that match the specified taxon.
+
     :param df (DataFrame): DataFrame containing all API results.
     :param config (PipelineConfig): Configuration object containing taxon IDs.
     :return DataFrame: Filtered DataFrame.
@@ -138,12 +141,13 @@ def filter_gene_annotations(df: pd.DataFrame) -> pd.DataFrame:
     return filtered_df
 
 
-def trim_fasta(fasta_lines: str, keep_residues: int) -> str:
+def trim_fasta(fasta_lines: list, keep_residues: int) -> str:
     """
     Filters and trims sequences based on the cluster_tail parameter.
+
     :param fasta_lines (list): List FASTA lines, with alternating headers and sequences
     :param cluster_tail (int): Positive to keep first N residues, negative to keep last N residues.
-    :return list: Processed FASTA lines.
+    :return str: Processed FASTA lines.
     """
     processed_fasta = []
     limit = abs(keep_residues)
@@ -174,6 +178,7 @@ def sci_namer(full_name: str, style='snake') -> str:
     """
     Changes species name from e.g. "Escherichia coli BL21" to "e_coli".
     If style == 'scientific', will instead return E. coli.
+
     :param full_name (str): Full species name.
     :param style (str): 'snake' or 'scientific'.
     :return str: Formatted species name
@@ -192,8 +197,7 @@ def sci_namer(full_name: str, style='snake') -> str:
             return split[0].lower()
         elif style == 'scientific':
             return split[0]
-    else:
-        return ''
+    return ''
 
 
 def unwrap_single_value(value):
@@ -211,6 +215,7 @@ def cluster_mmseqs(
 ) -> pd.DataFrame:
     """
     Clusters given proteins sequences using mmseqs2.
+
     :param mmseqs (str): Path to mmseqs2 executable.
     :param fasta_path (Path): Path to input FASTA file.
     :param cache_path (Path): Path to output TSV file.
@@ -235,6 +240,7 @@ def cluster_mmseqs(
         stderr=subprocess.PIPE,
         text=True,
     )
+    assert process.stdout is not None  # silences typechecker... won't be None
     for line in process.stdout:
         print("MMseqs Output:", line.strip())
     process.wait()
@@ -253,6 +259,7 @@ def parse_fasta(fasta_str: str) -> dict:
     """
     Parse a FASTA formatted string into a dictionary mapping accession -> sequence.
     Assumes that each FASTA header starts with '>' and the accession is the first token.
+
     :param fasta_str (str): A string containing FASTA-formatted sequences.
     :returns dict: accession: sequence
     """
@@ -287,6 +294,7 @@ def sample_genome_reports(
     """
     Sample a specified number of genome reports from the DataFrame. Tries to select
     a diverse group of genomes based on their biosample location and collection date.
+
     :param reports_df (DataFrame): DataFrame containing genome reports.
     :param genome_limit (int): Maximum number of genomes to sample.
     :param samping_strategy (list): List of columns to use for sampling diversity.

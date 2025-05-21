@@ -9,7 +9,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import pandas as pd
 
-from ncbi.datasets.openapi import ApiClient, GenomeApi
+from ncbi.datasets.openapi.api_client import ApiClient
+from ncbi.datasets.openapi.api.genome_api import GenomeApi
 from pipeline.config import PipelineConfig
 from pipeline.api_functions import get_genome_reports, get_genome_annotation_package, get_genome_proteins
 from pipeline.io_functions import load_or_fetch_df, load_or_fetch_text
@@ -130,23 +131,25 @@ class GenomePipeline:
         """
         # Assuming a function trim_fasta is defined in utils
         if self.config.cluster_residues != 0:
-            fasta_str = fasta_str.split('\n')
+            fasta_lines = fasta_str.split('\n')
             tail = "N" if self.config.cluster_residues > 0 else "C"
             cluster_label = f'proteins_{tail}{abs(self.config.cluster_residues)}'
             cache_path = self.cache_dir / "proteins" / f"{cluster_label}.faa"
             trimmed_fasta = load_or_fetch_text(
                 cache_path=cache_path,
                 fetch_func=trim_fasta,
-                fasta_lines=fasta_str,
+                fasta_lines=fasta_lines,
                 keep_residues=self.config.cluster_residues,
             )
             return trimmed_fasta, cluster_label
         logging.info("No protein FASTA trimming required.")
-        return fasta_str, None
+        return fasta_str, "untrimmed"
 
     def cluster_proteins(self, cluster_label: str) -> pd.DataFrame:
         """Use mmseqs2 to cluster the protein sequences."""
-        cache_path = self.cache_dir / "proteins" / "clustered.tsv"
+        tail = "N" if self.config.cluster_residues > 0 else "C"
+        clustered_by = tail + str(abs(self.config.cluster_residues))
+        cache_path = self.cache_dir / "proteins" / f"{clustered_by}_clustered.tsv"
         cluster_df = load_or_fetch_df(
             mmseqs=self.config.mmseqs,
             cache_path=cache_path,
