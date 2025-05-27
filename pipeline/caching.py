@@ -8,9 +8,10 @@ import pandas as pd
 
 def load_or_fetch_df(
     *args,
-    cache_path: Path = '.',
-    fetch_func: Callable = None,
+    cache_path: Path,
+    fetch_func: Callable | None = None,
     allow_fetch: bool = True,
+    force: bool = False,
     **kwargs,
 ) -> pd.DataFrame:
     """
@@ -21,26 +22,28 @@ def load_or_fetch_df(
     :param cache_path (Path): Path to the cache file. Automatic file extension.
     :param fetch_func (Callable): Function to call to fetch the data if missing.
     :param allow_fetch (bool): Whether to allow fetching if no cache is found.
+    :param force (bool): If True, forces fetching data even if cache exists.
     :param *args, **kwargs: Arguments passed to the fetch_func.
     :return pd.DataFrame: The loaded or freshly fetched DataFrame.
     """
     pkl_path = cache_path.with_suffix('.pkl')
     csv_path = cache_path.with_suffix('.csv')
-    if pkl_path.exists():
-        logging.info("Pickle cache found at %s. Loading...", pkl_path)
-        return pd.read_pickle(pkl_path)
-
-    if csv_path.exists():
-        logging.info("CSV cache found at %s. Loading...", csv_path)
-        logging.warning("Loading CSV does not preserve dtypes!")
-        return pd.read_csv(csv_path)
-
-    if not allow_fetch:
-        logging.error("Could not find %s and fetching is disabled.", cache_path)
-        raise FileNotFoundError("Cached data not found. Set allow_fetch=True to fetch data.")
+    if not force:
+        if pkl_path.exists():
+            logging.info("Pickle cache found at %s. Loading...", pkl_path)
+            return pd.read_pickle(pkl_path)
+        if csv_path.exists():
+            logging.info("CSV cache found at %s. Loading...", csv_path)
+            logging.warning("Loading CSV does not preserve dtypes!")
+            return pd.read_csv(csv_path)
+        if not allow_fetch:
+            logging.error("Could not find %s and fetching is disabled.", cache_path)
+            raise FileNotFoundError("Cached data not found. Set allow_fetch=True to fetch data.")
+    else:
+        logging.info("Force fetching data for %s, skipping cache.", cache_path)
 
     if fetch_func is not None:
-        logging.warning("No cached data found at %s. Fetching data...", cache_path)
+        logging.info("Fetching data for %s...", cache_path)
         df = fetch_func(*args, **kwargs)
         # Save to both Parquet and CSV
         df.to_pickle(pkl_path)
@@ -54,9 +57,10 @@ def load_or_fetch_df(
 
 def load_or_fetch_text(
     *args,
-    cache_path: Path = '.',
-    fetch_func: Callable = None,
+    cache_path: Path,
+    fetch_func: Callable,
     allow_fetch: bool = True,
+    force: bool = False,
     **kwargs,
 ) -> str:
     """
@@ -66,19 +70,22 @@ def load_or_fetch_text(
     :param cache_path (Path): Path to the cache file.
     :param fetch_func (Callable): Function to call to fetch the data if missing.
     :param allow_fetch (bool): Whether to allow fetching if no cache is found.
+    :param force (bool): If True, forces fetching data even if cache exists.
     :param *args, **kwargs: Arguments passed to the fetch_func.
     :return str: The loaded or freshly fetched data.
     """
-    if cache_path.exists():
-        logging.info("Cache found at %s. Loading...", cache_path)
-        return cache_path.read_text()
-
-    if not allow_fetch:
-        logging.error("Could not find %s and fetching is disabled.", cache_path)
-        raise FileNotFoundError("Cached data not found. Set allow_fetch=True to fetch data.")
+    if not force:
+        if cache_path.exists():
+            logging.info("Cache found at %s. Loading...", cache_path)
+            return cache_path.read_text()
+        if not allow_fetch:
+            logging.error("Could not find %s and fetching is disabled.", cache_path)
+            raise FileNotFoundError("Cached data not found. Set allow_fetch=True to fetch data.")
+    else:
+        logging.info("Force fetching data for %s, skipping cache.", cache_path)
 
     if fetch_func is not None:
-        logging.warning("No cached data found at %s. Fetching data...", cache_path)
+        logging.info("Fetching data for %s...", cache_path)
         data = fetch_func(*args, **kwargs)
         # Save to cache
         cache_path.write_text(data)

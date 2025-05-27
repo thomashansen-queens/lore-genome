@@ -21,7 +21,7 @@ def csv_cell_to_list(cell: str) -> list:
         # Optionally log a warning here
         return []
 
-def main():
+def generate_protein_report():
     """Entry point for generating the protein report from pre-fetched data."""
     # Load the configuration
     config_dict = load_config('config.yaml')
@@ -38,6 +38,3 @@ def main():
     summary_df = make_protein_report(annotations, fasta, clusters)
     summary_df.to_csv(cache_dir / 'protein_report.csv', index=False)
     print("Protein report generated and saved!")
-
-if __name__ == "__main__":
-    main()

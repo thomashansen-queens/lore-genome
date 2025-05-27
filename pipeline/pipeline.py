@@ -12,9 +12,11 @@ import pandas as pd
 from ncbi.datasets.openapi.api_client import ApiClient
 from ncbi.datasets.openapi.api.genome_api import GenomeApi
 from pipeline.config import PipelineConfig
-from pipeline.api_functions import get_genome_reports, get_genome_annotation_package, get_genome_proteins
-from pipeline.io_functions import load_or_fetch_df, load_or_fetch_text
-from pipeline.utils import sci_namer, filter_genome_reports, filter_gene_annotations, trim_fasta, cluster_mmseqs, sample_genome_reports
+from pipeline.api_functions import \
+    get_genome_reports, get_genome_annotation_package, get_genome_proteins
+from pipeline.caching import load_or_fetch_df, load_or_fetch_text
+from pipeline.filters import filter_genome_reports, filter_gene_annotations
+from pipeline.utils import sci_namer, trim_fasta, cluster_mmseqs, sample_genome_reports
 from pipeline.summary import make_protein_report
 
 class GenomePipeline:
@@ -31,14 +33,15 @@ class GenomePipeline:
     def setup_logging(self):
         """Set up logging for the pipeline instance."""
         logger = logging.getLogger()
-        handler = RotatingFileHandler(self.cache_dir / 'pipeline.log', maxBytes=10*1024*1024, backupCount=5)
+        handler = RotatingFileHandler(self.cache_dir / 'pipeline.log',
+                                      maxBytes=10*1024*1024, backupCount=5)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
 
     def fetch_and_filter_genomes(self, **kwargs) -> pd.DataFrame:
         """
-        Gets "genome reports" from NCBI Datasets API. Deduplicates RefSeq and INSDC
+        Gets "genome reports" from NCBI Datasets API. Deduplicates RefSeq and GenBank
         genomes, preferentially keeping RefSeq. Also removes atypical genomes.
         """
         cache_path = self.cache_dir / "genome_reports"
@@ -62,7 +65,7 @@ class GenomePipeline:
         logging.info("Genome reports (filtered): %s", format(len(filtered_df), ','))
         return filtered_df
 
-    def sample_genomes(self, reports_df: pd.DataFrame) -> list:
+    def sample_genomes(self, reports_df: pd.DataFrame, **kwargs) -> list:
         """
         Samples genome reports based on the specified sampling strategy.
         """
@@ -74,13 +77,14 @@ class GenomePipeline:
                 reports_df=reports_df,
                 genome_limit=self.config.genome_limit,
                 sampling_strategy=self.config.sampling_strategy,
+                **kwargs,
             )
             logging.info("Sampled genome reports: %s", format(len(sampled_df), ','))
             return sampled_df['accession'].tolist()
         logging.info("No sampling applied. Using all genome reports.")
         return reports_df['accession'].tolist()
 
-    def fetch_gene_annotations(self, genome_accessions: list) -> pd.DataFrame:
+    def fetch_gene_annotations(self, genome_accessions: list, **kwargs) -> pd.DataFrame:
         """
         Gets "gene annotation packages" from NCBI Datasets API, which contain
         metadata for the genes in the genome reports.
@@ -95,6 +99,7 @@ class GenomePipeline:
                 cache_path=cache_path,
                 fetch_func=get_genome_annotation_package,
                 accession=assembly,
+                **kwargs,
             )
             df = pd.json_normalize(df.to_dict(orient='records'), sep='__')
             dfs.append(df)
@@ -111,7 +116,7 @@ class GenomePipeline:
         logging.info("Gene annotations (filtered): %s", format(len(filtered_df), ','))
         return filtered_df
 
-    def fetch_protein_fasta(self, genome_accessions: list) -> str:
+    def fetch_protein_fasta(self, genome_accessions: list, **kwargs) -> str:
         """Get all unique protein FASTA sequences for given genomes."""
         proteins_dir = self.cache_dir / "proteins"
         proteins_dir.mkdir(parents=True, exist_ok=True)
@@ -121,10 +126,11 @@ class GenomePipeline:
             cache_path=cache_path,
             fetch_func=get_genome_proteins,
             accessions=genome_accessions,
+            **kwargs,
         )
         return fasta_str
 
-    def trim_proteins(self, fasta_str: str):
+    def trim_proteins(self, fasta_str: str, **kwargs):
         """
         Trim the protein sequences for downstream clustering. Useful to cluster
         only by the first or last N residues.
@@ -140,12 +146,13 @@ class GenomePipeline:
                 fetch_func=trim_fasta,
                 fasta_lines=fasta_lines,
                 keep_residues=self.config.cluster_residues,
+                **kwargs,
             )
             return trimmed_fasta, cluster_label
         logging.info("No protein FASTA trimming required.")
         return fasta_str, "untrimmed"
 
-    def cluster_proteins(self, cluster_label: str) -> pd.DataFrame:
+    def cluster_proteins(self, cluster_label: str, **kwargs) -> pd.DataFrame:
         """Use mmseqs2 to cluster the protein sequences."""
         tail = "N" if self.config.cluster_residues > 0 else "C"
         clustered_by = tail + str(abs(self.config.cluster_residues))
@@ -157,6 +164,7 @@ class GenomePipeline:
             fasta_path=self.cache_dir / "proteins" / f"{cluster_label}.faa",
             fetch_func=cluster_mmseqs,
             min_seq_id=self.config.min_seq_id,
+            **kwargs,
         )
         return cluster_df
 
@@ -170,18 +178,18 @@ class GenomePipeline:
         logging.info("Protein report generated and saved!")
         return summary_df
 
-    def run(self):
+    def run(self, force: bool = False):
         """This function orchestrates the pipeline."""
         # Stage 1: Fetching and filtering genomes
-        genomes = self.fetch_and_filter_genomes()
+        genomes = self.fetch_and_filter_genomes(force=force)
         # Limit the number of genomes to process
         # TO DO: Sample genomes more sensibly (i.e. unique bioprojects)
-        genome_accessions = self.sample_genomes(genomes)
-        annotations = self.fetch_gene_annotations(genome_accessions)
-        protein_fasta = self.fetch_protein_fasta(genome_accessions)
+        genome_accessions = self.sample_genomes(genomes, force=force)
+        annotations = self.fetch_gene_annotations(genome_accessions, force=force)
+        protein_fasta = self.fetch_protein_fasta(genome_accessions, force=force)
         # Stage 2: Trimming and clustering proteins
-        _, cluster_label = self.trim_proteins(protein_fasta)
-        clusters = self.cluster_proteins(cluster_label)
+        _, cluster_label = self.trim_proteins(protein_fasta, force=force)
+        clusters = self.cluster_proteins(cluster_label, force=force)
         # Stage 3: Summarize
         self.make_report(annotations, protein_fasta, clusters)
         logging.info("Pipeline completed successfully.")

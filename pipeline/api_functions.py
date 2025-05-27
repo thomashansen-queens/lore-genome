@@ -8,15 +8,21 @@ import http.client
 import logging
 from time import sleep
 import zipfile
-from ncbi.datasets.openapi import GenomeApi
 import pandas as pd
 
+from ncbi.datasets.openapi.api.genome_api import GenomeApi
+from ncbi.datasets.openapi.models.v2_assembly_dataset_descriptors_filter_assembly_source \
+    import V2AssemblyDatasetDescriptorsFilterAssemblySource
+from ncbi.datasets.openapi.models.v2_annotation_for_assembly_type import V2AnnotationForAssemblyType
+from ncbi.datasets.openapi.models.v2_assembly_dataset_request_resolution import \
+    V2AssemblyDatasetRequestResolution
 from pipeline.config import PipelineConfig
 from pipeline.utils import unwrap_single_value, parse_fasta
 
 def retry(exceptions, tries=3, delay=1.75, logger=None):
     """
     A decorator that allows API calls to retry a set number of times before failing.
+
     :param exceptions: The exception(s) to catch and retry on.
     :param tries: The number of times to retry the function.
     :param delay: The delay between retries (exponentially increasing).
@@ -59,7 +65,7 @@ def get_genome_reports(api: GenomeApi, config: PipelineConfig) -> pd.DataFrame:
     for term_set in search_terms:
         page_token = None
         page = 0
-        while True:
+        while True:  # paginate results
             logging.info(
                 "Fetching genome reports for taxons %s with search terms: %s",
                 taxons, term_set
@@ -71,7 +77,10 @@ def get_genome_reports(api: GenomeApi, config: PipelineConfig) -> pd.DataFrame:
                     taxons=taxons,
                     filters_assembly_level=assembly_level,
                     filters_search_text=term_set,
-                    filters_assembly_source='refseq' if refseq_only else 'all',
+                    filters_assembly_source=(
+                        V2AssemblyDatasetDescriptorsFilterAssemblySource.REFSEQ if refseq_only else
+                        V2AssemblyDatasetDescriptorsFilterAssemblySource.ALL
+                    ),
                     page_size=page_size,
                     page_token=page_token,
                 )
@@ -124,7 +133,6 @@ def get_genome_annotation_package(api: GenomeApi, accession: str) -> pd.DataFram
     df = df.join(genomic_regions)
     return df
 
-
 def unzip_dataframe(result: bytes, accession: str) -> pd.DataFrame:
     """Process (in memory) a ZipFile object returned by the API."""
     with zipfile.ZipFile(io.BytesIO(result)) as zip_file:
@@ -157,6 +165,7 @@ def get_genome_proteins(api: GenomeApi, accessions: list, chunk_size: int = 50) 
     Fetch protein FASTA package from NCBI Datasets API for a given list of accessions.
     In cases where a protein exists in multiple accessions, it will not be duplicated.
     Splits accession list into chunks to avoid API limits.
+
     :param api: NCBI Datasets API object.
     :param accessions: List of genome accessions to fetch proteins for.
     :param chunk_size: Number of accessions to fetch at once.
@@ -172,8 +181,8 @@ def get_genome_proteins(api: GenomeApi, accessions: list, chunk_size: int = 50) 
                          len(chunk), c, len(accession_chunks))
         response = api.download_assembly_package(
             accessions=chunk,
-            include_annotation_type=['PROT_FASTA'],
-            hydrated='FULLY_HYDRATED',
+            include_annotation_type=[V2AnnotationForAssemblyType.PROT_FASTA],
+            hydrated=V2AssemblyDatasetRequestResolution.FULLY_HYDRATED,
         )
         with zipfile.ZipFile(io.BytesIO(response)) as zip_file:
             fasta_files = [f for f in zip_file.namelist() if f.endswith('.faa')]

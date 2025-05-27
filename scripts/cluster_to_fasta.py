@@ -3,15 +3,14 @@
 Given a protein accession, collect it and all its co-clustered proteins from
 MMseqs2 output and write them to a FASTA file.
 """
-import argparse
 from ast import literal_eval
 import logging
 from pathlib import Path
 import sys
 import pandas as pd
 
-from pipeline.config import load_config, PipelineConfig
-from pipeline.utils import sci_namer, parse_fasta
+# from pipeline.config import load_config, PipelineConfig
+from pipeline.utils import parse_fasta
 
 def load_protein_report(report_path: Path) -> pd.DataFrame:
     """Protein report CSV from the pipeline."""
@@ -25,10 +24,11 @@ def get_cluster_members(report_df: pd.DataFrame, accession: str) -> list:
     """
     Given a protein accession, find its cluster and return all co-clustered accessions.
     """
-    cluster_row = report_df[report_df['cluster_accessions'].str.contains(accession, na=False)]
+    cluster_row = report_df[report_df['protein_accessions'].str.contains(accession, na=False)]
     if cluster_row.empty:
         sys.exit(f"Error: {accession} not found in the report.")
-    accessions = literal_eval(cluster_row['cluster_accessions'].values[0])
+    # Read Python list from csv
+    accessions = literal_eval(cluster_row['protein_accessions'].values[0])
     return accessions
 
 def load_fasta(fasta_path: Path) -> dict:
@@ -41,45 +41,60 @@ def load_fasta(fasta_path: Path) -> dict:
         sys.exit(f"Error loading FASTA file {fasta_path}: {e}")
     return fasta_dict
 
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Generate a FASTA file containing all protein sequences from the cluster "
-                    "of a given representative protein accession."
-    )
-    parser.add_argument("accession", help="Representative protein accession used to identify the cluster.")
-    parser.add_argument(
-        "--report", required=False,
-        help="Path to the summary CSV report file (i.e. protein_report.csv)."
-    )
-    parser.add_argument(
-        "--output", required=False,
-        help="Path to the output FASTA file."
-    )
-    args = parser.parse_args()
-    # Load config from pipeline
-    config_dict = load_config('config.yaml')
-    config = PipelineConfig(**config_dict)
-    cache_dir = Path(config.download_dir.expanduser()) / sci_namer(config.taxons[0])
-    # Allow user input but default to config
-    report_path = Path(args.report) if args.report else cache_dir / "protein_report.csv"
-    protein_report = load_protein_report(report_path)
-    # load fasta, subset, and write to file
-    fasta_path = cache_dir / "proteins" / "unique_proteins.faa"
-    fasta = load_fasta(fasta_path)
-    # subset the fasta dictionary to only include the cluster members
-    logging.info("Loaded data, looking for cluster containing %s", args.accession)
-    cluster_members = get_cluster_members(protein_report, args.accession)
-    cluster_dict = {acc: fasta[acc] for acc in cluster_members if acc in fasta}
+def write_cluster_fasta(
+    accession: str,
+    report_df: pd.DataFrame,
+    fasta_dict: dict[str, str],
+    output_path: Path,
+) -> int:
+    """
+    Write the FASTA of the cluster containing the given accession to the output path.
+    
+    :param accession: Protein accession to find in the report.
+    :param report_df: DataFrame containing protein clusters.
+    :param fasta_dict: Dictionary mapping accessions to sequences.
+    :param output_path: Path to write the output FASTA file.
+    :return: Number of sequences written.
+    """
+    cluster_members = get_cluster_members(report_df, accession)
+    cluster_dict = {acc: fasta_dict[acc] for acc in cluster_members if acc in fasta_dict}
+
     if not cluster_dict:
-        sys.exit("No clustered accessions found for the input accession.")
-    # write the cluster fasta to the output file
-    output_path = Path(args.output) if args.output else cache_dir / "proteins" / f"{args.accession}_cluster.faa"
+        sys.exit(f"No clustered accessions found for {accession}.")
+
     with open(output_path, 'w', encoding='utf-8') as output_file:
         for header, sequence in cluster_dict.items():
             output_file.write(f">{header}\n{sequence}\n")
-    logging.info("%s sequences written to %s", len(cluster_dict), output_path)
+    members = get_cluster_members(report_df=report_df, accession=accession)
+    custer_dict = {acc: fasta_dict[acc] for acc in members if acc in fasta_dict}
+    if not custer_dict:
+        raise ValueError(f"No cluster members found for accession: {accession}.")
+    with open(output_path, 'w', encoding='utf-8') as output_file:
+        for header, sequence in custer_dict.items():
+            output_file.write(f">{header}\n{sequence}\n")
+    return len(custer_dict)
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    main()
+# def main(accession: str):
+#     """Main entry point."""
+#     # Load config from pipeline
+#     config_dict = load_config('config.yaml')
+#     config = PipelineConfig(**config_dict)
+#     cache_dir = Path(config.download_dir.expanduser()) / sci_namer(config.taxons[0])
+#     # Allow user input but default to config
+#     report_path = Path(args.report) if args.report else cache_dir / "protein_report.csv"
+#     protein_report = load_protein_report(report_path)
+#     # load fasta, subset, and write to file
+#     fasta_path = cache_dir / "proteins" / "unique_proteins.faa"
+#     fasta = load_fasta(fasta_path)
+#     # subset the fasta dictionary to only include the cluster members
+#     logging.info("Loaded data, looking for cluster containing %s", args.accession)
+#     cluster_members = get_cluster_members(protein_report, args.accession)
+#     cluster_dict = {acc: fasta[acc] for acc in cluster_members if acc in fasta}
+#     if not cluster_dict:
+#         sys.exit("No clustered accessions found for the input accession.")
+#     # write the cluster fasta to the output file
+#     output_path = Path(args.output) if args.output else cache_dir / "proteins" / f"{args.accession}_cluster.faa"
+#     with open(output_path, 'w', encoding='utf-8') as output_file:
+#         for header, sequence in cluster_dict.items():
+#             output_file.write(f">{header}\n{sequence}\n")
+#     logging.info("%s sequences written to %s", len(cluster_dict), output_path)
