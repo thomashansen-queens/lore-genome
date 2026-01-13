@@ -1,10 +1,11 @@
 """
 A module for number crunching, statistics, and visualization of genome data.
 """
+import ast
 import pandas as pd
 from pipeline.utils import parse_fasta
 
-def make_protein_report(
+def make_clusters_report(
     annotations_df: pd.DataFrame,
     fasta_str: str,
     clusters_df: pd.DataFrame,
@@ -25,13 +26,15 @@ def make_protein_report(
         ascending=False,
     )
     # 3. Sum counts and lists of assemblies for each cluster
-    summed = summary_df.groupby('cluster')[
-        ['assemblies', 'proteins__count']
-    ].agg('sum')
+    # First, ensure assemblies column contains lists (handle string storage from CSV)
+    summary_df['assemblies'] = summary_df['assemblies'].apply(
+        lambda x: ast.literal_eval(x) if isinstance(x, str) else x
+    )
+    summed = summary_df.groupby('cluster')[['assemblies', 'proteins__count']].agg('sum')
     clustered_accessions = (
         summary_df
         .groupby('cluster')['proteins__accessionVersion']
-        .agg(lambda x: list(set(x)))  # or ','.join(set(x)) if you want strings
+        .agg(lambda x: list(set(x)))
         .reset_index()
         .rename(columns={'proteins__accessionVersion': 'protein_accessions'})
     )
@@ -73,4 +76,7 @@ def make_protein_report(
         'proteins__accessionVersion': 'top_accession',
         'proteins__length': 'top_length',
     })
+    # De-Python-ify the lists for human readable CSV output
+    summary_df['protein_accessions'] = summary_df['protein_accessions'].apply(lambda x: ','.join(x))
+    summary_df['assembly_accessions'] = summary_df['assembly_accessions'].apply(lambda x: ','.join(x))
     return summary_df

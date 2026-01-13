@@ -17,7 +17,7 @@ from pipeline.api_functions import \
 from pipeline.caching import load_or_fetch_df, load_or_fetch_text
 from pipeline.filters import filter_genome_reports, filter_gene_annotations
 from pipeline.utils import sci_namer, trim_fasta, cluster_mmseqs, sample_genome_reports
-from pipeline.summary import make_protein_report
+from pipeline.summary import make_clusters_report
 
 class GenomePipeline:
     """A class to handle the genome pipeline for fetching and processing genome data."""
@@ -105,7 +105,7 @@ class GenomePipeline:
             dfs.append(df)
         annotations_df = pd.concat(dfs, ignore_index=True)
         logging.info("Total gene annotations: %s from %s genomes",
-                     format(len(annotations_df),','), len(dfs))
+                     len(annotations_df), len(dfs))
         # Filtering
         cache_path_filtered = self.cache_dir / "gene_annotations_filtered"
         filtered_df = load_or_fetch_df(
@@ -113,7 +113,7 @@ class GenomePipeline:
             fetch_func=filter_gene_annotations,
             df=annotations_df,
         )
-        logging.info("Gene annotations (filtered): %s", format(len(filtered_df), ','))
+        logging.info("Gene annotations (filtered): %s", len(filtered_df))
         return filtered_df
 
     def fetch_protein_fasta(self, genome_accessions: list, **kwargs) -> str:
@@ -171,11 +171,11 @@ class GenomePipeline:
     def make_report(self, annotations_df: pd.DataFrame, fasta_str: str, clusters_df: pd.DataFrame):
         """Generate a human-readable CSV for clustered proteins."""
         # fasta_dict = parse_fasta(fasta_str)
-        summary_df = make_protein_report(annotations_df, fasta_str, clusters_df)
+        summary_df = make_clusters_report(annotations_df, fasta_str, clusters_df)
         # Save the report to CSV
-        summary_df.to_csv(self.cache_dir / "protein_report.csv")
-        # summary_df.to_csv(self.cache_dir / "protein_report.csv")
-        logging.info("Protein report generated and saved!")
+        summary_df.to_csv(self.cache_dir / "clusters_report.csv")
+        # summary_df.to_csv(self.cache_dir / "clusters_report.csv")
+        logging.info("Clusters report generated and saved!")
         return summary_df
 
     def run(self, force: bool = False):
@@ -190,6 +190,6 @@ class GenomePipeline:
         # Stage 2: Trimming and clustering proteins
         _, cluster_label = self.trim_proteins(protein_fasta, force=force)
         clusters = self.cluster_proteins(cluster_label, force=force)
-        # Stage 3: Summarize
+        # Stage 3: Summarize clustering results
         self.make_report(annotations, protein_fasta, clusters)
         logging.info("Pipeline completed successfully.")

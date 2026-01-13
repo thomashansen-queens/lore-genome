@@ -15,7 +15,7 @@ from pipeline.caching import load_or_fetch_df
 from pipeline.config import load_config, PipelineConfig
 from pipeline.pipeline import GenomePipeline
 from pipeline.utils import sci_namer, parse_fasta
-from scripts import write_cluster_fasta
+from scripts import write_cluster_fasta, write_cluster_details
 
 def get_config(config_path):
     """Uses a common configuration file."""
@@ -64,7 +64,8 @@ def genomes(config_path):
     config_obj = get_config(config_path)
     pipeline_obj = GenomePipeline(config_obj)
     genome_reports = pipeline_obj.fetch_and_filter_genomes()
-    logging.info("Fetched %s genome reports.", len(genome_reports))
+    logging.info("Fetched %s genome reports.",
+                 format(len(genome_reports), ','))
 
 
 @cli.command()
@@ -102,18 +103,77 @@ def proteins(config_path):
 
 
 @cli.command()
+@click.option("--config-path", default="config.yaml", help="Path to configuration file.")
+def report(config_path):
+    """
+    Step 3: Generate clusters report from cached data (annotations, FASTA, clusters).
+    Useful for stepwise execution or regenerating the report after manual changes.
+    Fetches gene annotations and clusters proteins if missing.
+    """
+    config_obj = get_config(config_path)
+    pipeline_obj = GenomePipeline(config_obj)
+
+    # Get genome accessions from sampled or filtered reports
+    genome_cache = pipeline_obj.cache_dir / "genome_reports_sampled.csv"
+    if not genome_cache.exists():
+        logging.info("No sampled genomes found at %s; using filtered list.", genome_cache)
+        genome_cache = pipeline_obj.cache_dir / "genome_reports_filtered.csv"
+    if not genome_cache.exists():
+        logging.error("No genome reports found. Run 'lore genomes' first.")
+        sys.exit("Couldn't find genome_reports. Exiting.")
+    genome_reports = load_or_fetch_df(cache_path=genome_cache, allow_fetch=False)
+    genome_accessions = genome_reports["accession"].tolist()
+
+    # Fetch gene annotations if missing
+    annotations_cache = pipeline_obj.cache_dir / "gene_annotations_filtered.csv"
+    if not annotations_cache.exists():
+        logging.info("Gene annotations not found; fetching from NCBI...")
+        annotations_df = pipeline_obj.fetch_gene_annotations(genome_accessions)
+    else:
+        logging.info("Loading gene annotations from %s", annotations_cache)
+        annotations_df = pd.read_csv(annotations_cache)
+
+    # Check for protein FASTA
+    proteins_cache = pipeline_obj.cache_dir / "proteins" / "unique_proteins.faa"
+    if not proteins_cache.exists():
+        logging.info("Protein FASTA not found; fetching from NCBI...")
+        fasta_str = pipeline_obj.fetch_protein_fasta(genome_accessions)
+    logging.info("Loading protein FASTA from %s", proteins_cache)
+    fasta_str = proteins_cache.read_text(encoding="utf-8")
+
+    # Trim proteins and cluster if needed
+    trimmed_fasta, cluster_label = pipeline_obj.trim_proteins(fasta_str)
+
+    # Check for cluster file; cluster if missing
+    tail = "N" if config_obj.cluster_residues > 0 else "C"
+    clustered_by = tail + str(abs(config_obj.cluster_residues))
+    clusters_cache = pipeline_obj.cache_dir / "proteins" / f"{clustered_by}_clustered.csv"
+    if not clusters_cache.exists():
+        logging.info("Cluster file not found; running MMseqs2 clustering...")
+        clusters_df = pipeline_obj.cluster_proteins(cluster_label)
+    logging.info("Loading clusters from %s", clusters_cache)
+    clusters_df = pd.read_csv(clusters_cache)
+
+    # Generate report
+    summary_df = pipeline_obj.make_report(annotations_df, fasta_str, clusters_df)
+    logging.info("Clusters report saved to %s", pipeline_obj.cache_dir / "clusters_report.csv")
+    logging.info("Report contains %s protein clusters.",
+                 format(len(summary_df), ','))
+
+
+@cli.command()
 @click.argument("accession", type=str)
 @click.option(
     "-r", "--report",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
-    help="Path to the pipeline's protein_report.csv file (defaults to cache).",
+    help="Path to the pipeline's clusters_report.csv file (defaults to cache).",
 )
 @click.option(
     "-o", "--output",
     type=click.Path(dir_okay=False, writable=True, path_type=Path),
     default=None,
-    help="Where to write the cluster FASTA (default to <accesison>_cluster.faa in cache).",
+    help="Where to write the cluster FASTA (default to <accession>_cluster.faa in cache).",
 )
 @click.option("--config-path", default="config.yaml", help="Path to configuration file.")
 def cluster2fasta(accession: str, report: Path, output: Path, config_path: Path):
@@ -122,12 +182,12 @@ def cluster2fasta(accession: str, report: Path, output: Path, config_path: Path)
     """
     config_obj = get_config(config_path)
     basepath = Path(config_obj.download_dir).expanduser() / sci_namer(config_obj.taxons[0])
-    # Use the protein report to find clusters
+    # Use the clusters report to find clusters
     # Note for the future: This could also just use mmseqs2 output
     if report is None:
-        report = basepath / "protein_report.csv"
+        report = basepath / "clusters_report.csv"
     if not report.exists():
-        logging.error("Protein report not found at %s. Run the pipeline first.", report)
+        logging.error("Clusters report not found at %s. Run the pipeline first.", report)
         sys.exit(1)
     report_df = pd.read_csv(report)
     if output is None:
@@ -145,7 +205,51 @@ def cluster2fasta(accession: str, report: Path, output: Path, config_path: Path)
         fasta_dict=fasta_dict,
         output_path=output.expanduser(),
     )
-    logging.info("Wrote %s sequences to %s", size, output)
+    logging.info("Wrote %s sequences to %s",
+                 format(size, ','), output)
+
+
+@cli.command()
+@click.argument("accession", type=str)
+@click.option(
+    "-o", "--output",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="Where to write the cluster details CSV (default: <accession>_details.csv in cache).",
+)
+@click.option(
+    "--config-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default="config.yaml",
+    show_default=True,
+    help="Path to configuration file.",
+)
+@click.option(
+    "-c", "--context",
+    default=3,
+    type=int,
+    help="Number of flanking genes to include in the annotation context.",
+)
+def inspect(accession: str, output: Path | None, config_path: Path, context: int):
+    """
+    Generate a detailed report of all proteins in the cluster containing ACCESSION.
+    Includes protein accession, assembly, nucleotide, locus tag, name, length, coordinates.
+    """
+    config_obj = get_config(config_path)
+    basepath = Path(config_obj.download_dir).expanduser() / sci_namer(config_obj.taxons[0])
+    cache_dir = basepath
+
+    # Generate and write cluster details (loads annotations from per-genome files)
+    if output is None:
+        output = cache_dir / f"{accession}_details.csv"
+
+    detail_df = write_cluster_details(
+        accession=accession,
+        cache_dir=cache_dir,
+        context=context,
+        output_path=output.expanduser(),
+    )
+    logging.info("Cluster details report contains %s proteins", format(len(detail_df), ','))
 
 
 @cli.command()

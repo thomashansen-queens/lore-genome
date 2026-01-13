@@ -3,10 +3,9 @@
 Given a protein accession, collect it and all its co-clustered proteins from
 MMseqs2 output and write them to a FASTA file.
 """
-from ast import literal_eval
-import logging
 from pathlib import Path
 import sys
+import logging
 import pandas as pd
 
 # from pipeline.config import load_config, PipelineConfig
@@ -23,12 +22,14 @@ def load_protein_report(report_path: Path) -> pd.DataFrame:
 def get_cluster_members(report_df: pd.DataFrame, accession: str) -> list:
     """
     Given a protein accession, find its cluster and return all co-clustered accessions.
+    Parses comma-separated accessions (e.g., "WP_001, WP_002, WP_003").
     """
-    cluster_row = report_df[report_df['protein_accessions'].str.contains(accession, na=False)]
+    cluster_row = report_df[report_df['protein_accessions'].astype(str).str.contains(accession, na=False)]
     if cluster_row.empty:
-        sys.exit(f"Error: {accession} not found in the report.")
-    # Read Python list from csv
-    accessions = literal_eval(cluster_row['protein_accessions'].values[0])
+        sys.exit(f"Error: {accession} not found in the clusters report.")
+    # Parse comma-separated accessions
+    accessions_str = cluster_row['protein_accessions'].values[0]
+    accessions = [acc.strip() for acc in accessions_str.split(',')]
     return accessions
 
 def load_fasta(fasta_path: Path) -> dict:

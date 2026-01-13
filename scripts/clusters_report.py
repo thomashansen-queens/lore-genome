@@ -1,11 +1,11 @@
 """
-Generates a protein report from pre-fetched data.
+Generates a report of clusters from pre-fetched data.
 """
 import ast
 from pathlib import Path
 import pandas as pd
 from pipeline.utils import sci_namer
-from pipeline.summary import make_protein_report
+from pipeline.summary import make_clusters_report
 from pipeline.config import load_config, PipelineConfig
 
 def csv_cell_to_list(cell: str) -> list:
@@ -21,7 +21,7 @@ def csv_cell_to_list(cell: str) -> list:
         # Optionally log a warning here
         return []
 
-def generate_protein_report():
+def generate_clusters_report():
     """Entry point for generating the protein report from pre-fetched data."""
     # Load the configuration
     config_dict = load_config('config.yaml')
@@ -35,6 +35,6 @@ def generate_protein_report():
     fasta = Path(cache_dir / 'proteins' / 'unique_proteins.faa').read_text(encoding='utf-8')
     clusters = pd.read_csv(cache_dir / 'proteins' / 'clustered.csv', names=["cluster","member"])
     # Generate the protein report
-    summary_df = make_protein_report(annotations, fasta, clusters)
-    summary_df.to_csv(cache_dir / 'protein_report.csv', index=False)
-    print("Protein report generated and saved!")
+    summary_df = make_clusters_report(annotations, fasta, clusters)
+    summary_df.to_csv(cache_dir / 'cluster_report.csv', index=False)
+    print("Cluster report generated and saved!")
