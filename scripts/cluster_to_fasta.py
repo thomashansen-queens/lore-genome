@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import logging
 import pandas as pd
+from pipeline.summary import get_cluster_members
 
 # from pipeline.config import load_config, PipelineConfig
 from pipeline.utils import parse_fasta
@@ -19,18 +20,18 @@ def load_protein_report(report_path: Path) -> pd.DataFrame:
         sys.exit(f"Error loading report file {report_path}: {e}")
     return df
 
-def get_cluster_members(report_df: pd.DataFrame, accession: str) -> list:
-    """
-    Given a protein accession, find its cluster and return all co-clustered accessions.
-    Parses comma-separated accessions (e.g., "WP_001, WP_002, WP_003").
-    """
-    cluster_row = report_df[report_df['protein_accessions'].astype(str).str.contains(accession, na=False)]
-    if cluster_row.empty:
-        sys.exit(f"Error: {accession} not found in the clusters report.")
-    # Parse comma-separated accessions
-    accessions_str = cluster_row['protein_accessions'].values[0]
-    accessions = [acc.strip() for acc in accessions_str.split(',')]
-    return accessions
+# def get_cluster_members(report_df: pd.DataFrame, accession: str) -> list:
+#     """
+#     Given a protein accession, find its cluster and return all co-clustered accessions.
+#     Parses comma-separated accessions (e.g., "WP_001, WP_002, WP_003").
+#     """
+#     cluster_row = report_df[report_df['protein_accessions'].astype(str).str.contains(accession, na=False)]
+#     if cluster_row.empty:
+#         sys.exit(f"Error: {accession} not found in the clusters report.")
+#     # Parse comma-separated accessions
+#     accessions_str = cluster_row['protein_accessions'].values[0]
+#     accessions = [acc.strip() for acc in accessions_str.split(',')]
+#     return accessions
 
 def load_fasta(fasta_path: Path) -> dict:
     """FASTA of unique protein sequences."""
@@ -57,7 +58,7 @@ def write_cluster_fasta(
     :param output_path: Path to write the output FASTA file.
     :return: Number of sequences written.
     """
-    cluster_members = get_cluster_members(report_df, accession)
+    cluster_members = get_cluster_members(accession, report_df)
     cluster_dict = {acc: fasta_dict[acc] for acc in cluster_members if acc in fasta_dict}
 
     if not cluster_dict:

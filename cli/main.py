@@ -15,7 +15,10 @@ from pipeline.caching import load_or_fetch_df
 from pipeline.config import load_config, PipelineConfig
 from pipeline.pipeline import GenomePipeline
 from pipeline.utils import sci_namer, parse_fasta
-from scripts import write_cluster_fasta, write_cluster_details
+from pipeline.summary import save_cluster_details_csv
+from pipeline.viz import save_cluster_svg
+from scripts import write_cluster_fasta
+
 
 def get_config(config_path):
     """Uses a common configuration file."""
@@ -243,13 +246,57 @@ def inspect(accession: str, output: Path | None, config_path: Path, context: int
     if output is None:
         output = cache_dir / f"{accession}_details.csv"
 
-    detail_df = write_cluster_details(
+    detail_df = save_cluster_details_csv(
         accession=accession,
         cache_dir=cache_dir,
         context=context,
         output_path=output.expanduser(),
     )
     logging.info("Cluster details report contains %s proteins", format(len(detail_df), ','))
+
+
+@cli.command()
+@click.argument("accession", type=str)
+@click.option(
+    "-o", "--output",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="Where to write the cluster SVG (default: <accession>_cluster.svg in cache).",
+)
+@click.option(
+    "--config-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default="config.yaml",
+    show_default=True,
+    help="Path to configuration file.",
+)
+@click.option(
+    "-c", "--context",
+    default=3,
+    type=int,
+    help="Number of flanking genes to include in the annotation context.",
+)
+def neighborhood(accession: str, output: Path | None, config_path: Path, context: int):
+    """
+    Make a diagram showing the genomic neighborhood for a protein.
+    Saved as an SVG file.
+    """
+    config_obj = get_config(config_path)
+    basepath = Path(config_obj.download_dir).expanduser() / sci_namer(config_obj.taxons[0])
+    cache_dir = basepath
+
+    # Generate and write cluster details (loads annotations from per-genome files)
+    if output is None:
+        safe = accession.split('.')[0]
+        output = cache_dir / f"{safe}_neighborhood.svg"
+
+    _ = save_cluster_svg(
+        accession=accession,
+        cache_dir=cache_dir,
+        context=context,
+        output_path=output.expanduser(),
+    )
+    logging.info("Wrote cluster genomic neighbourhood SVG to %s", output)
 
 
 @cli.command()
