@@ -100,7 +100,7 @@ def _arrow_points(x_tail: float, x_head: float, y: float, h: float, head_px: flo
 
     y0 = y - h / 2
     y1 = y + h / 2
-
+    # vertices for a pentagonal arrow
     pts = [
         (x_tail, y0),
         (body_head_x, y0),
@@ -109,27 +109,6 @@ def _arrow_points(x_tail: float, x_head: float, y: float, h: float, head_px: flo
         (x_tail, y1),
     ]
     return " ".join(f"{px:.2f},{py:.2f}" for px, py in pts)
-# def _arrow_points(x0: float, x1: float, y: float, h: float, head_px: float) -> str:
-#     """
-#     Return SVG polygon points for an arrow from x0 to x1.
-#     """
-#     length = abs(x1 - x0)
-#     head_len = min(head_px, max(0.0, length * 0.6))  # head shorter than 60% of l
-#     body_end = x1 - head_len
-
-#     y0 = y - h / 2
-#     y1 = y + h / 2
-#     ym = y
-
-#     pts = [
-#         (x0, y0),
-#         (body_end, y0),
-#         (body_end, y0),
-#         (x1, ym),
-#         (body_end, y1),
-#         (x0, y1),
-#     ]
-#     return " ".join(f"{px:.2f},{py:.2f}" for px, py in pts)
 
 def _truncate(s: str, n: int = 10) -> str:
     s = s.strip()

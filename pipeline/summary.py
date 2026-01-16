@@ -239,6 +239,7 @@ def make_genome_context_row(
     flat_df = context_df.copy()
     flat_df.columns = [f'{side}_{i}_{field}' for field, side, i in flat_df.columns]
     flat_df = flat_df.reset_index(drop=False)
+    flat_df['assembly_acc'] = ann_df.loc[anchor_idx, 'annotations__assemblyAccession']
     return flat_df
 
 
@@ -283,12 +284,16 @@ def build_cluster_context(
         context_rows.append(make_genome_context_row(anchor_acc, ann_df, context))
     # Assemble all context rows and merge to cluster details
     context_df = pd.concat(context_rows, ignore_index=True)
-    cluster_df = cluster_df.merge(context_df, left_on='protein_accession', right_on='anchor', how='left')
+    cluster_df = cluster_df.merge(context_df,
+                                  left_on=['protein_accession', 'assembly_accession'],
+                                  right_on=['anchor', 'assembly_acc'],
+                                  how='left')
     cluster_df = cluster_df.drop(columns=['anchor'])
     # Reorder columns
     ordered_cols = ordered_columns(cluster_df, context)
     cluster_df = cluster_df[ordered_cols]
     return cluster_df
+
 
 def save_cluster_details_csv(
     accession: str,
