@@ -276,7 +276,28 @@ def inspect(accession: str, output: Path | None, config_path: Path, context: int
     type=int,
     help="Number of flanking genes to include in the annotation context.",
 )
-def neighborhood(accession: str, output: Path | None, config_path: Path, context: int):
+@click.option(
+    "-l", "--layout",
+    type=click.Choice(["bp", "clamped", "order"], case_sensitive=False),
+    default="bp",
+    show_default=True,
+    help="Layout style for genomic neighborhood visualization (bp: scaled by base pair, clamped: limits gaps and gene sizes, order: evenly spaced)."
+)
+@click.option(
+    "--max-gap",
+    type=float,
+    default=100.0,
+    show_default=True,
+    help="Maximum gap size (in bp) to display between genes when using 'clamped' layout.",
+)
+@click.option(
+    "--clamp-genes/--no-clamp-genes",
+    default=False,
+    show_default=True,
+    help="Whether to clamp gene sizes when using 'clamped' layout.",
+)
+def neighborhood(accession: str, output: Path | None, config_path: Path, context: int,
+                 layout: str, max_gap: float, clamp_genes: bool):
     """
     Make a diagram showing the genomic neighborhood for a protein.
     Saved as an SVG file.
@@ -284,17 +305,22 @@ def neighborhood(accession: str, output: Path | None, config_path: Path, context
     config_obj = get_config(config_path)
     basepath = Path(config_obj.download_dir).expanduser() / sci_namer(config_obj.taxons[0])
     cache_dir = basepath
-
+    # check layout options
+    if layout != "clamped" and (max_gap != 100.0 or clamp_genes):
+        logging.warning("--max-gap/--clamp-genes only apply when --layout=clamped")
     # Generate and write cluster details (loads annotations from per-genome files)
     if output is None:
-        safe = accession.split('.')[0]
-        output = cache_dir / f"{safe}_neighborhood.svg"
+        acc = accession.split('.')[0]
+        output = cache_dir / f"{acc}_neighborhood_{layout}.svg"
 
     _ = save_cluster_svg(
         accession=accession,
         cache_dir=cache_dir,
         context=context,
+        layout=layout,
         output_path=output.expanduser(),
+        max_gap=max_gap,
+        clamp_genes=clamp_genes,
     )
     logging.info("Wrote cluster genomic neighbourhood SVG to %s", output)
 
