@@ -1,0 +1,144 @@
+{% extends "/features/artifacts/layout.html" %}
+
+{% block extra_actions %}
+<a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="btn btn-secondary">
+    🗏 Overview
+</a>
+<a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/view" class="btn btn-secondary">
+    🗎 View text
+</a>
+<a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download_csv" class="btn btn-secondary">
+    ⬇ Download CSV
+</a>
+{% endblock %}
+
+{% block artifact_content %}
+
+<style>
+    /* Pandas Table Styling Override */
+    .pandas-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        font-family: var(--font-mono);
+    }
+    .pandas-table thead tr {
+        background-color: var(--bg-body);
+        border-bottom: 2px solid var(--border);
+        text-align: left;
+    }
+    .pandas-table th {
+        padding: 8px 12px;
+        font-weight: 600;
+        color: #374151;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+    }
+    .pandas-table th:hover {
+        background-color: var(--secondary-hover);
+    }
+    .pandas-table th.asc::after { content: " ↑"; opacity: 1; }
+    .pandas-table th.desc::after { content: " ↓"; opacity: 1; }
+
+    .pandas-table td {
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        color: #4b5563;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .pandas-table tbody tr:hover {
+        background-color: var(--bg-subtle);
+    }
+
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.querySelector('.pandas-table');
+    // Safety check: if table doesn't exist (empty data), stop.
+    if (!table) return;
+    const headers = table.querySelectorAll('th');
+    const tbody = table.querySelector('tbody');
+    
+    // 1. Sorting functionality
+    headers.forEach((header, index) => {
+        header.addEventListener('click', () => {
+            sortTable(table, index, header);
+        });
+    });
+
+    function sortTable(table, colIndex, header) {
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const isAsc = !header.classList.contains('asc');
+        
+        // Reset other headers
+        headers.forEach(h => h.classList.remove('asc', 'desc'));
+        header.classList.toggle('asc', isAsc);
+        header.classList.toggle('desc', !isAsc);
+
+        // Sort rows
+        rows.sort((rowA, rowB) => {
+            const cellA = rowA.cells[colIndex].innerText.trim();
+            const cellB = rowB.cells[colIndex].innerText.trim();
+            
+            // Numeric Sort Check
+            const numA = parseFloat(cellA);
+            const numB = parseFloat(cellB);
+            
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return isAsc ? numA - numB : numB - numA;
+            }
+            // String Sort
+            return isAsc ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+        });
+
+        // Re-append sorted rows
+        tbody.append(...rows);
+    }
+
+    // 2. Filter functionality
+    const searchInput = document.getElementById('tableSearch');
+    if (searchInput) {
+        searchInput.addEventListener('keyup', function(e) {
+            const searchText = e.target.value.toLowerCase();
+            // Re-query rows to handle current sort state
+            const rows = tbody.querySelectorAll('tr');
+            
+            rows.forEach(row => {
+                // Check all text in the row
+                const text = row.innerText.toLowerCase();
+                // Toggle visibility
+                row.style.display = text.includes(searchText) ? '' : 'none';
+            });
+        });
+    }
+});
+</script>
+
+<div>
+    <h3>{{ artifact.name or artifact.id[:8] }} (DataFrame View)</h3>
+    {% if note %}
+    <div class="text-muted" style="margin-bottom: 1rem;">
+        ✨ {{ note }}.
+        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/view_dataframe?adapt=false">Click to view unformatted.</a>
+    </div>
+    {% endif %}
+    <div class="muted">
+        Shape: {{ total_rows }} rows × {{ columns|length }} columns
+        {% if total_rows > 1000 %} (Only showing first 1,000) {% endif %}
+    </div>
+</div>
+
+<div style="margin-bottom: 1rem;">
+    <input type="text" id="tableSearch" class="form-control" placeholder="🔍 Filter rows..." style="max-width: 300px;">
+</div>
+
+<div class="table-container">
+    {{ table_html | safe }}
+</div>
+
+{% endblock %}

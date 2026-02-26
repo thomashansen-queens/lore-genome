@@ -1,0 +1,34 @@
+{% extends "/features/artifacts/layout.html" %}
+{% import "/macros/ui.html" as ui %}
+
+{% block extra_actions %}
+<a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="btn btn-secondary">
+    🗏 Overview
+</a>
+{% endblock %}
+
+{% block artifact_content %}
+
+<div style="margin-bottom: 1rem;">
+    <h3>File contents</h3>
+    <div class="text-muted text-sm">
+        Format: <span class="font-mono">{{ artifact.data_type }}</span>
+        Size: {{ artifact.display_size }}
+    </div>
+</div>
+
+<div class="card" style="overflow: hidden; padding: 0;">
+    <div style="overflow-x: auto; padding: 1rem;">
+        <pre style="margin: 0; font-family: var(--font-mono);">{{ text_content }}</pre>
+    </div>
+</div>
+
+{% if is_truncated %}
+<div style="margin-top: 1rem; text-align: center;">
+    <p class="text-muted">
+        Only the first 10 kB shown. <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download">Download</a> and open in a text editor to see the full content.
+    </p>
+</div>
+{% endif %}
+
+{% endblock %}

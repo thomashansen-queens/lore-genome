@@ -1,0 +1,71 @@
+{% macro render_adapter_table(columns, rows) %}
+<table class="table table-hover" id="explore-table">
+    <thead>
+        <tr>
+            {% for col in columns %}
+                <th style="cursor: pointer;" onclick="sortTable({{ loop.index0 }})">
+                    {{ col | replace('_', ' ') | title }}
+                </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            {% for col in columns %}
+                {% set value = row.get(col, '') %}
+                <td class="mono">
+                    {# Smart Formatting: Check if we should link things #}
+                    {% if value is none %}
+                        <span class="muted">null</span>
+                    {% else %}
+                        {{ value|safe }}
+                    {% endif %}
+                </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+/** A highly optimized JS sort helper **/
+function sortTable(columnIndex) {
+    const table = document.getElementById("explore-table");
+    const tbody = table.querySelector("tbody");
+    const header = table.querySelectorAll("th")[columnIndex];
+    
+    // 1. Toggle sort direction
+    const isAsc = header.dataset.sortDir === "asc";
+    const modifier = isAsc ? -1 : 1;
+    header.dataset.sortDir = isAsc ? "desc" : "asc";
+
+    // 2. Extract rows into a fast native array
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+
+    // 3. Sort the array in memory
+    rows.sort((a, b) => {
+        const aText = a.cells[columnIndex].textContent.trim();
+        const bText = b.cells[columnIndex].textContent.trim();
+
+        // Check if the values are numeric (good for N50, lengths, etc.)
+        const aNum = parseFloat(aText.replace(/,/g, ''));
+        const bNum = parseFloat(bText.replace(/,/g, ''));
+
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return (aNum - bNum) * modifier;
+        }
+
+        // Standard string comparison
+        if (aText.toLowerCase() < bText.toLowerCase()) return -1 * modifier;
+        if (aText.toLowerCase() > bText.toLowerCase()) return 1 * modifier;
+        return 0;
+    });
+
+    // 4. Batch update the DOM exactly once
+    const fragment = document.createDocumentFragment();
+    rows.forEach(row => fragment.appendChild(row));
+    tbody.appendChild(fragment);
+}
+</script>
+{% endmacro %}

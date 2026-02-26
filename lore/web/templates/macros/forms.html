@@ -1,0 +1,142 @@
+{# === Generic form component using LoRe DSL === #}
+{% macro render_field(name, field_info, prefill_val, candidates=[]) %}
+    {% set extra = field_info.json_schema_extra or {} %}
+    {% set widget = extra.get('widget', 'text') %}
+    {% set label = field_info.title or name|capitalize %}
+    {% set prefill = prefill_val %}
+    {% set candidate_ids = candidates | map(attribute='id') | list %}
+
+    <div style="margin-bottom: 1rem;">
+        <label>
+            {{ label }}{% if field_info.is_required() %}<span class="required"> *</span>{% endif %}
+        </label>
+
+        {# Single Artifact dropdown #}
+        {% if widget == 'artifact_single_select' %}
+            {% set is_manual_prefill = prefill and prefill not in candidate_ids %}
+            {% set manual_val = prefill if is_manual_prefill else '' %}
+            {% set select_val = prefill if not is_manual_prefill else '' %}
+
+            {% if candidates %}
+                {# Primary: Select, Secondary: Manual #}
+                <select name="{{ name }}" style="margin-bottom: 0.5rem;">
+                    <option value="">Select an Artifact...</option>
+                    {% for art in candidates %}
+                        <option value="{{ art.id }}" {% if art.id == select_val %}selected{% endif %}>{{ art.name }} ({{ art.display_size }})</option>
+                    {% endfor %}
+                </select>
+                <input name="{{ name }}__manual" type="text" value="{{ manual_val }}" placeholder="Or enter manually (e.g., GCF_12345)" class="text-sm">
+            {% else %}
+                {# Primary: Manual, Secondary: Message #}
+                <input name="{{ name }}__manual" type="text" value="{{ manual_val }}" placeholder="Manual entry (e.g., GCF_12345)">
+                <div class="muted small" style="margin-top: 0.25rem;">No valid Artifacts found in session.</div>
+            {% endif %}
+
+        {# Multi-Artifact selector #}
+        {% elif widget == 'artifact_multi_select' %}
+        {# Separate the prefill list into known artifacts and manual strings #}
+            {% set manual_prefill_list = [] %}
+            {% set artifact_prefill_list = [] %}
+            {% if prefill %}
+                {% for item in prefill %}
+                    {% if item in candidate_ids %}
+                        {% set _ = artifact_prefill_list.append(item) %}
+                    {% else %}
+                        {% set _ = manual_prefill_list.append(item) %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            {% set manual_val = manual_prefill_list | join(', ') %}
+
+            {% if candidates %}
+                {# Primary: Checkboxes, Secondary: Textarea #}
+                <div class="artifact-tray" style="margin-bottom: 0.5rem;">
+                    {% for art in candidates %}
+                    <label>
+                        <input type="checkbox" name="{{ name }}" value="{{ art.id }}" {% if art.id in artifact_prefill_list %}checked{% endif %}>
+                        <span style="font-size: 0.9rem;">{{ art.name }}</span>
+                        <code style="font-size: 0.7rem; margin-left: auto;">{{ art.display_size }}</code>
+                    </label>
+                    {% endfor %}
+                </div>
+                <textarea name="{{ name }}__manual" rows="2" placeholder="Or enter additional manual inputs (comma-separated)..." class="text-sm">{{ manual_val }}</textarea>
+            {% else %}
+                {# Primary: Textarea, Secondary: Message #}
+                <textarea name="{{ name }}__manual" rows="3" placeholder="Enter manual inputs (comma-separated)...">{{ manual_val }}</textarea>
+                <div class="muted small" style="margin-top: 0.25rem;">No valid Artifacts found in session.</div>
+            {% endif %}
+
+        {# List-like Enum selector #}
+        {% elif widget == 'checkbox_group' %}
+            <div class="checkbox-group">
+                {% for opt in extra.get('options', []) %}
+                <label class="checkbox">
+                    <input type="checkbox" name="{{ name }}" value="{{ opt }}" 
+                           {% if opt in prefill %}checked{% endif %}>
+                    {{ opt|replace('_', ' ')|title }}
+                </label>
+                {% endfor %}
+            </div>
+
+        {# Regular dropdown selector #}
+        {% elif widget == 'select' %}
+            <select name="{{ name }}" class="form-control">
+                {% for opt in extra.get('options', []) %}
+                    <option value="{{ opt }}" {% if opt == prefill %}selected{% endif %}>
+                        {{ opt|title }}
+                    </option>
+                {% endfor %}
+            </select>
+
+        {# Radio Enum selector #}
+        {% elif widget == 'radio' %}
+            <div class="radio-group">
+                {% for opt in extra.get('options', []) %}
+                <label class="radio">
+                    <input type="radio" name="{{ name }}" value="{{ opt }}" 
+                           {% if opt == prefill %}checked{% endif %}>
+                    {{ opt|replace('_', ' ')|title }}
+                </label>
+                {% endfor %}
+            </div>
+
+        {# Boolean checkbox (hidden input trick for unchecked) #}
+        {% elif widget == 'checkbox' %}
+            <label class="checkbox muted">
+                <input type="hidden" name="{{ name }}" value="false">
+                <input type="checkbox" name="{{ name }}" value="true" {% if prefill is sameas true %}checked{% endif %}>
+                {{ field_info.description }}
+            </label>
+
+        {# Float #}
+        {% elif widget == 'float' %}
+            <input type="number" name="{{ name }}" step="any" 
+                   value="{{ prefill }}"
+                   placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
+                   class="form-control">
+
+        {# Integer #}
+        {% elif widget == 'integer' %}
+            <input type="number" name="{{ name }}" step="1" 
+                   value="{{ prefill }}"
+                   placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
+                   class="form-control">
+            </label>
+
+        {# Fallback to standard input types #}
+        {% else %}
+            <input type="{{ widget }}" name="{{ name }}" 
+                   value="{{ prefill }}"
+                   placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
+                   class="form-control">
+        {% endif %}
+
+        {# Accompanying help text #}
+        {% if field_info.description and widget != 'checkbox' %}
+            <small class="muted">
+                {{ field_info.description }}
+            </small>
+        {% endif %}
+
+    </div>
+{% endmacro %}

@@ -1,0 +1,99 @@
+{% extends "/features/workbench/layout.html" %}
+
+{% block tool_controls %}
+    <p class="text-muted">Boolean query against data</p>
+
+    {# === Query builder tool "sticker picker" === #}
+    <div class="sticker-bar">
+        <select id="key-picker" class="form-control" style="width: auto;">
+            <option value="" disabled selected>Key...</option>
+            {% for key in suggested_keys %}
+                <option value="{{ key }}">{{ key }}</option>
+            {% endfor %}
+        </select>
+
+        <select id="op-picker" class="form-control" style="width: auto;">
+            <option value=" == ">is (==)</option>
+            <option value=" != ">is not (!=)</option>
+            <option value=" > ">&gt;</option>
+            <option value=" < ">&lt;</option>
+            <option value=".str.contains('')">contains</option>
+            <option value=".isna()">is empty</option>
+            <option value=".notna()">is not empty</option>
+        </select>
+        
+        <input type="text" id="value-input" class="form-control" style="width: 120px;" placeholder="Value...">
+
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addSticker()">＋ Add</button>
+    </div>
+
+    {# === Quick Filters: macros for quick query construction === #}
+    <div class="quick-filters" style="display: flex; gap: 8px; margin-bottom: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <span class="text-muted" style="font-size: 0.75rem;">Quick:</span>
+        <span class="quick-filter-tag" onclick="injectQuery('assembly_level in (\'Complete Genome\', \'Chromosome\')')">Assembly level</span>
+        <span class="quick-filter-tag" onclick="injectQuery('genome_notes.isna()')">Clean quality</span>
+        <span class="quick-filter-tag" onclick="injectQuery('not (accession.str.startswith(\'GCA\') and paired_accession.isin(accession))')">Drop GCA dupes</span>
+        <span class="quick-filter-tag" onclick="injectQuery('organism_name == best_ani_match')">ANI match</span>
+        <span class="quick-filter-tag" style="color: var(--danger); margin-left: auto;"
+              onclick="document.getElementById('query-editor').value = ''; refreshPreview();">Clear</span>
+    </div>
+
+    {# === Text input query editor === #}
+    <textarea id="query-editor" class="code-editor" style="width: 100%; height: 80px;" 
+              placeholder="e.g. collection_country == 'Canada'">{{ current_query }}</textarea>
+
+    <script>
+        // Required by Workbench to know query params and for which Task
+        function getToolParams() {
+            const q = encodeURIComponent(document.getElementById('query-editor').value);
+            return `query=${q}&report_type=table`;
+        }
+
+        function getTaskConfigUrl() {
+            const q = encodeURIComponent(document.getElementById('query-editor').value);
+            return `/sessions/{{ session.id }}/tasks/filter.query/configure?source={{ artifact.id }}&query_string=${q}`;
+        }
+
+        // Could be put in a shared JS later for use in multiple Tools
+        function addSticker() {
+            const k = document.getElementById('key-picker').value;
+            const o = document.getElementById('op-picker').value;
+            const v = document.getElementById('value-input').value.trim();
+            const ed = document.getElementById('query-editor');
+
+            if (!k) return;
+
+            const isNullOp = o.includes('na()');
+            if (!isNullOp && !v) return;
+
+            let fragment = "";
+            if (isNullOp) {
+                fragment = `${k}${o}`;
+            } else if (o.includes("contains")) {
+                // Handle: key.str.contains('') and place cursor between quotes
+                fragment = `${k}.str.contains("${v}")`;
+            } else {
+                // Clean values
+                let formattedValue = v;
+                if (isNaN(v)) {
+                    formattedValue = `"${v.replace(/"/g, '\\"')}"`;
+                }
+                fragment = `${k}${o}${formattedValue}`;
+            }
+            // Smart logic: if there is already text, add an 'and ' prefix
+            let prefix = (ed.value.trim().length > 0) ? " and " : "";
+
+            ed.value += `${prefix}${fragment}`;
+            document.getElementById('value-input').value = ""; // reset value input
+            ed.focus();
+        }
+
+        function injectQuery(q) {
+            const ed = document.getElementById('query-editor');
+            let prefix = (ed.value.trim().length > 0) ? " and " : "";
+            ed.value += `${prefix}${q}`;
+            refreshPreview(); // Auto-update on quick filter click
+        }
+        
+    </script>
+{% endblock %}

@@ -1,0 +1,49 @@
+{# Live-updated list of Tasks #}
+{% import "macros/ui.html" as ui %}
+
+<table>
+    <thead>
+        <tr><th>Task</th><th>Type</th><th>Status</th><th>Modified</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for t in tasks %}
+        <tr data-task-status="{{ t.status }}">
+            <td>
+                <a href="/sessions/{{ session.id }}/tasks/{{ t.id }}" class="code">
+                    {{ t.name }}
+                </a>
+            </td>
+            <td>
+                {{ t.registry_key }}
+            </td>
+            <td>
+                {{ ui.status_badge(t.status) }}
+            </td>
+            <td>
+                {{ t.modified_at.strftime("%Y-%m-%d %H:%M:%S") }}
+            </td>
+            <td>
+                <div class="dropdown">
+                    <button class="btn-kebab" data-bs-toggle="dropdown">⋮</button>
+                    <div class="dropdown-menu right">
+                        {% if t.status == 'PENDING' or t.status == 'DRAFT' %}
+                            {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ t.id ~ "/run", "Run", "▶") }}
+                            <hr />
+                        {% endif %}
+
+                        {{ ui.rename_item("/sessions/" ~ session.id ~ "/tasks/" ~ t.id ~ "/update", "task_name", t.name) }}
+                        {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ t.id ~ "/clone", "Clone", "⟳") }}
+                        
+                        <hr />
+                        {{ ui.delete_item("/sessions/" ~ session.id ~ "/tasks/" ~ t.id ~ "/delete") }}
+                    </div>
+                </div>
+            </td>
+        </tr>
+        {% else %}
+        <td class="muted center" colspan="5">
+            <p>No Tasks yet! Add a Task to get started.</p>
+        </td>
+        {% endfor %}
+    </tbody>
+</table>

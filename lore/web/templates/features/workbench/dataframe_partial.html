@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="/static/css/main.css"> <style>
+        /* Pandas Table Styling Override */
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden; /* Prevent the main page from scrolling */
+        }
+        .pandas-table {
+            width: 100%;
+            border-collapse: separate;
+            font-size: 0.85rem;
+            font-family: var(--font-mono);
+        }
+        .pandas-table tr {
+            background-color: var(--bg-body);
+            border-bottom: 2px solid var(--border);
+            text-align: left;
+        }
+        .pandas-table thead th {
+            position: sticky;
+            top: 0;
+            background-color: var(--bg-card);
+            z-index: 10;
+            box-shadow: var(--shadow-md);
+            padding: 8px 12px;
+            font-weight: 600;
+            color: #374151;
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+        }
+        .pandas-table th:hover {
+            background-color: var(--secondary-hover);
+        }
+        .pandas-table th.asc::after { content: " ↑"; opacity: 1; }
+        .pandas-table th.desc::after { content: " ↓"; opacity: 1; }
+        .pandas-table td {
+            padding: 6px 12px;
+            border-bottom: 1px solid var(--border);
+            color: #4b5563;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pandas-table tbody tr:hover {
+            background-color: var(--bg-subtle);
+        }
+    </style>
+</head>
+<body>
+    <div class="table-container" style="margin: 0;">
+        {{ table_html | safe }}
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const table = document.querySelector('.pandas-table');
+            // Safety check: if table doesn't exist (empty data), stop.
+            if (!table) return;
+            const headers = table.querySelectorAll('th');
+            const tbody = table.querySelector('tbody');
+            
+            // 1. Sorting functionality
+            headers.forEach((header, index) => {
+                header.addEventListener('click', () => {
+                    sortTable(table, index, header);
+                });
+            });
+
+            function sortTable(table, colIndex, header) {
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const isAsc = !header.classList.contains('asc');
+                
+                // Reset other headers
+                headers.forEach(h => h.classList.remove('asc', 'desc'));
+                header.classList.toggle('asc', isAsc);
+                header.classList.toggle('desc', !isAsc);
+
+                // Sort rows
+                rows.sort((rowA, rowB) => {
+                    const cellA = rowA.cells[colIndex].innerText.trim();
+                    const cellB = rowB.cells[colIndex].innerText.trim();
+                    
+                    // Numeric Sort Check
+                    const numA = parseFloat(cellA);
+                    const numB = parseFloat(cellB);
+                    
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        return isAsc ? numA - numB : numB - numA;
+                    }
+                    // String Sort
+                    return isAsc ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+                });
+
+                // Re-append sorted rows
+                tbody.append(...rows);
+            }
+        });
+
+        // Tell the parent window how many rows we have
+        window.parent.postMessage({
+            type: 'updateCount',
+            count: {{ total_rows }}
+        }, '*');
+    </script>
+</body>
+</html>

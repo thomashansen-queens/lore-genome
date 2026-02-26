@@ -1,0 +1,86 @@
+{# Inherits /layouts/base.html via /features/sessions/layout.html #}
+{% extends "/features/sessions/layout.html" %}
+{% import "/macros/ui.html" as ui %}
+
+{% block workspace %}
+
+{# === Session title and name updater === #}
+{{ ui.editable_header(session.name, "/sessions/" ~ session.id ~ "/update") }}
+
+{# === Manifest: Tasks === #}
+<div class="row" style="position: relative;">
+    <div class="dropdown">
+        <button class="btn primary">
+            ＋ New Task
+        </button>
+        <div class="dropdown-menu left">
+            {% for key, task in task_registry.items() %}
+                <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}"
+                   title="{{ task.__doc__|striptags|truncate(100) }}">
+                    {{ task.icon }} {{ task.name }}
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+    <div style="position: absolute; left: 50%; transform: translateX(-50%); margin: 0;">
+        <h4>Recent Tasks</h4>
+    </div>
+</div>
+
+<div id="task-list-container">
+    {# Initial load #}
+    {% include "/partials/task_list.html" %}
+</div>
+
+{# === Manifest: Artifacts === #}
+<div class="row" style="position: relative;">
+    <form method="get" action="/sessions/{{ session.id }}/artifacts/upload">
+        <button class="btn primary" type="submit" title="Upload artifact">
+            🠩 Upload Artifact
+        </button>
+    </form>
+    <div class="row" style="position: absolute; left: 50%; transform: translateX(-50%); margin: 0;">
+        <h4>Artifacts</h4>
+    </div>
+</div>
+
+<div id="artifact-list-container">
+    {# Initial load #}
+    {% include "/partials/artifact_list.html" %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function hasActiveTasks() {
+        return document.querySelector('[data-task-status="RUNNING"]');
+    }
+
+    function pollTaskStatus() {
+        if (!hasActiveTasks()) {
+            return;
+        }
+        fetch('/sessions/{{ session.id }}/tasks/poll')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('task-list-container').innerHTML = html;
+            });
+    }
+
+    function pollArtifacts() {
+        if (!hasActiveTasks()) {
+            return;
+        }
+        fetch('/sessions/{{ session.id }}/artifacts/poll')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('artifact-list-container').innerHTML = html;
+            });
+    }
+
+    // Check every 2 seconds while tasks are running/pending
+    setInterval(pollTaskStatus, 2000);
+    setInterval(pollArtifacts, 2000);
+</script>
+{% endblock %}

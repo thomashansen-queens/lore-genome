@@ -1,0 +1,96 @@
+{% extends "/base.html" %}
+
+{% block content %}
+<style>
+    /* Global Workbench Styles */
+    .workbench-chassis { display: flex; flex-direction: column; gap: 1rem; height: 100%; }
+    
+    .card-tool {
+        background: var(--bg-body); 
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+    }
+
+    .preview-frame { 
+        border: 2px solid var(--border); 
+        border-radius: var(--radius-md); 
+        width: 100%; 
+        height: 600px; /* Fixed to allow sticky header */
+        background: var(--bg-body);
+    }
+
+    /* Shared Components */
+    .sticker-bar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+    .code-editor { font-family: var(--font-mono); background: #1a1a1a; color: #00ff41; padding: 10px; border-radius: var(--radius-sm); border: 1px solid #333; }
+    
+    /* Quick filter/macro tags */
+    .quick-filter-tag {
+        cursor: pointer;
+        background: var(--bg-subtle);
+        border: 1px solid var(--border);
+        padding: 2px 8px;
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        transition: all 0.2s;
+    }
+    .quick-filter-tag:hover { background: var(--secondary-hover); }
+</style>
+
+<div class="workbench-chassis container">
+    <div class="card-tool">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+                <h3 style="margin: 0;">{{ tool_name|title }} Workbench</h3>
+                <p class="text-muted" style="margin: 0; font-size: 0.9rem;">
+                    Artifact: <strong>{{ artifact.name }}</strong>
+                </p>
+            </div>
+            <div id="workbench-status" class="badge" style="background: var(--bg-subtle); color: var(--text-main); border: 1px solid var(--border); padding: 0.5rem 1rem;">
+                Ready
+            </div>
+        </div>
+        
+        {# === TOOL SPECIFIC CONTROLS INJECTED HERE === #}
+        {% block tool_controls %}{% endblock %}
+
+        <hr style="border-top: 1px solid var(--border); margin: 1.5rem 0;">
+
+        <div class="workbench-actions" style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button class="btn btn-primary" onclick="refreshPreview()">
+                🔍 Update Preview
+            </button>
+            <button class="btn btn-success" onclick="commitToTask()">
+                🚀 Commit to Task
+            </button>
+        </div>
+    </div>
+
+    <iframe id="preview-frame" class="preview-frame" src="{{ initial_preview_url }}"></iframe>
+</div>
+
+<script>
+    // 1. The Message Bridge (Iframe -> Layout)
+    window.addEventListener('message', function(e) {
+        if (e.data.type === 'updateCount') {
+            document.getElementById('workbench-status').innerText = `Matches: ${e.data.count}`;
+        }
+    });
+
+    // 2. The Contract: Tools MUST implement getToolParams() and getTaskConfigUrl()
+    function refreshPreview() {
+        const frame = document.getElementById('preview-frame');
+        const params = getToolParams(); // Implemented by the child template
+        // We use the base URL from the server context to ensure path correctness
+        const baseUrl = "{{ initial_preview_url }}"; 
+        // Append params (handling the ? or & logic)
+        const separator = baseUrl.includes('?') ? '&' : '?';
+        frame.src = `${baseUrl}${separator}${params}`;
+    }
+
+    function commitToTask() {
+        const url = getTaskConfigUrl(); // Implemented by the child Tool template
+        if (url) window.location.href = url;
+    }
+</script>
+{% endblock %}

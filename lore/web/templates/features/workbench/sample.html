@@ -1,0 +1,38 @@
+{% extends "/features/workbench/layout.html" %}
+
+{% block tool_controls %}
+    <p class="text-muted">Preview sampling before committing to Task</p>
+
+    <div class="sticker-bar" style="background: var(--bg-subtle); padding: 1rem; border-radius: 8px;">
+        <span style="font-weight: 600;">Strategy:</span>
+        
+        <span>Sample</span>
+        <input type="number" id="sample-size" class="form-control" value="5" min="1" style="width: 80px;">
+        
+        <span>records per</span>
+        <select id="group-by" class="form-control" style="width: auto;">
+            {% for key in suggested_keys %}
+                <option value="{{ key }}" {% if key == 'collection_country' %}selected{% endif %}>{{ key }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="alert alert-info" style="font-size: 0.85rem; margin-top: 1rem;">
+        🛈 The preview below shows the <strong>Frequency Distribution</strong>. It counts how many records exist for each group vs. how many will be sampled.
+    </div>
+
+    <script>
+        function getToolParams() {
+            const groupBy = document.getElementById('group-by').value;
+            // We tell the engine we want a SUMMARY report, not a table
+            return `report_type=sample_summary&group_by=${groupBy}`;
+        }
+
+        function getTaskConfigUrl() {
+            const groupBy = document.getElementById('group-by').value;
+            const size = document.getElementById('sample-size').value;
+            // Redirect to the Stratified Sampling task config
+            return `/sessions/{{ session.id }}/tasks/sample.stratified/configure?source={{ artifact.id }}&group_by=${groupBy}&sample_size=${size}`;
+        }
+    </script>
+{% endblock %}

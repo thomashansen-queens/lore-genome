@@ -1,0 +1,22 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+    <h1>Welcome to LoRē Genome</h1>
+    {# === Hero section === #}
+    <div class="column">
+        <strong>What is this?</strong><br>
+        This is the browser-based interface for LoRē. The program is being run on your
+        local machine, not a remote server.
+        <strong>What is LoRē?</strong><br>
+        LoRē Genome is a user-friendly workbench for comparitive genome analysis. It is
+        designed with a focus on ease of use, interactivity, and reproducibility. Work
+        in self-contained sessions, where you can upload data, run analyses, and track
+        everything in one place. When you're done, you can export your session. A 
+        detailed manifest is kept for you, so you can always see exactly what you did 
+        and reproduce it later.
+    </div>
+    <hr />
+    <div class ="center">
+        <a href="/sessions" class="btn primary center">View sessions</a>
+    </div>
+{% endblock %}

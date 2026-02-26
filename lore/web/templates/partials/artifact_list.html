@@ -1,0 +1,55 @@
+{# Live-updated list of Artifacts #}
+{% import "macros/ui.html" as ui %}
+
+<table>
+    <thead>
+        <tr><th>Name</th><th>Data type</th><th>Size</th><th>Created at</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for a in artifacts %}
+        <tr>
+            <td>
+                <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}" 
+                    class="code">
+                    {{ a.name or a.path.split('/')[-1] }}
+                </a>
+            </td>
+            <td>{{ a.data_type }}</td>
+            <td>{{ a.display_size }}</td>
+            <td>{{ a.created_at.astimezone().strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>
+
+                {# === Artifact actions dropdown === #}
+                <div class="dropdown">
+                    <button class="btn-kebab">▾</button>
+                    <div class="dropdown-menu right up">
+
+                        {# Section 1: Pipeline ("push") #}
+                        <div class="muted smcaps">NEW TASK</div>
+                        {% for key, task in push_task_targets.get(a.id, []) %}
+                            <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}?source_artifact_ids={{ a.id }}">
+                                {{ task.icon }} {{ task.name }}
+                            </a>
+                        {% endfor %}
+                        {% if not push_task_targets.get(a.id, []) %}
+                            <div class="muted small">No compatible tasks</div>
+                        {% endif %}
+                        <hr />
+
+                        {# Section 2: Standard actions #}
+                        <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
+                        {{ ui.rename_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
+                        <hr />
+                        {{ ui.delete_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/delete") }}
+
+                    </div>
+                </div>
+            </td>
+        </tr>
+    {% else %}
+        <td class="muted center" colspan="5">
+            <p>No Artifacts yet.</p>
+        </td>
+    {% endfor %}
+    </tbody>
+</table>

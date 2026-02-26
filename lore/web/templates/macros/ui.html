@@ -1,0 +1,102 @@
+{# === Status Badge === #}
+{% macro status_badge(status) %}
+    {% if status == 'COMPLETED' %}
+        <span class="badge success">● Done</span>
+    {% elif status == 'FAILED' %}
+        <span class="badge danger">⊗ Failed</span>
+    {% elif status == 'RUNNING' %}
+        <span class="badge info pulsing">◐ Running</span>
+    {% elif status == 'PENDING' %}
+        <span class="badge">○ Pending</span>
+    {% elif status == 'DRAFT' %}
+        <span class="badge muted">• Draft</span>
+    {% else %}
+        <span class="badge warning">? {{ status|title }}</span>
+    {% endif %}
+{% endmacro %}
+{# {% macro status_badge(status) %}
+<span class="badge {{ 'bg-success' if status == 'COMPLETED' 
+                   else 'bg-warning text-dark' if status == 'RUNNING' or status == 'PENDING'
+                   else 'bg-danger' if status == 'FAILED'
+                   else 'bg-secondary' }}">
+    {{ status }}
+</span>
+{% endmacro %} #}
+
+{# === Universal object renamer === #}
+{% macro editable_header(value, update_url, subtitle=None, input_name='name') %}
+<div>
+    <form action="{{ update_url }}" method="POST" style="margin: 0;">
+        <input type="hidden" name="action" value="RENAME">
+        <input type="text"
+                name="{{ input_name }}"
+                value="{{ value }}"
+                data-original="{{ value }}"
+                style="border: none; font-weight: 600;"
+                onfocus="this.dataset.original = this.value"
+                onblur="if(this.dataset.original !== this.value) this.form.submit()"
+                onkeypress="if(event.key === 'Enter') this.blur()"
+                title="Click to rename">
+    </form>
+    {% if subtitle %}
+    <div class="muted">
+        {{ subtitle | safe }}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# === Action button === #}
+{% macro action_button(url, label, icon=None, btn_class="dropdown-item", method="POST") %}
+<form action="{{ url }}" method="{{ method }}" style="margin:0;">
+    <button type="submit" class="{{ btn_class }}">
+        {% if icon %}{{ icon }} {% endif %}{{ label }}
+    </button>
+</form>
+{% endmacro %}
+
+
+{# === Universal action bar === #}
+{# Usage: call with caller() to inject the buttons. It handles the container and the delete button. #}
+{% macro action_bar(delete_url=None) %}
+<div class="row" style="margin-bottom: var(--spacing-sm);">
+    
+    {# The specific buttons (Download, New Task, etc) go here #}
+    {{ caller() }}
+
+    {# The Spacer pushes the Delete button to the far right #}
+    <div style="margin-left: auto;">
+        {% if delete_url %}
+            {% from "macros/ui.html" import delete_item %}
+            {{ delete_item(delete_url, "btn danger") }}
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+{# === Rename Action (The Prompt Logic) === #}
+{% macro rename_item(action_url, input_name, current_value) %}
+<form action="{{ action_url }}" method="POST" style="display: block;">
+    <input type="hidden" name="{{ input_name }}" value="{{ current_value }}">
+    <button type="submit" class="menu-action-btn" onclick="
+        const newName = prompt('Rename to:', this.form.{{ input_name }}.value);
+        if (newName && newName.trim() !== '') {
+            this.form.{{ input_name }}.value = newName;
+            return true;
+        }
+        return false;
+    ">✎ Rename</button>
+</form>
+{% endmacro %}
+
+{# === Delete Action === #}
+{# Default to 'danger' for simplicity in dropdowns #}
+{% macro delete_item(action_url, css_class="danger") %}
+<form action="{{ action_url }}" method="POST"
+      onsubmit="return confirm('Are you sure? This cannot be undone!');">
+    <button type="submit" class="{{ css_class }}">
+        🗑 Delete
+    </button>
+</form>
+{% endmacro %}

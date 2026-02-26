@@ -1,0 +1,86 @@
+{# === Manager for sessions in data_root. Each session is a directory with metadata and artifacts === #}
+{% extends "/layouts/base.html" %}
+{% import "/macros/ui.html" as ui %}
+
+{% block content %}
+
+<div class="row" style="position: relative;">
+    <form method="post" action="/sessions/new">
+        <button class="btn primary" type="submit">＋ New session</button>
+    </form>
+    <div style="position: absolute; left: 50%; transform: translateX(-50%); margin: 0;">
+        <h4>Sessions</h4>
+    </div>
+</div>
+
+{# === Table of sessions to manage. Currently, the only action is "delete". === #}
+<div class="row"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Session</th>
+                <th>ID</th>
+                <th>Created</th>
+                <th>Size</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in sessions %}
+            <tr>
+                <td>
+                    <a href="/sessions/{{ s.id }}">
+                        <code>{{ s.name }}</code>
+                    </a>
+                </td>
+                <td>
+                    {{ s.id[:8] }}
+                </td>
+                <td class="text-muted">
+                    {{ s.created_at.strftime("%Y-%m-%d") }}
+                    <span class="text-muted">{{ s.created_at.strftime("%H:%M:%S") }}</span>
+                </td>
+                <td>
+                    {{ s.display_size }}
+                </td>
+                <td>
+                    {# === Kebab menu === #}
+                    <div class="dropdown">
+                        <button class="btn-kebab">
+                            ⋮
+                        </button>
+                        <div class="dropdown-menu right">
+                            <a href="/sessions/{{ s.id }}">
+                                🗁 Open
+                            </a>
+                        
+                            {{ ui.rename_item("/sessions/" ~ s.id ~ "/update", "name", s.name) }}
+
+                            <form action="/sessions/{{ s.id }}/clone" method="POST">
+                                <button type="submit">⟳ Clone</button>
+                            </form>
+
+                            <hr />
+
+                            {{ ui.delete_item("/sessions/" ~ s.id ~ "/delete") }}
+                        
+                        </div>
+                    </div>
+                
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="4" class="text-muted text-center">No sessions yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row">
+    <div class="muted">
+        <p>
+            LoRē sessions are stored on your computer as directories in <span class="mono">{{ runtime.sessions_dir }}</span>
+        </p>
+    </div>
+</div>
+{% endblock %}

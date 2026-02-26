@@ -1,0 +1,101 @@
+{# === Container for main LoRē Genome Web UI === #}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}LoRē Genome{% endblock %}</title>
+
+    {# One global CSS file for LoRe UI #}
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}" />
+
+    {# Self-contained Favicon #}
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>">
+
+    {% block head_css %}{% endblock %}
+</head>
+
+<body>
+    {# === App header (global) === #}
+    <header class="app-header">
+        <div class="container row">
+            <a href="/" class="logo">
+                {# FUTURE: A logo #}
+                <h3 style="margin:0;">
+                    LoRē Genome
+                </h3>
+            </a>
+            <div class="header-control push-right">
+                {# Global control (settings, user) go here #}
+                <a href="/settings" class="btn secondary">
+                    💻︎ Settings
+                </a>
+                <a href="/help" class="btn secondary">
+                    ❓︎ Help
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {# === Breadcrumbs navigation === #}
+        {% if breadcrumbs %}
+        <nav class="breadcrumbs">
+            {% for label, href in breadcrumbs %}
+                {% if href %}
+                <a href="{{ href }}">{{ label }}</a>
+                <span class="breadcrumb-sep">/</span>
+                {% else %}
+                <span class="breadcrumb-current">{{ label }}</span>
+                {% endif %}
+            {% endfor %}
+        </nav>
+        {% endif %}
+
+        {# === Flash messages (feedback) === #}
+        {% if messages %}
+        <div>
+            {% for category, msg in messages %}
+                <div class="flash-message {{ category }}">
+                    {{ msg }}
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# === Main page content === #}
+        <div id="main-content">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    {# === App footer (global) === #}
+    <footer class="app-footer">
+        <div class="container push-right">
+            <p class="text-muted">
+                LoRē Genome v{{ version }} | 
+                <a href="https://github.com/thomashansen-queens/lore-genome">Cite</a>
+            </p>
+        </div>
+    </footer>
+
+    {# === Global Scripts === #}
+    <script>
+        // Minimal Dropdown Logic (Global)
+        document.addEventListener('focusin', e => {
+            const d = e.target.closest('.dropdown');
+            if(d) {
+                const m = d.querySelector('.dropdown-menu');
+                if(m && (window.innerHeight - m.getBoundingClientRect().bottom) < 0) 
+                    m.classList.add('dropdown-up');
+                else 
+                    m.classList.remove('dropdown-up');
+            }
+        });
+    </script>
+
+    {# === Feature Scripts === #}
+    {% block scripts %}{% endblock %}
+
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% extends "shared/templates/base.html" %}
+{% block content %}
+  <h3>New Stage for Run {{ run.run_name }}</h3>
+  <hr/>
+
+  {# === Stage builder options === #}
+  <form method="post" action="/runs/{{ run.run_id }}/stages/new/fetch_genomes">
+    <button type="submit" name="stage_type" value="fetch_genomes">
+      ➕ Add: Fetch genomes
+    </button>
+  </form>
+{% endblock %}

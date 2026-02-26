@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+
+{% block content %}
+<div class="container">
+
+    {# 1. Universal header #}
+    {% set subtitle %}
+        <div class="grid-2">
+            <div><strong>Artifact path:</strong> <code>{{ artifact.path }}</code></div>
+            <div><strong>Artifact ID:</strong> <code>{{ artifact.id }}</code></div>
+        </div>
+    {% endset %}
+
+    {{ ui.editable_header(
+        value=artifact.name,
+        update_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/rename',
+        subtitle=subtitle,
+        input_name='artifact_name'
+    ) }}
+    
+    {# 2. Universal action bar #}
+    {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
+        
+        {# --- Artifact specific actions --- #}
+        <div class="dropdown">
+            <button class="btn btn-primary">New Task ▾</button>
+            <div class="dropdown-menu">
+                {% for key, task in task_registry.items() %}
+                    <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}?source_artifact_ids={{ artifact.id }}">
+                        {{ task.icon }} {{ task.name }}
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download" class="btn btn-secondary">
+            ⬇ Download
+        </a>
+
+        {# Context-Specific Actions (Injected by Child) #}
+        {% block extra_actions %}{% endblock %}
+    
+    {% endcall %}
+
+    {# 3. Content #}
+    <div class="artifact-content">
+        {% block artifact_content %}{% endblock %}
+    </div>
+</div>
+
+{% endblock %}

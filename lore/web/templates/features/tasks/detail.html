@@ -1,0 +1,151 @@
+{% extends "features/sessions/layout.html" %}
+{% import "macros/ui.html" as ui %}
+
+{% block content %}
+<div id="task-detail-container" data-current-status="{{ task.status }}">
+
+    {# === Header === #}
+    <div style="margin-bottom: 1rem;">    
+        {{ ui.editable_header(
+            task.name,
+            '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/edit',
+            subtitle=None,
+            input_name='name') }}
+
+        {# === Task status and metadata === #}
+        <div class="row">
+            {{ ui.status_badge(task.status) }}
+            <div class="muted mono small">
+                ID: {{ task.id }} | Type: {{ task.registry_key }}
+            </div>
+        </div>
+
+        {# === Task actions === #}
+        {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
+            {% if task.status in ['PENDING', 'DRAFT', 'FAILED'] %}
+                <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
+                    class="btn secondary">
+                    ✎ Edit
+                </a>
+                <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
+                    <button type="submit" class="btn primary">
+                        ▶ {{ 'Retry' if task.status == 'FAILED' else 'Run' }}
+                    </button>
+                </form>
+            {% endif %}
+            <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/clone" method="POST">
+                <button type="submit" class="btn primary">
+                    ⟳ Clone
+                </button>
+            </form>
+        {% endcall %}
+    </div>
+
+    {# === ERROR BANNER (Highly Visible) === #}
+    {% if task.error %}
+    <div class="card danger border-left" style="border-color: var(--danger-border)">
+        <h5>⚠ Execution failed</h5>
+        <pre style="white-space: pre-wrap; font-size: 0.85rem;">{{ task.error }}</pre>
+    </div>
+    {% endif %}
+
+    <div class="row" style="align-items: stretch;">
+        {# === Configuration (left column) === #}
+        <div class="card fill">
+            <h3>Configuration inputs</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Inputs</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key, value in task.inputs.items() %}
+                    <tr>
+                        <td>{{ key }}</td>
+                        <td>
+                            {% if value is iterable and value is not string %}
+                                <code>{{ value | join(', ') }}</code>
+                            {% else %}
+                                <code>{{ value }}</code>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                        <tr><td colspan="2" class="muted">No inputs configured.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# === Outputs (right column) === #}
+        <div class="card fill">
+            <h3>Outputs</h3>
+
+            {% for key, output in outputs.items() %}
+                <div>
+                    <strong>{{ key }}</strong>
+                    {% if output.is_artifact == True %}
+                        <a href="/sessions/{{ session.id }}/artifacts/{{ output.value.id }}"
+                            class="card card-clickable">
+                            <div>{{ output.value.name }}</div>
+                            <div class="muted">{{ output.value.data_type }} &bull; {{ output.value.display_size }}</div>
+                        </a>
+                    {% else %}
+                        <div class="card">{{ output.value }}</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+
+            {% if not outputs and task.status == 'COMPLETED' %}
+                <div class="warning">No outputs produced!</div>
+            {% elif not outputs %}
+                <div class="muted">Outputs will appear here when the task completes.</div>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function hasActiveTasks() {
+        const container = document.getElementById('task-detail-container');
+        if (!container) return false;
+        
+        const status = container.dataset.currentStatus;
+        return status === 'RUNNING';
+    }
+
+    function pollTaskStatus() {
+        if (!hasActiveTasks()) {
+            return;
+        }
+        // Re-fetch current window
+        fetch(window.location.href)
+            .then(response => response.text())
+            .then(html => {
+                // Parse the response into a virtual DOM
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Pluck out the updated container
+                const newContainer = doc.getElementById('task-detail-container');
+                const oldContainer = document.getElementById('task-detail-container');
+                
+                if (newContainer && oldContainer) {
+                    // Surgical DOM swap
+                    oldContainer.innerHTML = newContainer.innerHTML;
+                    oldContainer.dataset.currentStatus = newContainer.dataset.currentStatus;
+                }
+            })
+            .catch(err => console.error("Polling failed:", err));
+    }
+
+    // Check every 2 seconds while tasks are running/pending
+    setInterval(pollTaskStatus, 2000);
+</script>
+{% endblock %}

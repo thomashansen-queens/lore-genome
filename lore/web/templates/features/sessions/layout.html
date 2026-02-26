@@ -1,0 +1,14 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="session-wrapper">
+    <aside class="session-sidebar">
+        {# ... session sidebar navigation ... #}
+    </aside>
+    
+    <div class="session-content">
+        {# This defines a NEW block that children will fill #}
+        {% block workspace %}{% endblock %}
+    </div>
+</div>
+{% endblock %}

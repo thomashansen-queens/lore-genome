@@ -1,0 +1,49 @@
+{% extends "/layouts/base.html" %}
+{% import "/macros/ui.html" as ui %}
+{% import "/macros/forms.html" as forms %}
+
+{% block content %}
+
+<div class="card">
+    {% if is_new %}
+        <form action="/sessions/{{ session.id }}/tasks/new/{{ task_def.key }}" method="POST">
+    {% else %}
+        <form action="/sessions/{{ session.id }}/tasks/{{ edit_task_id }}/edit" method="POST">
+    {% endif %}
+
+    <h4>{{ task_def.icon }}</h4>
+    <input type="text" name="task_name"
+            value="{{ task_def.name }}"
+            style="border: none; font-weight: 600;"
+            title="Click to rename">
+    <p>{{ task_def.description }}</p>
+    <hr />
+
+        {% for field_name, field_info in task_def.input_model.model_fields.items() %}
+            {% set prefill_val = prefill_inputs.get(field_name) %}
+            {% set field_candidates = artifact_candidates.get(field_name, []) %}
+            {{ forms.render_field(field_name, field_info, prefill_val, candidates=field_candidates) }}
+        {% endfor %}
+        
+        <div class="row">
+
+            <button type="submit" name="action" value="SAVE" class="btn secondary">
+                🗒 Save draft
+            </button>
+            
+            <button type="submit" name="action" value="RUN" class="btn primary">
+                ▶ Save & Run
+            </button>
+            
+            <span class="push-right">
+                <a href="/sessions/{{ session.id }}" class="btn danger" style="border: 1px solid;">
+                    ✕ Cancel
+                </a>
+            </span>
+
+        </div>
+    </form>
+
+</div>
+
+{% endblock %}

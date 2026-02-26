@@ -1,0 +1,57 @@
+{% extends "/base.html" %}
+
+{% block content %}
+<div class="space-y-6">
+    
+    <div class="border-b border-gray-200 pb-4">
+        <h1 class="text-2xl font-bold text-gray-900">Task Library</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            Registered tasks available to the LoRē engine.
+        </p>
+    </div>
+
+    <div class="grid gap-6">
+        {% for task in tasks %}
+        <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-medium text-indigo-600 font-mono">{{ task.key }}</h3>
+                </div>
+                {% if task.has_model %}
+                <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                    Typed Input
+                </span>
+                {% else %}
+                <span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-800">
+                    Untyped
+                </span>
+                {% endif %}
+            </div>
+            
+            <div class="p-6">
+                <div class="prose prose-sm text-gray-600 mb-4">
+                    {{ task.description or "No description provided." }}
+                </div>
+
+                {% if task.schema_json %}
+                <details class="group">
+                    <summary class="list-none flex items-center cursor-pointer text-sm text-indigo-600 font-medium hover:text-indigo-800">
+                        <span class="group-open:hidden">Show Input Schema &darr;</span>
+                        <span class="hidden group-open:inline">Hide Input Schema &uarr;</span>
+                    </summary>
+                    <div class="mt-4 bg-gray-900 rounded-md p-4 overflow-x-auto">
+                        <pre class="text-xs text-green-400 font-mono">{{ task.schema_json }}</pre>
+                    </div>
+                </details>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-12 text-gray-500">
+            No tasks registered. Check <code>lore/lib/</code> imports!
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "/base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="border-b border-gray-200 pb-4 mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Upload Artifact</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            Manually ingest a file into this session.
+        </p>
+    </div>
+
+    <form action="/sessions/{{ session_id }}/artifacts/upload" method="POST" enctype="multipart/form-data" class="bg-white shadow rounded-lg p-6 space-y-6">
+        
+        <div>
+            <label class="block text-sm font-medium text-gray-700">File</label>
+            <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-indigo-500 transition-colors">
+                <div class="space-y-1 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <div class="flex text-sm text-gray-600">
+                        <label for="file-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
+                            <span>Upload a file</span>
+                            <input id="file-upload" name="file" type="file" class="sr-only" required>
+                        </label>
+                        <p class="pl-1">or drag and drop</p>
+                    </div>
+                    <p class="text-xs text-gray-500" id="filename-display">Any file type up to 1GB</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+                <label for="data_type" class="block text-sm font-medium text-gray-700">Data Type</label>
+                <select id="data_type" name="data_type" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                    <option value="unknown">Unknown</option>
+                    <option value="fasta">FASTA</option>
+                    <option value="fastq">FASTQ</option>
+                    <option value="bam">BAM</option>
+                    <option value="vcf">VCF</option>
+                    <option value="gff">GFF/GTF</option>
+                    <option value="csv">CSV/TSV</option>
+                    <option value="pdf">PDF Report</option>
+                    <option value="json">JSON</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="notes" class="block text-sm font-medium text-gray-700">Notes</label>
+                <input type="text" name="notes" id="notes" class="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" placeholder="Optional description">
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <a href="/sessions/{{ session_id }}" class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none mr-3">
+                Cancel
+            </a>
+            <button type="submit" class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">
+                Upload Artifact
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    // Simple script to show selected filename
+    document.getElementById('file-upload').addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            var fileName = e.target.files[0].name;
+            document.getElementById('filename-display').textContent = "Selected: " + fileName;
+        }
+    });
+</script>
+{% endblock %}

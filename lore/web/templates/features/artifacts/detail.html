@@ -1,0 +1,116 @@
+{% extends "features/sessions/layout.html" %}
+{% import "macros/ui.html" as ui %}
+
+{% block workspace %}
+
+{# === Header === #}
+<div style="margin-bottom: 1rem;">
+    {{ ui.editable_header(
+        artifact.name, 
+        '/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/update',
+        input_name='name') 
+    }}
+
+    {# === Artifact metadata === #}
+    <div class="row muted small">
+        ID: {{ artifact.id }} | Type: {{ artifact.data_type }}
+    </div>
+
+    {# === Action bar === #}
+    {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
+        
+        {# Only show "Explore" if we have at least one adapter #}
+        {% if adapters %}
+            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/explore" class="btn primary">
+                🔍︎ Explore via {{ adapters[0].name }}
+            </a>
+        {% endif %}
+        
+        <div class="dropdown">
+            <button class="btn primary">🛠 Use in Task ▾</button>
+            <div class="dropdown-menu left">
+                {% for key, task in push_tasks %}
+                    <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}?source_artifact_ids={{ artifact.id }}">
+                        {{ task.icon }} {{ task.name }}
+                    </a>
+                {% endfor %}
+                {% if not push_tasks %}
+                    <div class="muted small">No compatible tasks</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download" class="btn secondary">
+            ⬇ Download
+        </a>
+    {% endcall %}
+</div>
+
+<div class="grid-wide">
+    {# LEFT COLUMN: Text Preview #}
+    <div class="column">
+        <div class="card">
+            <div>
+                <h3>Quick preview</h3>
+                <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/view" class="small">
+                    View full text
+                </a>
+            </div>
+            
+            <div style="background: var(--bg-subtle); overflow: hidden; max-height: 300px; position: relative; border-radius: 4px; padding: 1rem;">
+                <pre class="mono small" style="margin: 0; white-space: pre-wrap; word-break: break-all;">{{ text_preview }}</pre>
+                
+                {# Fade-out effect #}
+                {% if is_truncated %}
+                <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 80px; background: linear-gradient(to bottom, transparent, var(--bg-subtle));"></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# RIGHT COLUMN: Metadata & Lineage #}
+    <div class="column">
+        <div class="card">
+            <h3>Metadata</h3>
+            <table class="table-wrap">
+                <tr><td class="muted">Size</td><td>{{ artifact.display_size }}</td></tr>
+                <tr><td class="muted">Created</td><td>{{ artifact.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+                <tr><td class="muted">Created by</td><td>{{ artifact.created_by_task_id }}</td></tr>
+                <tr><td class="muted">Path</td><td class="font-mono text-xs">{{ artifact.path }}</td></tr>
+                <tr><td class="muted">Hash</td><td class="font-mono text-xs">{{ artifact.hash }}</td></tr>
+                <tr><td class="muted">Adapters</td><td class="font-mono text-xs">{% for adapter in adapters %}{{ adapter.name }} {% endfor %}</td></tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>Lineage</h3>
+            <table class="table-sm">
+                <tr>
+                    <td class="muted">Source Task</td>
+                    <td>
+                        {% if parent_task %}
+                            <a href="/sessions/{{ session.id }}/tasks/{{ parent_task.id }}" class="badge secondary">
+                                {{ parent_task.name or parent_task.id[:8] }}
+                            </a>
+                        {% else %}
+                            <span class="muted">Manual Upload / Ingested</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if parent_artifacts %}
+                <tr>
+                    <td class="muted">Derived From</td>
+                    <td>
+                        {% for artifact in parent_artifacts %}
+                            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="badge secondary">
+                                {{ artifact.name }}
+                            </a>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

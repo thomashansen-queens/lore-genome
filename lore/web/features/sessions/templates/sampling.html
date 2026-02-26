@@ -1,0 +1,26 @@
+<fieldset style="border:1px solid #ddd; padding:12px; border-radius:8px;">
+    <legend>Sampling{% if not config %}<span style="color:#924545;"> (not yet set)</span>{% endif %}</legend>
+    <label class="muted" for="genome_limit">Genome limit</label><br>
+    <input id="genome_limit" name="genome_limit" type="number" min="1" step="1"
+            value="{{ config.get('genome_limit', 50) }}"><br><br>
+
+    <label class="muted" for="sampling_strategy">Sampling strategy</label><br>
+    <select id="sampling_strategy" name="sampling_strategy">
+      {% set ss = sampling.get('sampling_strategy', ['default']) %}
+      <option value="default" {% if ss == ['default'] %}selected{% endif %}>default</option>
+      <option value="none" {% if ss == [] %}selected{% endif %}>none</option>
+      <option value="custom" {% if ss and ss != ['default'] %}selected{% endif %}>custom (comma list of column names below)</option>
+    </select>
+
+    <div style="margin-top:8px;">
+      <label class="muted" for="sampling_strategy_custom">Custom sampling strategy (comma-separated)</label><br>
+      <input id="sampling_strategy_custom" name="sampling_strategy_custom" type="text" style="width:100%;"
+              placeholder="e.g. organism__infraspecific_names__strain, assembly_info__sequencing_tech"
+              value="{% if ss and ss != ['default'] %}{{ ', '.join(ss) }}{% endif %}">
+      <div class="muted" style="font-size:0.9em;">
+        Only used if you pick “custom”.
+      </div>
+    </div>
+  </fieldset>
+
+  <br>

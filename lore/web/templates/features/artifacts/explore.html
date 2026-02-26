@@ -1,0 +1,46 @@
+{% extends "features/sessions/layout.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "macros/jinja_tables.html" as tables %}
+
+{% block workspace %}
+<div>
+    <div>
+        <h2>Explore data: {{ artifact.name }}</h2>
+    </div>
+        {# === Action bar === #}
+        {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
+            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="btn secondary">
+                ⬅ Overview
+            </a>
+            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download" class="btn primary">
+                ⬇ Download raw
+            </a>
+        {% endcall %}
+    </div>
+</div>
+
+{# <div class="card">
+    <h4 style="color: var(--danger);">🛠 Debug Inspector</h4>
+    <ul class="mono small">
+        <li><strong>Adapter Name:</strong> {{ adapter.name }}</li>
+        <li><strong>Adapter fields:</strong> {{ adapter.fields }}</li>
+        <li><strong>Table Data Type:</strong> {{ table_data.__class__.__name__ }}</li>
+        <li><strong>Table Data Length:</strong> {{ table_data|length }}</li>
+    </ul>
+    
+    <p class="mono small" style="max-height: 150px; overflow-y: auto; padding: 0.5rem;">
+        <strong>Raw Output Preview:</strong><br>
+        {{ table_data | default('No data passed to template', true) | string | truncate(500) }}
+    </p>
+</div> #}
+
+<div>
+    <div>
+        <small class="muted">Showing {{ table_data|length }} records resolved via {{ adapter.name }}
+        <br>Table size: {{ keys|length }} columns x {{ table_data|length }} rows{% if is_truncated %} (truncated){% endif %}</small>
+    </div>
+    <div class="table-container" style="max-height: 80vh; overflow-y: auto;">
+        {{ tables.render_adapter_table(keys, table_data) }}
+    </div>
+</div>
+{% endblock %}

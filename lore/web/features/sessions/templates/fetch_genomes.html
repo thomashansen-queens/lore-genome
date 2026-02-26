@@ -1,0 +1,101 @@
+{# === Configure the fetch_genomes_by_taxon API for NCBI Datasets === #}
+{% extends "shared/templates/base.html" %}
+{% block content %}
+
+<h3>Configure genome fetching</h3>
+
+{% set config = stage.config or {} %}
+
+{# === Knobs for genome fetching === #}
+<form method=post action="/runs/{{ run.run_id }}/stages/{{ stage_type }}/config">
+  <fieldset style="border:1px solid #ddd; padding:12px; border-radius:8px;">
+    <legend>
+      NCBI / Datasets API
+      {% if not config %}<span style="color:#924545;"> (not yet set)</span>{% endif %}
+    </legend>
+    <label class="muted" for="taxons">Taxons (comma-separated)</label><br>
+    <input id="taxons" name="taxons" type="text" style="width:100%;"
+            placeholder="e.g. Pseudomonas borealis, Vibrio, Escherichia coli"
+            value="{{ config.get('taxons', []) | join(', ') }}">
+    <br><br>
+
+    <label class="muted" for="search_terms">Search terms (comma-separated)</label><br>
+    <input id="search_terms" name="search_terms" type="text" style="width:100%;"
+            placeholder="e.g. Oxford Nanopore, PacBio"
+            value="{{ (config.get('search_terms') or []) | map('first') | join(', ') }}">
+    <div class="muted" style="font-size:0.9em;">
+      Current behavior: each term becomes its own single-term set.
+    </div>
+    <br><br>
+
+    <label class="muted">Assembly level</label><br>
+    {# If none selected, backend should apply defaults; we just show a default UI selection #}
+    {% set levels = config.get('assembly_level') or ['complete_genome'] %}
+
+    <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:4px; margin-top:4px; margin-bottom:8px;">
+      <label>
+        <input type="checkbox" name="assembly_level" value="complete_genome"
+              {% if 'complete_genome' in levels %}checked{% endif %}>
+        complete_genome
+      </label>
+      <label>
+        <input type="checkbox" name="assembly_level" value="chromosome"
+              {% if 'chromosome' in levels %}checked{% endif %}>
+        chromosome
+      </label>
+      <label>
+        <input type="checkbox" name="assembly_level" value="scaffold"
+              {% if 'scaffold' in levels %}checked{% endif %}>
+        scaffold
+      </label>
+      <label>
+        <input type="checkbox" name="assembly_level" value="contig"
+              {% if 'contig' in levels %}checked{% endif %}>
+        contig
+      </label>
+    </div>
+
+    <label class="muted">Search stage</label><br>
+    <label>
+      <input type="radio" name="search_stage" value="api"
+              {% if config.get('search_stage','api') == 'api' %}checked{% endif %}>
+      API (Datasets)
+    </label>
+    &nbsp;&nbsp;
+    <label>
+      <input type="radio" name="search_stage" value="post"
+              {% if config.get('search_stage','api') == 'post' %}checked{% endif %}>
+      Fetch all and filter locally
+    </label>
+    <br><br>
+    
+    <label class="muted">Database options</label><br>
+    {# Hidden default so unchecked submits as 0 #}
+    <input type="hidden" name="refseq_only" value="0">
+    <label>
+      <input type="checkbox" name="refseq_only" value="1"
+              {% if config.get('refseq_only') %}checked{% endif %}>
+      RefSeq only
+    </label>
+
+  </fieldset>
+
+  <br>
+
+  {# === Optional: Dev text area configuration === #}
+  {% if dev_mode %}
+  <fieldset style="border:1px dashed #bbb; padding:12px; border-radius:8px;">
+    <legend>Dev override</legend>
+    <textarea name="config_text" style="width:100%; height:220px; font-family:monospace;">{{ config }}</textarea>
+  </fieldset>
+  <br>
+  {% endif %}
+
+  {# === Buttons === #}
+  <div class="row">
+    <button type="submit">Save</button>
+    <button type="reset">Defaults</button>
+    <a class="muted" href="/runs/{{ run.run_id}}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

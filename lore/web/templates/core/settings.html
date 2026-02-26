@@ -1,0 +1,64 @@
+{% extends "/layouts/base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <h3>Settings</h3>
+    </div>
+    <div>
+        <p>Manage your  LoRē Genome settings here.</p>
+    </div>
+    <div class="card">
+        <form method="post" action="/settings">
+            <fieldset class="form-fieldset">
+                <legend>Global settings</legend>
+
+                <label for="data_root">Data root</label>
+                <input type="text"
+                       id="data_root"
+                       name="data_root"
+                       value="{{ settings.data_root or '' }}"
+                       placeholder="{{ active_root }}"
+                       style="width: 400px;">
+                <div class="help-text muted small">All data will be stored in this directory. Each 'Session' exists here as a subdirectory.</div>
+
+                <br>
+                <label for="mmseqs_path">MMSeqs2 path</label>
+                <input type="text"
+                       id="mmseqs_path"
+                       name="mmseqs_path"
+                       value="{{ settings.mmseqs_path or '' }}"
+                       placeholder="Default: mmseqs (assumes it's in PATH)"
+                       style="width: 400px;">
+                <div class="help-text muted small">Path to the mmseqs executable. If not set, assumes it is in PATH. On Windows, this may be a full path like "C:\tools\mmseqs\bin\mmseqs.bat".</div>
+
+            </fieldset>
+
+            <fieldset class="form-fieldset">
+                <legend>App settings</legend>
+                {% set has_key = (secrets.ncbi_api_key or '')|length > 0 %}
+                <label for="api_key">NCBI API Key{% if not has_key %}<span style="color:#924545;"> (not yet set)</span>{% endif %}</label><br>
+                <input type="text"
+                       id="api_key"
+                       name="ncbi_api_key"
+                       value="{{ secrets.ncbi_api_key or '' }}"
+                       placeholder="None"
+                       style="width: 400px;">
+                <div class="help-text muted small">
+                    You can get an NCBI API key from your <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank" class="mono">NCBI account settings</a>.
+                    Using an API key increases your request quota.
+                </div>
+                
+                <p>In the future, you will be able to manage additional app settings here,
+                i.e. "Path to MMSeqs2", "Path to interproscan.sh" "etc."
+                </p>
+
+            </fieldset>
+            
+            <a href="/" class="btn secondary">Cancel</a>
+            <button class="btn primary" type="submit">Save settings</button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
