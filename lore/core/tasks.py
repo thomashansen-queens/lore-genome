@@ -4,7 +4,8 @@ Core definitions for a Task registry system.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Optional, Type, get_args, get_origin
+import types
+from typing import Any, Callable, Optional, Type, get_args, get_origin, Union
 from pydantic import BaseModel, create_model, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
@@ -184,7 +185,7 @@ class ValueInput(TaskInput):
     """
     def __init__(
         self,
-        annotated_type: Type,  # primitive e.g. int, bool, or Enum e.g. SamplingStrategy
+        annotated_type: Any,  # primitive or Enum. Accepts UnionTypes like "int | None"
         description: str = "",
         default: Any = PydanticUndefined,
         label: str | None = None,
@@ -202,11 +203,24 @@ class ValueInput(TaskInput):
 
     def _enrich_schema_extra(self, extra: dict[str, Any]):
         """If options provided, add to schema extra for UI dropdown rendering."""
+        target_type = self.annotated_type
         origin = get_origin(self.annotated_type)
-        args = get_args(self.annotated_type)
-        is_list = origin in (list, tuple, set)
-        target_type = args[0] if is_list and args else self.annotated_type
 
+        # 1. Unwrap Union types to get the core type (int | None -> int)
+        if origin is Union or origin is types.UnionType:
+            args = get_args(target_type)
+            non_none_args = [a for a in args if a is not type(None)]
+            if len(non_none_args) == 1:
+                target_type = non_none_args[0]
+                origin = get_origin(target_type)
+
+        # 2. Unwrap collections (e.g. list[str] -> str) to get item type for Enums
+        is_list = origin in (list, tuple, set)
+        if is_list:
+            args = get_args(target_type)
+            target_type = args[0] if args else target_type
+
+        # 3. Widget assignment
         if isinstance(target_type, type) and issubclass(target_type, Enum):
             extra["options"] = [e.value for e in target_type]
             extra["widget"] = Widget.CHECKBOX_GROUP.value if is_list else Widget.SELECT.value

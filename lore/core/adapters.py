@@ -5,7 +5,7 @@ and analysis-ready format.
 The BaseAdapter class contains helpers for all Adapters
 """
 
-from abc import ABC
+from abc import ABC, abstractmethod
 import json
 from pathlib import Path
 from typing import Any, Callable, ClassVar
@@ -16,11 +16,43 @@ if TYPE_CHECKING:
 
 from lore.core.artifacts import Artifact
 
+
+class BaseAdapter(ABC):
+    """The base class for all Adapters."""
+    accepted_formats: ClassVar[set[str]] = set()  # e.g. {"json", "fasta", "csv"}
+    accepted_types: ClassVar[set[str]] = set()  # e.g. {"ncbi_genome_report", "protein_sequence"}
+    view_mode: ClassVar[str] = "raw"
+
+    @property
+    def name(self) -> str:
+        """Adapters do not need a name, but for UI we can use the class name"""
+        return self.__class__.__name__
+
+    @property
+    def provided_types(self) -> set[str]:
+        """The semantic types this adapter guarantees it can produce."""
+        return set()
+
+    def provides(self, requirement: str) -> bool:
+        """Universal check for what this adapter can output."""
+        if requirement == "*":
+            return True
+        return (
+            requirement in self.provided_types or
+            requirement in self.accepted_formats
+        )
+
+    @abstractmethod
+    def adapt(self, raw_data: Any) -> Any:
+        """Convert raw data into a usable Python object (e.g. list of dicts, DataFrame, etc.)"""
+        pass
+
+
 # Type alias for the Field Map: Key -> (JSON Path or Extraction Function)
 Schema = dict[str, str | Callable[[dict], Any]]
 
 
-class BaseAdapter(ABC):
+class TableAdapter(BaseAdapter):
     """
     The bridge between a raw file on disk and a usable Python object.
     Abstract methods:
@@ -29,13 +61,11 @@ class BaseAdapter(ABC):
     """
     accepted_formats: ClassVar[set[str]] = {"*"}  # e.g. {"json", "fasta", "csv"}
     accepted_types: ClassVar[set[str]] = {"*"}  # e.g. {"ncbi_genome_report", "protein_sequence"}
+    view_mode: ClassVar[str] = "table"
 
     @property
     def provided_types(self) -> set[str]:
-        """
-        The semantic types this adapter guarantees it can produce.
-        e.g. {'dataframe', 'sequence_list', 'taxonomy_table'}
-        """
+        """Guarantees that this adapter can provide data in a tabular format"""
         return {"dataframe"}  # For now, every adapter at least provides a table
 
     @property
@@ -46,11 +76,6 @@ class BaseAdapter(ABC):
         Is able to navigate dot notations and nested lists.
         """
         return {}
-
-    @property
-    def name(self) -> str:
-        """Adapters do not need a name, but for UI we can use the class name"""
-        return self.__class__.__name__
 
     @property
     def fields(self) -> list[dict[str, str]]:
@@ -70,15 +95,11 @@ class BaseAdapter(ABC):
         """
         Can this Adapter provide a specific 'slice' or 'type' of data?
         """
-        if requirement == "*":
+        if super().provides(requirement):
             return True
-        # Check if the requirement is one of the types we output
-        # or a key we can extract from the schema
-        return (
-            requirement in self.provided_types or
-            requirement in self.schema or
-            requirement in self.accepted_formats  # unadapted format
-        )
+
+        # Table-specific schema check for series extraction
+        return requirement in self.schema
 
     # --- Adapting methods ---
 
@@ -180,11 +201,16 @@ class BaseAdapter(ABC):
         for rec in records:
             row = {}
             for target_col, config in self.schema.items():
+                # 1. Schema specified a path with a converter function
                 if isinstance(config, tuple) and len(config) == 2:
                     path, converter = config
                     raw_val = self._extract_value(rec, path)
                     row[target_col] = converter(raw_val) if raw_val is not None else None
-                elif isinstance(config, (str, Callable)):
+                # 2. Schema specified a lambda/callable function
+                elif callable(config):
+                    row[target_col] = config(rec)
+                # 3. Schema specified a string path (dot notation)
+                elif isinstance(config, str):
                     row[target_col] = self._extract_value(rec, config)
 
             row = self.post_process(row, rec)
@@ -246,12 +272,17 @@ class BaseAdapter(ABC):
         JSONL) should override this method to stream the file line-by-line.
         """
         import pandas as pd  # pylint: disable=import-outside-toplevel
+        is_path = isinstance(raw_data_or_path, Path)
+        is_path_string = isinstance(raw_data_or_path, str) and len(raw_data_or_path) < 1024
 
-        if isinstance(raw_data_or_path, (str, Path)):
-            path_obj = Path(raw_data_or_path)
-            if path_obj.is_file():
-                with open(path_obj, "r", encoding="utf-8") as f:
-                    raw_data_or_path = f.read()
+        if is_path or is_path_string:
+            try:
+                path_obj = Path(raw_data_or_path)
+                if path_obj.is_file():
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        raw_data_or_path = f.read()
+            except (OSError, IOError):
+                pass  # Not a valid file path, treat as raw data
 
         records = self.adapt(raw_data_or_path)
         return pd.DataFrame(records)
@@ -280,6 +311,28 @@ class BaseAdapter(ABC):
             return str(val).split("T", maxsplit=1)[0][:10]  # Handle datetime strings and ensure max length of 10
         except (ValueError, TypeError, AttributeError):
             return None
+
+
+class ImageAdapter(BaseAdapter):
+    """
+    The bridge between image data and a UI-viewable format
+    """
+    accepted_formats: ClassVar[set[str]] = set() # e.g. {"svg", "png", "jpg", "jpeg", "gif"} 
+    accepted_types: ClassVar[set[str]] = set() # e.g. {"genome_map", "phylo_tree", "protein_structure"}
+    view_mode: ClassVar[str] = "image"
+
+    @property
+    def provided_types(self) -> set[str]:
+        return {"image"}
+
+    @abstractmethod
+    def adapt(self, raw_data: Any) -> str | bytes:
+        """
+        Often will just return the raw payload (e.g. SVG string or PNG bytes),
+        but can be overridden to perform transformations or optimizations (e.g. 
+        resizing)
+        """
+        pass
 
 
 class AdapterRegistry:

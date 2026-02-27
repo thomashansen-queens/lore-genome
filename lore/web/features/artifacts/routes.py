@@ -4,7 +4,7 @@ Routes for managing individual artifacts within a Session.
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 
-from lore.core.adapters import adapter_registry
+from lore.core.adapters import ImageAdapter, TableAdapter, adapter_registry
 from lore.web.deps import ActiveSession, PageContext, build_breadcrumbs, templates
 from lore.web.utils import get_form_str
 
@@ -62,6 +62,7 @@ async def view_artifact_explore(
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
 
+    # Adapt the data for view
     if adapter_key:
         adapter = adapter_registry[adapter_key]
     else:
@@ -69,13 +70,31 @@ async def view_artifact_explore(
         adapter = matches[0] if matches else None
 
     if not adapter:
-        return ctx.redirect(f"/sessions/{s.id}/artifacts/{artifact_id}", message="No adapter available for this Artifact", message_type="warning")
+        return ctx.redirect_back(
+            f"/sessions/{s.id}/artifacts/{artifact_id}",
+            message="No adapter available for this Artifact", message_type="warning",
+    )
 
-    raw_data, is_truncated = s.preview_artifact(artifact_id, mode="adapter", limit_lines = 500)
-    table_data = adapter.adapt(raw_data)
-    keys = adapter.get_keys()
-    if not keys and table_data:
-        keys = list(table_data[0].keys())  # fallback to all keys in first record
+    explore_data = None
+    keys = None
+    is_truncated = False
+
+    if adapter.view_mode == "table" and isinstance(adapter, TableAdapter):
+        # Memory efficient loading
+        if artifact.size_bytes > 3 * 1024 * 1024:
+            raw_data, is_truncated = s.preview_artifact(artifact_id, mode="adapter", limit_lines = 500)
+        else:
+            raw_data = s.load_artifact_data(artifact_id)
+
+        explore_data = adapter.adapt(raw_data)
+        keys = adapter.get_keys()
+
+        if not keys and explore_data:
+            keys = list(explore_data[0].keys())
+
+    elif adapter.view_mode == "image" and isinstance(adapter, ImageAdapter):
+        raw_data = s.load_artifact_data(artifact_id)
+        explore_data = adapter.adapt(raw_data)
 
     ctx.breadcrumbs = build_breadcrumbs(
         s.id, s.name,
@@ -88,7 +107,8 @@ async def view_artifact_explore(
             session=s,
             artifact=artifact,
             adapter=adapter,
-            table_data=table_data,
+            view_mode=adapter.view_mode,
+            explore_data=explore_data,
             keys=keys,
             is_truncated=is_truncated,
         )

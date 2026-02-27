@@ -2,9 +2,9 @@
 General purpose adapters for JSON
 """
 
-from lore.core.adapters import BaseAdapter, adapter_registry
+from lore.core.adapters import TableAdapter, adapter_registry
 
-class GenericJsonAdapter(BaseAdapter):
+class GenericJsonAdapter(TableAdapter):
     """
     Adapter for undefined JSON data.
     """

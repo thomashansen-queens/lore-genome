@@ -2,10 +2,10 @@
 Adapter for MMseqs2 two-column TSV output
 """
 from collections import Counter
-from lore.core.adapters import adapter_registry, BaseAdapter
+from lore.core.adapters import adapter_registry, TableAdapter
 
 
-class Mmseqs2ClusterAdapter(BaseAdapter):
+class Mmseqs2ClusterAdapter(TableAdapter):
     """
     Adapter for parsing MMseqs2 cluster output in TSV format.
     Expects two columns: "representative" and "cluster_member", where the representative column contains the cluster head (representative sequence) and the cluster_member column contains all sequences in the cluster (including the representative).

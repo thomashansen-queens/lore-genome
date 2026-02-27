@@ -18,7 +18,7 @@ python run.py
 This will generate a `run.bat` (Windows) or `run.sh` (Mac/Linux) that you can 
 double-click on like any other program.
 
-## Bootstrap helper (recommended if you're not a computer expert)
+## Bootstrap helper <small>(recommended if you're not a computer expert)</small>
 The bootstrap helper:
 * Creates a .venv virtual environment
 * Installs the bundled NCBI wheel

@@ -3,7 +3,7 @@ Analyzes syntenic neighbourhood of a given gene across a set of genome.
 """
 import pandas as pd
 
-from lore.core.adapters import adapter_registry
+from lore.core.adapters import TableAdapter, adapter_registry
 from lore.core.executor import ExecutionContext
 from lore.core.tasks import ArtifactInput, ValueInput, TaskOutput, task_registry, Cardinality, Materialization
 from lore import viz as v
@@ -24,7 +24,7 @@ class GenomicNeighbourhoodTaskInputs:
         load_as=Materialization.PATH,
     )
     context_window_str = ValueInput(
-        str,
+        str | None,
         description="How far up/downstream of the gene of interest to include in the neighbourhood analysis.",
         default="",
         label="Context window size",
@@ -39,7 +39,7 @@ class GenomicNeighbourhoodTaskInputs:
         label="Context window type",
     )
     clamp_gap = ValueInput(
-        int,
+        int | None,
         description="The maximum distance in base pairs to draw to scale. If the distance between two genes exceeds this value, it will be drawn as a broken axis of this length.",
         default=None,
         label="Clamp Gap Size (bp)",
@@ -206,6 +206,9 @@ def genomic_neighbourhood_analysis(
         context_window_str = "5" if context_window_type == "gene_features" else "5000"
 
     adapter = adapter_registry["NcbiGenomeAnnotationsAdapter"]
+    if not isinstance(adapter, TableAdapter):
+        raise TypeError("Expected NcbiGenomeAnnotationsAdapter to be a TableAdapter")
+
     context_window = _set_window(context_window_str.strip())
     df_list = [adapter.to_dataframe(path) for path in genome_annotations]
     annot_df = pd.concat(df_list, ignore_index=True)
@@ -275,7 +278,7 @@ def _render_neighbourhood_svg(
 
     label_margin = 250
     right_margin = 50
-    vert_margin = 20
+    vert_margin = 10
     plot_width = canvas_width - label_margin - right_margin
 
     def _xscale(bp: float) -> float:
@@ -284,7 +287,7 @@ def _render_neighbourhood_svg(
         return label_margin + percent_of_span * plot_width
 
     # 3. Canvas setup
-    row_height = 60
+    row_height = 40
     # CHECK THIS
     tracks_data = df.groupby("genome_accession")
 
@@ -313,7 +316,7 @@ def _render_neighbourhood_svg(
         track_max_x = _xscale(track_df[["begin", "end"]].max().max())
         track_group.add(v.SvgLine(
             x1=track_min_x, y1=y_center, x2=track_max_x, y2=y_center,
-            style=v.SvgStyle(stroke="#333333", stroke_width=2.0),
+            style=v.SvgStyle(stroke="#64748B", stroke_width=2.0),
         ))
 
         # C. Gene arrows
@@ -322,7 +325,7 @@ def _render_neighbourhood_svg(
             px_end = _xscale(gene["end"])
 
             # Geometry setup
-            arrow_h = 16  # thickness
+            arrow_h = row_height * 0.5  # thickness
             head_w = min(10.0, abs(px_end - px_start))  # arrowhead can't exceed gene length
 
             y0 = y_center - (arrow_h / 2)

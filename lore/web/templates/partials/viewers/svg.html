@@ -1,0 +1,10 @@
+<div>
+    <div>
+        <small class="muted small">Showing visualization resolved via {{ adapter.name }}</small>
+    </div>
+    
+    <div class="card canvas">
+        {# CRITICAL: The 'safe' filter renders as SVG content, not arbitrary HTML #}
+        {{ explore_data | safe }}        
+    </div>
+</div>

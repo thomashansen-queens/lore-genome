@@ -2,10 +2,10 @@
 Adapter for handling FASTA files in LoRe Genome. This module provides utilities 
 for reading, writing, and manipulating FASTA files
 """
-from lore.core.adapters import adapter_registry, BaseAdapter
+from lore.core.adapters import adapter_registry, TableAdapter
 
 
-class FastaAdapter(BaseAdapter):
+class FastaAdapter(TableAdapter):
     """Adapter for FASTA files"""
     accepted_formats = {"fasta", "faa", "fa"}
     accepted_types = {"protein_fasta", "nucleotide_fasta"}

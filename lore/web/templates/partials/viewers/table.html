@@ -1,0 +1,9 @@
+<div>
+    <div>
+        <small class="muted">Showing {{ explore_data|length }} records resolved via {{ adapter.name }}
+        <br>Table size: {{ keys|length }} columns x {{ explore_data|length }} rows{% if is_truncated %} (truncated){% endif %}</small>
+    </div>
+    <div class="table-container" style="max-height: 80vh; overflow-y: auto;">
+        {{ tables.render_adapter_table(keys, explore_data) }}
+    </div>
+</div>

@@ -34,13 +34,20 @@
     </p>
 </div> #}
 
-<div>
-    <div>
-        <small class="muted">Showing {{ table_data|length }} records resolved via {{ adapter.name }}
-        <br>Table size: {{ keys|length }} columns x {{ table_data|length }} rows{% if is_truncated %} (truncated){% endif %}</small>
+    {% block content %}
+    <div class="explore-container">
+        {% if view_mode == 'table' %}
+            {% include 'partials/viewers/table.html' %}
+            
+        {% elif view_mode == 'image' %}
+            {% include 'partials/viewers/svg.html' %}
+            
+        {% else %}
+            <div class="alert alert-warning">
+                Unsupported view mode: {{ view_mode }}
+            </div>
+        {% endif %}
     </div>
-    <div class="table-container" style="max-height: 80vh; overflow-y: auto;">
-        {{ tables.render_adapter_table(keys, table_data) }}
-    </div>
-</div>
+    {% endblock %}
+
 {% endblock %}

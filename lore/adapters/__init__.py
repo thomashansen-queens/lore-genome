@@ -5,3 +5,4 @@ from . import json
 from . import ncbi
 from . import table
 from . import mmseqs
+from . import svg

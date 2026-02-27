@@ -3,9 +3,9 @@ Adapter definition for NCBI data.
 """
 from typing import Any
 
-from lore.core.adapters import BaseAdapter, adapter_registry
+from lore.core.adapters import TableAdapter, adapter_registry
 
-class NcbiGenomeReportsAdapter(BaseAdapter):
+class NcbiGenomeReportsAdapter(TableAdapter):
     """
     Adapter for NCBI Genome Reports JSON data. Transforms the nested, complex JSON
     into a flat list of dictionaries with consistent keys for easier use in LoRe.
@@ -80,7 +80,7 @@ class NcbiGenomeReportsAdapter(BaseAdapter):
 adapter_registry.register(NcbiGenomeReportsAdapter())
 
 
-class NcbiGenomeAnnotationsAdapter(BaseAdapter):
+class NcbiGenomeAnnotationsAdapter(TableAdapter):
     """
     Adapter for NCBI Genome Reports JSON data. Transforms the nested, complex JSON
     into a flat list of dictionaries with consistent keys for easier use in LoRe.
