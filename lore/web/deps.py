@@ -13,7 +13,7 @@ def my_route(rt: RT):
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated, Generator, Tuple, List, Optional
+from typing import Annotated, Generator
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastapi import HTTPException, Request, Depends
@@ -49,7 +49,7 @@ def get_active_session(session_id: str, rt: RT) -> Generator['Session', None, No
     """
     try:
         # The 'yield' keeps the context manager open while the route runs
-        with rt.get_session(session_id) as s:
+        with rt.open_session(session_id) as s:
             yield s
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
@@ -63,45 +63,17 @@ def get_read_only_session(session_id: str, rt: RT) -> Generator["Session", None,
     Safely opens and closes the session without triggering a disk write.
     """
     try:
-        with rt.get_session(session_id, read_only=True) as s:
+        with rt.open_session(session_id, read_only=True) as s:
             yield s
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
 
-# Type alias for easy injection in your routers
+# Type alias
 ReadOnlySession = Annotated["Session", Depends(get_read_only_session)]
 
-# --- Breadcrumbs ---
-
-Crumb = tuple[str, Optional[str]]
-
-def build_breadcrumbs(
-    session_id: str | None = None,
-    session_name: str | None = None,
-    final_item: str | None = None,
-    extra: list[Crumb] | None = None,
-) -> List[Crumb]:
-    """
-    Helper to build a standard breadcrumb trail for session-related pages.
-    """
-    crumbs: List[Crumb] = [("Home", "/"), ("Sessions", "/sessions/")]
-    # Session context
-    if session_id:
-        label = session_name if session_name else session_id
-        # Truncate long IDs for display
-        if not session_name and len(label) > 12:
-            label = f"{label[:8]}..."
-
-        crumbs.append((label, f"/sessions/{session_id}/"))
-    # Intermediate items
-    if extra:
-        crumbs.extend(extra)
-    # Current page (leaf)
-    if final_item:
-        crumbs.append((final_item, None))
-    return crumbs
-
 # --- Page context collector ---
+
+Crumb = tuple[str, str | None]
 
 @dataclass
 class PageContext:
@@ -120,10 +92,45 @@ class PageContext:
         come from HTTP parameters. Otherwise, FastAPI will try to use breadcrumbs
         as a Request Body paramenter.
         """
-        self.breadcrumbs = build_breadcrumbs()
         self.messages: list[tuple[str, str]] = []
         if self.message:
             self.messages.append((self.message_type, self.message))
+
+        # Start with a blank trail of crumbs
+        self.breadcrumbs: list[Crumb] = [("Home", "/")]
+
+    def generate_breadcrumbs(self, label_map: dict[str, str | None] | None = None) -> list[Crumb]:
+        """
+        Dynamically builds breadcrumbs from the current URL path.
+        Example: /sessions/uuid-123/artifacts -> Home > Sessions > uuid-12... > Artifacts
+        """
+        crumbs: list[Crumb] = [("Home", "/")]
+        path_segments = [seg for seg in self.request.url.path.split("/") if seg]
+
+        if not path_segments:
+            return crumbs  # Homepage
+
+        current_url = ""
+        label_map = label_map or {}
+
+        for i, segment in enumerate(path_segments):
+            current_url += f"/{segment}"
+            is_last = (i == len(path_segments) - 1)
+
+            # Apply label map; default to capitalized segment
+            if segment in label_map:
+                label = label_map[segment] or segment.replace("-", " ").capitalize()
+            elif len(segment) >= 12 and not segment.isalpha():
+                # Truncate ID-like strings
+                label = f"{segment[:8]}..."
+            else:
+                label = segment.replace("-", " ").capitalize()
+
+            # Current page gets no link
+            crumbs.append((label, None if is_last else current_url))
+
+        self.breadcrumbs = crumbs
+        return crumbs
 
     def render(self, **kwargs):
         """Combine standard UI context with page-specific data passed as kwargs."""

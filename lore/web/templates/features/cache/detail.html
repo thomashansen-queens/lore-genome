@@ -1,0 +1,94 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+
+<div class="column fill gapped">
+
+    {# === Header === #}
+    <div>
+        <h4>Cache Entry</h4>
+        <code class="muted">{{ item.key }}</code>
+    </div>
+
+    {# === File stats (no pickle loaded) === #}
+    <div class="card">
+        <table>
+            <tbody>
+                <tr>
+                    <th style="width: 12rem;">Status</th>
+                    <td>
+                        {% if item.in_ram %}
+                            <span class="warning">● Hot</span>
+                            <span class="muted" style="margin-left: 0.5rem;">loaded in L1 RAM</span>
+                        {% else %}
+                            <span class="muted">○ Cold — disk only</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <th>Size</th>
+                    <td>{{ item.size }} <span class="muted">({{ item.size_bytes }} bytes)</span></td>
+                </tr>
+                <tr>
+                    <th>Last Modified</th>
+                    <td class="muted">{{ item.modified }}</td>
+                </tr>
+                <tr>
+                    <th>Last Accessed</th>
+                    <td class="muted">{{ item.accessed }}</td>
+                </tr>
+                <tr>
+                    <th>inode Changed</th>
+                    <td class="muted">{{ item.created }}</td>
+                </tr>
+                <tr>
+                    <th>Path</th>
+                    <td><span class="mono muted">{{ item.path }}</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    {# === Pickle inspector === #}
+    {% if pickle_info is none %}
+
+        <a href="/cache/view/{{ item.key }}?inspect=1" class="btn secondary" style="align-self: flex-start;">
+            🥒 Open Pickle
+        </a>
+
+    {% elif pickle_info.error %}
+
+        <div class="card">
+            <header>Pickle Error</header>
+            <pre class="muted">{{ pickle_info.error }}</pre>
+        </div>
+
+    {% else %}
+
+        <div class="card">
+            <header>Pickle Contents</header>
+            <table>
+                <tbody>
+                    {% for field in pickle_fields %}
+                    <tr>
+                        <th style="width: 12rem;">{{ field.label }}</th>
+                        <td>
+                            {% if field.fmt == "code" %}
+                                <code>{{ field.value }}</code>
+                            {% elif field.fmt == "pre" %}
+                                <pre class="muted" style="margin: 0; white-space: pre-wrap; font-size: 0.8rem;">{{ field.value }}</pre>
+                            {% else %}
+                                {{ field.value }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    {% endif %}
+
+</div>
+
+{% endblock content %}

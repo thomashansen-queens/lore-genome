@@ -1,14 +1,17 @@
 {% extends "features/sessions/layout.html" %}
 {% import "macros/ui.html" as ui %}
 
-{% block content %}
-<div id="task-detail-container" data-current-status="{{ task.status }}">
+{% block workspace %}
+<div id="task-detail-container"
+    data-current-status="{{ task.status }}"
+    class="column fill gapped">
 
     {# === Header === #}
-    <div style="margin-bottom: 1rem;">    
+    <div>
+        <span class="ui-label">Task</span>
         {{ ui.editable_header(
             task.name,
-            '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/edit',
+            '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/rename',
             subtitle=None,
             input_name='name') }}
 
@@ -17,11 +20,15 @@
             {{ ui.status_badge(task.status) }}
             <div class="muted mono small">
                 ID: {{ task.id }} | Type: {{ task.registry_key }}
+                {% if task.duration %}
+                    &bull; Duration: {{ "%.2f"|format(task.duration) }}s
+                {% endif %}
             </div>
         </div>
 
         {# === Task actions === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
+
             {% if task.status in ['PENDING', 'DRAFT', 'FAILED'] %}
                 <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
                     class="btn secondary">
@@ -33,82 +40,141 @@
                     </button>
                 </form>
             {% endif %}
+
             <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/clone" method="POST">
                 <button type="submit" class="btn primary">
                     ⟳ Clone
                 </button>
             </form>
+
         {% endcall %}
     </div>
 
-    {# === ERROR BANNER (Highly Visible) === #}
+    {# === Task Log === #}
+    <div class="card" style="flex-shrink: 0;">
+        <header>Task Log</header>
+        <div class="scroll-area" id="task-log" style="max-height: 40vh;">
+            {% if task_log %}
+                <pre class="small" style="white-space: pre-wrap;">{{ task_log }}</pre>
+            {% else %}
+                <span class="muted small">No log output yet.</span>
+            {% endif %}
+        </div>
+    </div>
     {% if task.error %}
-    <div class="card danger border-left" style="border-color: var(--danger-border)">
-        <h5>⚠ Execution failed</h5>
-        <pre style="white-space: pre-wrap; font-size: 0.85rem;">{{ task.error }}</pre>
+    <div class="card" style="background: var(--danger-bg);" style="flex-shrink: 0;">
+        <header style="color: var(--danger);">Error</header>
+        <div class="scroll-area" id="task-log" style="max-height: 40vh;">
+            <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
+        </div>
     </div>
     {% endif %}
 
-    <div class="row" style="align-items: stretch;">
-        {# === Configuration (left column) === #}
-        <div class="card fill">
-            <h3>Configuration inputs</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Inputs</th>
-                        <th>Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for key, value in task.inputs.items() %}
-                    <tr>
-                        <td>{{ key }}</td>
-                        <td>
-                            {% if value is iterable and value is not string %}
-                                <code>{{ value | join(', ') }}</code>
+    {# === Configuration + Outputs === #}
+    <div class="row stretch fill gapped">
+
+        {# === Configuration (left) === #}
+        <div class="card" style="flex: 1;">
+            <header>Configuration</header>
+            <div class="scroll-area">
+                <table style="table-layout: fixed;">
+                    <colgroup>
+                        <col style="width: 35%;">
+                        <col style="width: 65%;">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>Input</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for key, value in task.inputs.items() %}
+                        <tr>
+                            <td class="small">{{ key }}</td>
+                            <td>
+                                {% if value is iterable and value is not string %}
+                                    {% set list_len = value | length %}
+                                    {% if list_len > 3 %}
+                                        <code class="small">{{ value[:3] | join(', ') }}</code>
+                                        <span class="muted small">+{{ list_len - 3 }} more</span>
+                                    {% else %}
+                                        <code class="small">{{ value | join(', ') }}</code>
+                                    {% endif %}
+                                {% else %}
+                                    <code class="small">{{ value | string | truncate(60, True, '...') }}</code>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                            <tr><td colspan="2" class="muted">No inputs configured.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {# === Outputs (right) === #}
+        <div class="card" style="flex: 1;">
+            <header>Outputs</header>
+            <div class="scroll-area gapped">
+
+                {% for key, out in outputs.items() %}
+                    <div>
+                        <span class="ui-label">{{ out.label }}</span>
+                        {% if out.description %}
+                            <div class="muted small">{{ out.description }}</div>
+                        {% endif %}
+                        {% if out.is_artifact %}
+                            {% if not out.value %}
+                                <div class="muted small">Pending...</div>
+                            {% elif out.value | length == 1 %}
+                                {% if out.value[0] == "MISSING" %}
+                                    <div class="card warning small">⚠ Artifact file missing from disk!</div>
+                                {% else %}
+                                    {{ ui.artifact_card(out.value[0], session_id=session.id) }}
+                                {% endif %}
                             {% else %}
-                                <code>{{ value }}</code>
+                                <button class="card clickable"
+                                        style="padding: var(--spacing-sm); width: 100%; text-align: left;"
+                                        popovertarget="artifacts-{{ key }}">
+                                    <div class="row" style="justify-content: space-between; align-items: center;">
+                                        <span>{{ out.value | length }} artifacts</span>
+                                        <span class="badge muted small">▾</span>
+                                    </div>
+                                </button>
+                                <div id="artifacts-{{ key }}" class="dropdown-menu left" popover>
+                                    {% for item in out.value %}
+                                        {% if item == "MISSING" %}
+                                            <div class="card warning small" style="margin: var(--spacing-xs) var(--spacing-sm);">⚠ Missing</div>
+                                        {% else %}
+                                            <a href="/sessions/{{ session.id }}/artifacts/{{ item.id }}">
+                                                {{ item.name or item.id[:8] }}
+                                                <span class="badge muted small">{{ item.data_type }}</span>
+                                            </a>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
                             {% endif %}
-                        </td>
-                    </tr>
-                    {% else %}
-                        <tr><td colspan="2" class="muted">No inputs configured.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                        {% else %}
+                            <div class="card mono small">{{ out.value }}</div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+
+                {% if not outputs and task.status == 'COMPLETED' %}
+                    <div class="card warning">No outputs produced!</div>
+                {% elif not outputs %}
+                    <div class="card muted">Outputs will appear here when the task completes.</div>
+                {% endif %}
+
+            </div>
         </div>
 
-        {# === Outputs (right column) === #}
-        <div class="card fill">
-            <h3>Outputs</h3>
-
-            {% for key, output in outputs.items() %}
-                <div>
-                    <strong>{{ key }}</strong>
-                    {% if output.is_artifact == True %}
-                        <a href="/sessions/{{ session.id }}/artifacts/{{ output.value.id }}"
-                            class="card card-clickable">
-                            <div>{{ output.value.name }}</div>
-                            <div class="muted">{{ output.value.data_type }} &bull; {{ output.value.display_size }}</div>
-                        </a>
-                    {% else %}
-                        <div class="card">{{ output.value }}</div>
-                    {% endif %}
-                </div>
-            {% endfor %}
-
-            {% if not outputs and task.status == 'COMPLETED' %}
-                <div class="warning">No outputs produced!</div>
-            {% elif not outputs %}
-                <div class="muted">Outputs will appear here when the task completes.</div>
-            {% endif %}
-
-        </div>
     </div>
 
 </div>
-{% endblock %}
+{% endblock workspace %}
 
 {% block scripts %}
 <script>
@@ -117,7 +183,7 @@
         if (!container) return false;
         
         const status = container.dataset.currentStatus;
-        return status === 'RUNNING';
+        return ['RUNNING', 'PENDING'].includes(status);
     }
 
     function pollTaskStatus() {
@@ -140,6 +206,12 @@
                     // Surgical DOM swap
                     oldContainer.innerHTML = newContainer.innerHTML;
                     oldContainer.dataset.currentStatus = newContainer.dataset.currentStatus;
+                    
+                    // Auto-scroll the log to the bottom
+                    const logWindow = document.getElementById('task-log');
+                    if (logWindow) {
+                        logWindow.scrollTop = logWindow.scrollHeight;
+                    }
                 }
             })
             .catch(err => console.error("Polling failed:", err));

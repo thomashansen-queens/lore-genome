@@ -4,83 +4,67 @@
 
 {% block workspace %}
 
-{# === Session title and name updater === #}
-{{ ui.editable_header(session.name, "/sessions/" ~ session.id ~ "/update") }}
+{# === Split Layout Container === #}
+<div class="column gapped">
 
-{# === Manifest: Tasks === #}
-<div class="row" style="position: relative;">
-    <div class="dropdown">
-        <button class="btn primary">
-            ＋ New Task
-        </button>
-        <div class="dropdown-menu left">
-            {% for key, task in task_registry.items() %}
-                <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}"
-                   title="{{ task.__doc__|striptags|truncate(100) }}">
-                    {{ task.icon }} {{ task.name }}
-                </a>
-            {% endfor %}
+    {# === Manifest: Tasks === #}
+    <div class="card" style="flex: 1;">
+        <header>Tasks</header>
+        <div class="scroll-area" id="task-list-container">
+            {% include "/partials/task_list.html" %}
         </div>
     </div>
-    <div style="position: absolute; left: 50%; transform: translateX(-50%); margin: 0;">
-        <h4>Recent Tasks</h4>
+
+    {# === Manifest: Artifacts === #}
+    <div class="card" style="flex: 1;">
+        <header>Artifacts</header>
+        <div class="scroll-area" id="artifact-list-container">
+            {% include "/partials/artifact_list.html" %}
+        </div>
     </div>
-</div>
 
-<div id="task-list-container">
-    {# Initial load #}
-    {% include "/partials/task_list.html" %}
-</div>
-
-{# === Manifest: Artifacts === #}
-<div class="row" style="position: relative;">
-    <form method="get" action="/sessions/{{ session.id }}/artifacts/upload">
-        <button class="btn primary" type="submit" title="Upload artifact">
-            🠩 Upload Artifact
-        </button>
-    </form>
-    <div class="row" style="position: absolute; left: 50%; transform: translateX(-50%); margin: 0;">
-        <h4>Artifacts</h4>
-    </div>
-</div>
-
-<div id="artifact-list-container">
-    {# Initial load #}
-    {% include "/partials/artifact_list.html" %}
 </div>
 
 {% endblock %}
 
 {% block scripts %}
+
 <script>
-    function hasActiveTasks() {
-        return document.querySelector('[data-task-status="RUNNING"]');
-    }
+function hasActiveTasks() {
+    // DYNAMIC CHECK: Look for any status badge in the DOM that says RUNNING
+    // FUTURE: Add Pending to this list if DAG auto-run is implemented
+    const activeBadges = document.querySelectorAll('[data-status="RUNNING"]');
+    return activeBadges.length > 0;
+}
 
-    function pollTaskStatus() {
-        if (!hasActiveTasks()) {
-            return;
-        }
-        fetch('/sessions/{{ session.id }}/tasks/poll')
-            .then(response => response.text())
-            .then(html => {
-                document.getElementById('task-list-container').innerHTML = html;
-            });
-    }
+function isPopoverOpen() {
+    // If any popover matches the CSS :popover-open pseudo-class, pause polling!
+    return document.querySelectorAll('[popover]:popover-open').length > 0;
+}
 
-    function pollArtifacts() {
-        if (!hasActiveTasks()) {
-            return;
-        }
-        fetch('/sessions/{{ session.id }}/artifacts/poll')
-            .then(response => response.text())
-            .then(html => {
-                document.getElementById('artifact-list-container').innerHTML = html;
-            });
-    }
+function pollTaskStatus() {
+    if (!hasActiveTasks() || isPopoverOpen()) return;
+    
+    fetch('/sessions/{{ session.id }}/tasks/poll')
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('task-list-container').innerHTML = html;
+        });
+}
 
-    // Check every 2 seconds while tasks are running/pending
-    setInterval(pollTaskStatus, 2000);
-    setInterval(pollArtifacts, 2000);
+function pollArtifacts() {
+    if (!hasActiveTasks() || isPopoverOpen()) return;
+    
+    fetch('/sessions/{{ session.id }}/artifacts/poll')
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('artifact-list-container').innerHTML = html;
+        });
+}
+
+// Check every 2 seconds while tasks are running/pending
+setInterval(pollTaskStatus, 2000);
+setInterval(pollArtifacts, 2000);
+
 </script>
 {% endblock %}

@@ -49,8 +49,25 @@
             {% set manual_val = manual_prefill_list | join(', ') %}
 
             {% if candidates %}
+                {# Toolbar for select all/none #}
+                <div class="artifact-selection-toolbar" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.25rem;">
+                    <span class="muted">Select from session:</span>
+                    <div>
+                        <button type="button" class="btn small" style="padding: 0.1rem 0.4rem;"
+                                onclick="document.querySelectorAll('input[name=\'{{ name }}\']').forEach(cb => cb.checked = true)">
+                            All
+                        </button>
+                        <button type="button" class="btn small" style="padding: 0.1rem 0.4rem;"
+                                onclick="document.querySelectorAll('input[name=\'{{ name }}\']').forEach(cb => cb.checked = false)">
+                            None
+                        </button>
+                    </div>
+                </div>
+
                 {# Primary: Checkboxes, Secondary: Textarea #}
-                <div class="artifact-tray" style="margin-bottom: 0.5rem;">
+                <div class="artifact-tray scroll-area" 
+                    style="max-height: 200px; background-color: var(--bg-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border); 
+                           box-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.1); margin-bottom: 0.5rem;">
                     {% for art in candidates %}
                     <label>
                         <input type="checkbox" name="{{ name }}" value="{{ art.id }}" {% if art.id in artifact_prefill_list %}checked{% endif %}>
@@ -59,7 +76,7 @@
                     </label>
                     {% endfor %}
                 </div>
-                <textarea name="{{ name }}__manual" rows="2" placeholder="Or enter additional manual inputs (comma-separated)..." class="text-sm">{{ manual_val }}</textarea>
+                <textarea name="{{ name }}__manual" rows="2" placeholder="and/or enter additional inputs/artifact IDs (comma-separated)..." class="text-sm">{{ manual_val }}</textarea>
             {% else %}
                 {# Primary: Textarea, Secondary: Message #}
                 <textarea name="{{ name }}__manual" rows="3" placeholder="Enter manual inputs (comma-separated)...">{{ manual_val }}</textarea>
@@ -71,9 +88,9 @@
             <div class="checkbox-group">
                 {% for opt in extra.get('options', []) %}
                 <label class="checkbox">
-                    <input type="checkbox" name="{{ name }}" value="{{ opt }}" 
-                           {% if opt in prefill %}checked{% endif %}>
-                    {{ opt|replace('_', ' ')|title }}
+                    <input type="checkbox" name="{{ name }}" value="{{ opt.value }}" 
+                           {% if opt.value in prefill %}checked{% endif %}>
+                    {{ opt.label }}
                 </label>
                 {% endfor %}
             </div>
@@ -82,20 +99,32 @@
         {% elif widget == 'select' %}
             <select name="{{ name }}" class="form-control">
                 {% for opt in extra.get('options', []) %}
-                    <option value="{{ opt }}" {% if opt == prefill %}selected{% endif %}>
-                        {{ opt|title }}
+                    <option value="{{ opt.value }}" {% if opt.value == prefill %}selected{% endif %}>
+                        {{ opt.label }}
                     </option>
                 {% endfor %}
             </select>
+
+        {# Vanilla CSS Segmented Radio (Contiguous Boxes) #}
+        {% elif widget == 'segmented_radio' %}
+            <div class="segmented-control">
+                {% for opt in extra.get('options', []) %}
+                <label>
+                    <input type="radio" name="{{ name }}" value="{{ opt.value }}" 
+                           {% if opt.value == prefill %}checked{% endif %}>
+                    <span>{{ opt.label }}</span>
+                </label>
+                {% endfor %}
+            </div>
 
         {# Radio Enum selector #}
         {% elif widget == 'radio' %}
             <div class="radio-group">
                 {% for opt in extra.get('options', []) %}
                 <label class="radio">
-                    <input type="radio" name="{{ name }}" value="{{ opt }}" 
-                           {% if opt == prefill %}checked{% endif %}>
-                    {{ opt|replace('_', ' ')|title }}
+                    <input type="radio" name="{{ name }}" value="{{ opt.value }}" 
+                           {% if opt.value == prefill %}checked{% endif %}>
+                    {{ opt.label }}
                 </label>
                 {% endfor %}
             </div>
@@ -108,6 +137,26 @@
                 {{ field_info.description }}
             </label>
 
+        {# Vanilla HTML range slider #}
+        {% elif widget == 'slider' %}
+            <div style="display: flex; align-items: center; gap: var(--spacing-sm);">    
+                <input type="range" 
+                       min="{{ extra.get('min', 0) }}" 
+                       max="{{ extra.get('max', 100) }}" 
+                       step="{{ extra.get('step', 1) }}"
+                       value="{{ prefill }}"
+                       class="form-range" style="flex-grow: 1; cursor: pointer;"
+                       oninput="this.parentElement.querySelector('input[type=\'number\']').value = this.value">
+                
+                <input type="number" name="{{ name }}" 
+                       min="{{ extra.get('min', 0) }}" 
+                       max="{{ extra.get('max', 100) }}" 
+                       step="{{ extra.get('step', 1) }}"
+                       value="{{ prefill }}"
+                       class="form-control" style="width: 5.5rem; padding: 0.25rem 0.5rem;"
+                       oninput="this.parentElement.querySelector('input[type=\'range\']').value = this.value">
+            </div>
+        
         {# Float #}
         {% elif widget == 'float' %}
             <input type="number" name="{{ name }}" step="any" 
@@ -122,7 +171,7 @@
                    placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
                    class="form-control">
             </label>
-
+        
         {# Fallback to standard input types #}
         {% else %}
             <input type="{{ widget }}" name="{{ name }}" 

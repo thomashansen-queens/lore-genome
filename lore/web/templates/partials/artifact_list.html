@@ -3,11 +3,14 @@
 
 <table>
     <thead>
-        <tr><th>Name</th><th>Data type</th><th>Size</th><th>Created at</th><th>Actions</th></tr>
+        <tr><th> </th><th>Name</th><th>Data type</th><th>Size</th><th>Created at</th><th>Actions</th></tr>
     </thead>
     <tbody>
     {% for a in artifacts %}
         <tr>
+            <td>
+                <small class="muted">{{ loop.index }}</small>
+            </td>
             <td>
                 <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}" 
                     class="code">
@@ -21,13 +24,13 @@
 
                 {# === Artifact actions dropdown === #}
                 <div class="dropdown">
-                    <button class="btn-kebab">▾</button>
-                    <div class="dropdown-menu right up">
+                    <button class="btn-kebab" popovertarget="menu-{{ a.id }}">⋮</button>
+                    <div id="menu-{{ a.id }}" class="dropdown-menu right up" popover>
 
                         {# Section 1: Pipeline ("push") #}
-                        <div class="muted smcaps">NEW TASK</div>
-                        {% for key, task in push_task_targets.get(a.id, []) %}
-                            <a href="/sessions/{{ session.id }}/tasks/new/{{ key }}?source_artifact_ids={{ a.id }}">
+                        {% if push_task_targets %}<div class="ui-label">NEW TASK</div>{% endif %}
+                        {% for task in push_task_targets.get(a.id, []) %}
+                            <a href="/sessions/{{ session.id }}/tasks/new/{{ task.key }}?source_artifact_ids={{ a.id }}">
                                 {{ task.icon }} {{ task.name }}
                             </a>
                         {% endfor %}
@@ -47,7 +50,7 @@
             </td>
         </tr>
     {% else %}
-        <td class="muted center" colspan="5">
+        <td class="muted center" colspan="6">
             <p>No Artifacts yet.</p>
         </td>
     {% endfor %}

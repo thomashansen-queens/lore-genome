@@ -5,6 +5,7 @@ docs/
 *.bak
 
 notes.md
+CLAUDE.md
 .prettierrc
 
 # GitHub prebuilt Python .gitignore file https://github.com/github/gitignore/blob/main/Python.gitignore

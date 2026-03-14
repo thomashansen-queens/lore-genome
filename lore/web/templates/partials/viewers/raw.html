@@ -1,0 +1,14 @@
+{% set data = data | default({}) %}
+{% set metadata = metadata | default({}) %}
+
+<div class="column">
+    <div style="flex-shrink: 0; min-height: 0; margin-bottom: var(--spacing-sm);">
+        <small class="muted">
+            Rendered via {{ adapter_name }} (raw text fallback)
+        </small>
+    </div>
+    
+    <div class="scroll-area">
+        <pre style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap;">{{ data }}</pre>
+    </div>
+</div>

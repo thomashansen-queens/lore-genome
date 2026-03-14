@@ -26,7 +26,6 @@ def home_page(
     return templates.TemplateResponse(
         "/core/home.html",
         ctx.render(
-            breadcrumbs=[("Home", None)],
             rt=rt,
             recent_session=recent_session,
         )
@@ -43,7 +42,6 @@ def help_page(
     return templates.TemplateResponse(
         "/core/help.html",
         ctx.render(
-            breadcrumbs=[("Home", "/"), ("Help", None)],
             rt=rt,
         )
     )

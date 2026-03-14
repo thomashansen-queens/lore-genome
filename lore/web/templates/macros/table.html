@@ -1,0 +1,40 @@
+{% macro render_adapter_table(keys, rows, view_state) %}
+
+    <table class="table table-hover" id="preview-table">
+        
+        <thead>
+            <tr>
+                {% for key in keys %}
+                    <th style="cursor: pointer;"
+                        data-workbench-action="sort"
+                        data-sort-key="{{ key }}">
+                        {{ key | replace('_', ' ') | title }}
+                        {% if view_state.get('sort_by') == key %}
+                            {{ '▲' if view_state.get('sort_asc', True) else '▼' }}
+                        {% endif %}
+                    </th>
+                {% endfor %}
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                {% for key in keys %}
+                    {% set value = row.get(key, '') %}
+                    <td class="mono">
+                        {# Smart Formatting: Check if we should link things #}
+                        {% if value is none %}
+                            <span class="muted">null</span>
+                        {% else %}
+                            {{ value|safe }}
+                        {% endif %}
+                    </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+
+    </table>
+
+{% endmacro %}

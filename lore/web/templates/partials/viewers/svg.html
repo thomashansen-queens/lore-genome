@@ -1,10 +1,17 @@
-<div>
-    <div>
-        <small class="muted small">Showing visualization resolved via {{ adapter.name }}</small>
+{% set data = data | default({}) %}
+{% set metadata = metadata | default({}) %}
+
+<div class="column">
+    <div class="row muted small" style="flex-shrink: 0;">
+        <p>
+            Rendered via {{ adapter_name }} ({{ metadata.get('file_size_kb', '0') }} kB)
+        </p>
+        <p>
+            Canvas ViewBox: {{ metadata.get('viewbox', 'N/A') }}
+        </p>
     </div>
     
-    <div class="card canvas">
-        {# CRITICAL: The 'safe' filter renders as SVG content, not arbitrary HTML #}
-        {{ explore_data | safe }}        
+    <div class="scroll-area">
+        {{ data | safe }}
     </div>
 </div>

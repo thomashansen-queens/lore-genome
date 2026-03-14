@@ -8,6 +8,8 @@
 
     {# One global CSS file for LoRe UI #}
     <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}" />
+    {# DEBUG: remove when done #}
+    {# <link rel="stylesheet" href="{{ url_for('static', path='/css/debug.css') }}" /> #}
 
     {# Self-contained Favicon #}
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>">
@@ -18,35 +20,33 @@
 <body>
     {# === App header (global) === #}
     <header class="app-header">
-        <div class="container row">
-            <a href="/" class="logo">
-                {# FUTURE: A logo #}
-                <h3 style="margin:0;">
-                    LoRē Genome
-                </h3>
+        <a href="/" class="logo">
+            {# FUTURE: A logo #}
+            <h3 style="margin:0;">
+                LoRē Genome
+            </h3>
+        </a>
+        <div class="push-right">
+            {# Global control (settings, user) go here #}
+            <a href="/settings" class="btn secondary">
+                💻︎ Settings
             </a>
-            <div class="header-control push-right">
-                {# Global control (settings, user) go here #}
-                <a href="/settings" class="btn secondary">
-                    💻︎ Settings
-                </a>
-                <a href="/help" class="btn secondary">
-                    ❓︎ Help
-                </a>
-            </div>
+            <a href="/help" class="btn secondary">
+                ❓︎ Help
+            </a>
         </div>
     </header>
 
-    <main class="container">
+    <main class="column padded">
         {# === Breadcrumbs navigation === #}
         {% if breadcrumbs %}
         <nav class="breadcrumbs">
             {% for label, href in breadcrumbs %}
                 {% if href %}
-                <a href="{{ href }}">{{ label }}</a>
-                <span class="breadcrumb-sep">/</span>
+                    <a href="{{ href }}">{{ label }}</a>
+                    <span class="breadcrumb sep">/</span>
                 {% else %}
-                <span class="breadcrumb-current">{{ label }}</span>
+                    <span class="breadcrumb current">{{ label }}</span>
                 {% endif %}
             {% endfor %}
         </nav>
@@ -54,44 +54,137 @@
 
         {# === Flash messages (feedback) === #}
         {% if messages %}
-        <div>
             {% for category, msg in messages %}
-                <div class="flash-message {{ category }}">
-                    {{ msg }}
-                </div>
+                <section class="flash-message {{ category }}">
+                    <pre>{{ msg }}</pre>
+                </section>
             {% endfor %}
-        </div>
         {% endif %}
 
         {# === Main page content === #}
-        <div id="main-content">
-            {% block content %}{% endblock %}
-        </div>
+        {% block content %}{% endblock %}
+
     </main>
 
     {# === App footer (global) === #}
     <footer class="app-footer">
-        <div class="container push-right">
-            <p class="text-muted">
-                LoRē Genome v{{ version }} | 
-                <a href="https://github.com/thomashansen-queens/lore-genome">Cite</a>
-            </p>
-        </div>
+        <cite class="muted push-right">
+            LoRē Genome v{{ version }} | 
+            <a href="https://github.com/thomashansen-queens/lore-genome">GitHub</a>
+        </cite>
     </footer>
 
     {# === Global Scripts === #}
     <script>
-        // Minimal Dropdown Logic (Global)
-        document.addEventListener('focusin', e => {
-            const d = e.target.closest('.dropdown');
-            if(d) {
-                const m = d.querySelector('.dropdown-menu');
-                if(m && (window.innerHeight - m.getBoundingClientRect().bottom) < 0) 
-                    m.classList.add('dropdown-up');
-                else 
-                    m.classList.remove('dropdown-up');
+    // Minimal Dropdown Logic (Global)
+    document.addEventListener('focusin', e => {
+        const d = e.target.closest('.dropdown');
+        if(d) {
+            const m = d.querySelector('.dropdown-menu');
+            if(m && (window.innerHeight - m.getBoundingClientRect().bottom) < 0) 
+                m.classList.add('dropdown-up');
+            else 
+                m.classList.remove('dropdown-up');
+        }
+    });
+
+    // POPOVER POSITIONING
+    document.addEventListener('toggle', (e) => {
+        if (e.target.hasAttribute('popover')) {
+            const popover = e.target;
+
+            if (e.newState === 'open') {
+                const btn = document.querySelector(`[popovertarget="${popover.id}"]`);
+            
+                if (btn) {
+                    const rect = btn.getBoundingClientRect();
+                    popover.style.position = 'fixed';
+                    popover.style.margin = '0';
+
+                    // 1 frame to render, do collision math, and position
+                    requestAnimationFrame(() => {
+                        const popWidth = popover.offsetWidth;
+                        const popHeight = popover.offsetHeight;
+                        const viewWidth = window.innerWidth;
+                        const viewHeight = window.innerHeight;
+                        const padding = 8;  //breathing room from screen edge
+
+                        // Collision detection: Up vs down
+                        let topPos = rect.bottom + 4;
+                        if (topPos + popHeight > viewHeight - padding) {
+                            topPos = rect.top - popHeight - 4;
+                        }
+                        popover.style.top = `${topPos}px`;
+
+                        // Collision detection: Left vs right
+                        let leftPos = rect.right - popWidth;
+                        if (leftPos < padding) {
+                            leftPos = rect.left;
+                        }
+                        if (leftPos + popWidth > viewWidth - padding) {
+                            leftPos = viewWidth - popWidth - padding;
+                        }
+                        popover.style.left = `${leftPos}px`;
+
+                        // The big reveal
+                        popover.classList.add('ready');
+                    });
+                }
+            } else {
+                // Stip the class so it starts invisible next time
+                popover.classList.remove('ready');
             }
+        }
+    }, true);
+    </script>
+
+    {# === Sidebar Resize === #}
+    <script>
+    (function() {
+        const STORAGE_KEY = 'lore-sidebar-width';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.sidebar').forEach(function(sidebar) {
+                // Restore saved width
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) sidebar.style.flexBasis = saved;
+
+                // Insert resizer handle immediately after sidebar
+                const resizer = document.createElement('div');
+                resizer.className = 'sidebar-resizer';
+                sidebar.after(resizer);
+
+                resizer.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startWidth = sidebar.getBoundingClientRect().width;
+                    const minWidth = parseInt(getComputedStyle(sidebar).minWidth);
+                    const maxWidth = sidebar.parentElement.getBoundingClientRect().width * 0.6;
+
+                    resizer.classList.add('dragging');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+
+                    function onMove(e) {
+                        const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + e.clientX - startX));
+                        sidebar.style.flexBasis = newWidth + 'px';
+                    }
+
+                    function onUp() {
+                        resizer.classList.remove('dragging');
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                        localStorage.setItem(STORAGE_KEY, sidebar.style.flexBasis);
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                    }
+
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
         });
+    })();
     </script>
 
     {# === Feature Scripts === #}

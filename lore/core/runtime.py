@@ -3,25 +3,37 @@ Runtime context and configuration for LoRe Genome.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import hashlib
+import json
 import os
 from pathlib import Path
 import logging
-from typing import TYPE_CHECKING
+import logging.handlers
+import pickle
+import shutil
+import sys
+import tempfile
+from typing import TYPE_CHECKING, Any
 
 # triggers decorators, registering Tasks and Adapters into global registries
 # Ne touchez pas!
-import lore.tasks # pylint: disable=unused-import
-import lore.adapters # pylint: disable=unused-import
+from lore.core.filelock import is_file_locked
+import lore.tasks
+import lore.adapters
 
-from lore.core.settings import load_settings, load_secrets, Settings, Secrets
+from lore.core.cache import TieredCache
+from lore.core.execution.executors import LocalSubprocessExecutor
+from lore.core.manifest import Manifest
+from lore.core.settings import LOG_FORMAT, load_settings, load_secrets, Settings, Secrets, save_secrets, save_settings
 from lore.core import paths
-# from lore.core.validators import load_validators
+from lore.core.utils import auto_increment, slugify
 
 if TYPE_CHECKING:
-    # Puts 'Session' in the global namespace for type checking only.
     from lore.core.session import Session
+    from lore.core.tasks.models import TaskResults
 
 
 @dataclass
@@ -30,23 +42,48 @@ class SessionSummary:
     id: str
     name: str
     path: Path
-    created_at: datetime
-    updated_at: datetime
+    display_size: str
+    created_at: datetime | None
+    updated_at: datetime | None
 
 
 @dataclass
 class Runtime:
     """Configuration for the LoRe Genome Runtime environment."""
     cache_dir: Path
-    data_root: Path
-    sessions_dir: Path
     settings_dir: Path
     settings: Settings
     secrets: Secrets
     logger: logging.Logger
-    # self._queue: queue.Queue()
-    # self._worker: threading.Threat(target=self._drain_queue, daemon=True)
-    # self._worker.start()
+    # executor: BaseExecutor = field(init=False)
+    cache: TieredCache = field(init=False)
+    # TODO: self._queue: queue.Queue()
+    # TODO: self._worker: threading.Threat(target=self._drain_queue, daemon=True)
+    # TODO: self._worker.start()
+
+    def __post_init__(self):
+        self.cache = TieredCache(
+            logger=self.logger,
+            cache_dir=self.cache_dir,
+            max_bytes=self.settings.cache_ram_mb * 1024 * 1024,
+            max_disk=int(self.settings.cache_disk_gb * 1024 * 1024 * 1024),
+        )
+        self.executor = LocalSubprocessExecutor()
+
+        # Debug on launch
+        self.logger.info("Initialized LoRe Runtime with data root: %s", self.data_root)
+        self.logger.debug("Settings: %s", self.settings)
+        self.logger.debug("Cache: %s", self.cache.cas_dir)
+
+    @property
+    def data_root(self) -> Path:
+        """Settings dictates the data root directory."""
+        return self.settings.data_root
+
+    @property
+    def sessions_dir(self) -> Path:
+        """Derived dynamically from the active data_root."""
+        return self.data_root / "sessions"
 
     def ensure_dirs(self) -> None:
         """Ensure all directories needed by the program exist."""
@@ -55,125 +92,277 @@ class Runtime:
         self.settings_dir.mkdir(parents=True, exist_ok=True)
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
+    def update_settings(
+        self,
+        settings_dict: dict[str, Any],
+        secrets_dict: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
+        """
+        Validates and updates settings/secrets. Returns (requires_restart, errors: list[str])
+        """
+        errors = []
+        requires_restart = False
+
+        # 1. Allow safe partial updates
+        try:
+            settings_updates = {k: v for k, v in settings_dict.items() if k in Settings.model_fields.keys()}
+            secrets_updates = {k: v for k, v in secrets_dict.items() if k in Secrets.model_fields.keys()}
+
+            if settings_updates:
+                new_settings_data = self.settings.model_dump() | settings_updates
+                self.settings = Settings.model_validate(new_settings_data)
+
+            if secrets_updates:
+                new_secrets_data = self.secrets.model_dump() | secrets_updates
+                self.secrets = Secrets.model_validate(new_secrets_data)
+
+        except ValueError as e:
+            errors.append(f"Validation error: {str(e)}")
+            return requires_restart, errors
+
+        # 2. Save to disk
+        save_settings(self.settings_dir, self.settings)
+        save_secrets(self.settings_dir, self.secrets)
+
+        return requires_restart, errors
+
     # --- Session management ---
 
-    def create_session(self, *, session_id: str | None = None) -> 'Session':
+    def _find_session_dir(self, session_id: str) -> Path | None:
+        """
+        Locates the physical directory for a given Session ID
+        """
+        # glob perfectly matches the immutable prefix
+        matches = list(self.sessions_dir.glob(f"{session_id}*"))
+        for match in matches:
+            if match.is_dir():
+                return match
+        return None
+
+    def create_session(self, *, name: str | None = None) -> "Session":
         """Create or load a Session within this Runtime."""
-        # pylint: disable=import-outside-toplevel
-        from lore.core.session import Session  # avoid circular import
         from uuid import uuid4
-        if session_id is None:
-            session_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid4())[:8]
-        ses_path = self.sessions_dir / session_id
+        from lore.core.session import Session  # avoid circular import
+
+        # 1. Generate a unique, immutable Session ID
+        timestamp = datetime.now().strftime("%Y%m%d")
+        short_uuid = str(uuid4())[:8]
+        session_id = f"{timestamp}_{short_uuid}"
+
+        # 2. Generate the mutable directory path
+        slug = slugify(name) if name else None
+        dir_name = f"{session_id}_{slug}" if slug else session_id
+        ses_path = self.sessions_dir / dir_name
+
+        # 3. Create the directory and return the new Session object
         ses_path.mkdir(parents=True, exist_ok=True)
         (ses_path / "artifacts").mkdir(parents=True, exist_ok=True)
-        return Session(session_root=self.sessions_dir, session_id=session_id, runtime=self)
 
-    def clone_session(self, *, session_id: str) -> 'Session':
+        return Session(path=ses_path, session_id=session_id, runtime=self)
+
+    def import_session(self, zip_path: Path) -> str:
         """
-        Clone an existing Session for reuse. Performs a deep copy of the session
+        Packs a Session into a .zip archive
+        TODO: Improve functionality (e.g. dehydrated session)
+        """
+        # 1. Unpack as temp file to be imported
+        with tempfile.TemporaryDirectory() as temp_dir:
+            staging_path = Path(temp_dir)
+            shutil.unpack_archive(str(zip_path), str(staging_path))
+
+            # 2. Load Manifest
+            manifest_file = staging_path / "manifest.json"
+            if not manifest_file.exists():
+                raise ValueError("Invalid archive: Missing manifest.json. Does not quack like a Session.")
+
+            try:
+                with open(manifest_file, "r", encoding="utf-8") as f:
+                    manifest_data = json.load(f)
+                    imported_id = manifest_data.get("session_id")
+                    if not imported_id:
+                        raise ValueError("Invalid manifest: Missing session_id.")
+            except json.JSONDecodeError:
+                raise ValueError("Invalid manifest: manifest.json is not valid JSON.")
+
+            # 3. Collision check (TODO: Handle reconciliation here)
+            if self._find_session_dir(imported_id):
+                raise ValueError(f"Session ID collision: A session with ID '{imported_id}' already exists.")
+
+            shutil.move(str(staging_path), str(self.sessions_dir / imported_id))
+
+            self.logger.info("Imported session '%s' with ID '%s'", manifest_data.get("session_name", "Unnamed"), imported_id)
+            return imported_id
+
+    def clone_session(self, *, session_id: str) -> "Session":
+        """
+        Clone an existing Session for reuse. Performs a deep copy of the Session
         directory, then sanitizes the Manifest for reuse.
         """
-        # pylint: disable=import-outside-toplevel
         from lore.core.session import Session  # avoid circular import
         from uuid import uuid4
         from shutil import copytree
-        import json
-        source_path = self.sessions_dir / session_id
-        if not source_path.exists() or not source_path.is_dir():
-            raise ValueError(f"Source session '{session_id}' does not exist for cloning.")
-        new_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid4())[:8]
-        dest_path = self.sessions_dir / new_id
+
+        source_path = self._find_session_dir(session_id)
+        if not source_path:
+            raise ValueError(f"Cannot clone '{session_id}' that doesn't exist!")
+        if not (source_path / "manifest.json").exists():
+            raise ValueError(f"Cannot clone '{session_id}': manifest.json is missing")
+
+        # Snapshot Session names
+        existing_names = [s.name for s in self.list_sessions()]
+
+        # Generate new ID and copy, stealing the slug from the source directory name
+        new_id = f"{datetime.now().strftime('%Y%m%d')}_{str(uuid4())[:8]}"
+        slug_part = source_path.name[len(session_id):]
+        dest_path = self.sessions_dir / f"{new_id}{slug_part}"
         copytree(source_path, dest_path)
-        # Sanitize the manifest: It's a new session, so it should unique IDs
+
+        # Sanitize the copied manifest through the Manifest class
         manifest_path = dest_path / "manifest.json"
-        if manifest_path.exists():
-            with open(manifest_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            data["session_id"] = new_id
-            data["created_at"] = datetime.now(timezone.utc).isoformat()
-            old_name = data.get('session_name', session_id)
-            if not old_name.startswith("Cloned"):
-                data['session_name'] = f"Cloned_{old_name}"
-            # Reset Task statuses (in case previous tasks were RUNNING or FAILED)
-            tasks = data.get("tasks", {})
-            for task in tasks.values():
-                if task.get("status") in ["RUNNING"]:
-                    task["status"] = "PENDING"
-                    task["error"] = "Status reset during session clone."
-            with open(manifest_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-        return Session(session_root=self.sessions_dir, session_id=new_id, runtime=self)
+        manifest = Manifest.load(manifest_path)
+        manifest.rebrand(new_id)
+        if manifest.session_name:
+            manifest.session_name = auto_increment(manifest.session_name, existing_names)
 
-    def get_session(self, session_id: str, read_only: bool = False) -> 'Session':
-        """Load an existing Session by its ID."""
-        # pylint: disable=import-outside-toplevel
+        for task in manifest.tasks.values():
+            if task.status == "RUNNING":
+                task.status = "PENDING"
+                task.error = "Status reset during session clone."
+
+        manifest.save(manifest_path)
+
+        return Session(path=dest_path, session_id=new_id, runtime=self)
+
+    def open_session(self, session_id: str, read_only: bool = False) -> "Session":
+        """Load an existing Session by its ID, finding its actual path on disk."""
         from lore.core.session import Session  # avoid circular import
-        return Session(session_root=self.sessions_dir, session_id=session_id, runtime=self, read_only=read_only)
 
-    def list_sessions(self, sort_by: str | None = None) -> list[SessionSummary] | None:
+        ses_path = self._find_session_dir(session_id)
+        if not ses_path:
+            raise FileNotFoundError(f"Session directory for ID '{session_id}' not found.")
+
+        return Session(path=ses_path, session_id=session_id, runtime=self, read_only=read_only)
+
+    def export_session(self, session_id: str, output_dir: Path) -> Path:
+        """
+        Exports a session as a .zip archive.
+        TODO: Add functionality here (e.g. dehydrated)
+        """
+        session_dir = self._find_session_dir(session_id)
+        if not session_dir:
+            raise FileNotFoundError(f"Session '{session_id}' not found for export.")
+
+        target_base = output_dir / f"lore_session_{session_id}"
+        archive_path = shutil.make_archive(str(target_base), "zip", str(session_dir))
+
+        return Path(archive_path)
+
+    def rename_session(self, session_id: str, new_name: str) -> Path:
+        """
+        Renames a session. Delegates to Session.name so that the manifest is updated
+        via the normal save machinery and the directory is synced on exit.
+        If a task is running the directory rename is deferred until that task's session closes.
+        Returns the current physical path (which may be the old path if rename was deferred).
+        """
+        self.open_session(session_id).name = new_name
+        path = self._find_session_dir(session_id)
+        if path is None:
+            raise FileNotFoundError(f"Session directory for ID '{session_id}' vanished after rename!")
+        return path
+
+    def sync_session_dir(self, session_id: str) -> None:
+        """
+        Deferred naming/self-healing function. Checks if the physical directory 
+        slug matches the Manifest name. If they drift, align them.
+        """
+        path = self._find_session_dir(session_id)
+        if not path:
+            return  # Can't sync if we can't find it
+
+        if is_file_locked(path / ".manifest.lock"):
+            return  # Can't sync if it's locked
+
+        manifest_path = path / "manifest.json"
+        if manifest_path.exists():
+            try:
+                data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                tasks = data.get("tasks", {})
+                if any(t.get("status") == "RUNNING" for t in tasks.values()):
+                    return  # Don't rename while a task handler is executing
+                name = data.get("session_name")
+                if name:
+                    expected_slug = slugify(name)
+                    expected_dir_name = f"{session_id}_{expected_slug}"
+                    if path.name != expected_dir_name:
+                        import shutil
+                        new_path = self.sessions_dir / expected_dir_name
+                        shutil.move(str(path), str(new_path))
+                        self.logger.info("Synced directory for ID: '%s' to match name '%s'", session_id, name)
+            except Exception as e:
+                self.logger.warning("Error occurred while syncing session directory for ID '%s': %s", session_id, e)
+
+    def list_sessions(self, sort_by: str | None = None) -> list[SessionSummary]:
         """
         Scans the Sessions directory and returns a summary of each. Newest first.
         """
-        results = []
-        if not self.sessions_dir.exists():
-            raise FileNotFoundError(f"Sessions directory does not exist: {self.sessions_dir}")
 
+        results = []
         for item in self.sessions_dir.iterdir():
             if not item.is_dir():
                 continue
-            manifest_path = item / "manifest.json"
-            created_at = datetime.fromtimestamp(item.stat().st_ctime, tz=timezone.utc)
-            updated_at = datetime.fromtimestamp(item.stat().st_mtime, tz=timezone.utc)
-            name = item.name
-            if manifest_path.exists():
-                try:
-                    import json  # pylint: disable=import-outside-toplevel
-                    data = json.loads(manifest_path.read_text())
-                    name = data.get("session_name", name)
-                    if data.get("created_at"):
-                        created_at = datetime.fromisoformat(data["created_at"])
-                    if data.get("updated_at"):
-                        updated_at = datetime.fromisoformat(data["updated_at"])
-                except (json.JSONDecodeError, OSError) as e:
-                    self.logger.warning("Corrupt manifest found in session %s: %s", item.name, e)
-                    name = f"CORRUPT: {name}"
-            else:
-                name = f"No manifest: {name}"
 
-            results.append(SessionSummary(
-                id=item.name,
-                name=name,
-                path=item,
-                created_at=created_at,
-                updated_at=updated_at,
-            ))
-        results.sort(key=lambda x: getattr(x, sort_by or "updated_at"), reverse=True)
+            if not (item / "manifest.json").exists():
+                self.logger.warning("Session directory has no manifest, skipping: %s", item.name)
+                continue
+
+            session_id = item.name[:17]
+            try:
+                with self.open_session(session_id, read_only=True) as s:
+                    results.append(SessionSummary(
+                        id=s.id,
+                        name=s.name,
+                        path=s.dir,
+                        display_size=s.display_size,
+                        created_at=s.manifest.created_at,
+                        updated_at=s.manifest.updated_at,
+                    ))
+            except Exception as e:
+                self.logger.warning("Could not load session %s: %s", item.name, e)
+
+        sentinel = datetime.min.replace(tzinfo=timezone.utc)
+        results.sort(key=lambda x: getattr(x, sort_by or "updated_at") or sentinel, reverse=True)
         return results
 
     def delete_session(self, session_id: str) -> None:
         """
         Permanently delete a session and all data by its ID.
         """
-        import shutil  # pylint: disable=import-outside-toplevel
-        ses_path = self.sessions_dir / session_id
-        try:
-            shutil.rmtree(ses_path)
-            self.logger.info("Deleted session: %s", session_id)
-        except FileNotFoundError as e:
-            raise ValueError(
-                f"Session ID: {session_id} not found for deletion."
-            ) from e
+        import shutil
+        ses_path = self._find_session_dir(session_id)
+        if not ses_path:
+            raise ValueError(f"Cannot delete '{session_id}' that doesn't exist.")
+        shutil.rmtree(ses_path)
+        self.logger.info("Deleted session: %s", session_id)
 
-    # --- Executor management ---
+    # --- Execution management ---
 
-    def execute_task(self, session_id: str, task_id):
+    def execute_task(self, session_id: str, task_id: str) -> None:
         """
-        Passthrough to Executor to run a Task by ID within a Session
-        The executor handles opening/closing the session granularly.
+        Passthrough to Execution to run a Task by ID within a Session
+        The execution handles opening/closing the session granularly.
         """
-        from lore.core.executor import execute_task  # pylint: disable=import-outside-toplevel
-        execute_task(self, session_id, task_id)
+        # from lore.core.execution.context import execute_task
+        # execute_task(self, session_id, task_id)
+        self.logger.info("Dispatching Task %s to Executor", task_id)
+        self.executor.submit(session_id, task_id)
+
+    def preview_task(self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None) -> "TaskResults":
+        """
+        Executes a Task in a special preview mode that does not mutate the Session or its data.
+        Useful for quick iterations during development and debugging.
+        """
+        from lore.core.execution.worker import run_preview_worker
+        return run_preview_worker(self, session_id, task_key, raw_inputs, exec_config)
 
 # --- Runtime management ---
 
@@ -182,39 +371,54 @@ def build_runtime(
     data_root: Path | None = None,
     verbose: bool = False,
 ) -> Runtime:
-    """Builds and returns a Runtime object for LoRe Genome."""
+    """Factory builds and returns a Runtime object for LoRe Genome."""
     # 1. Logging
     logger = logging.getLogger("lore")
     if not logging.getLogger().hasHandlers():
         # don't override uvicorn logging if it's already set up
         logging.basicConfig(
             level=logging.DEBUG if verbose else logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            format=LOG_FORMAT,
         )
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
-    # 2. Set directories
+
+    # 2. Set directories and load settings
     settings_dir = paths.default_settings_dir()
     cache_dir = paths.default_cache_dir()
     settings = load_settings(settings_dir)
     secrets = load_secrets(settings_dir)
+
     if data_root is not None:
-        data_root = data_root.expanduser().resolve()
+        settings.data_root = data_root.expanduser().resolve()
     elif env := os.getenv("LORE_DATA_ROOT"):
-        data_root = Path(env).expanduser().resolve()
-    elif settings.data_root is not None:
-        data_root = settings.data_root.expanduser().resolve()
+        settings.data_root = Path(env).expanduser().resolve()
     else:
-        data_root = paths.default_data_root()
-    sessions_dir = data_root / "sessions"
+        settings.data_root = settings.data_root.expanduser().resolve()
+
     # 3. Create context
     rt = Runtime(
         cache_dir=cache_dir,
-        data_root=data_root,
-        sessions_dir=sessions_dir,
         settings_dir=settings_dir,
         settings=settings,
         secrets=secrets,
         logger=logger,
     )
     rt.ensure_dirs()
+
+    handler = logging.handlers.RotatingFileHandler(
+        rt.settings.data_root / "lore_runtime.log",
+        maxBytes=2 * 1024 * 1024,
+        backupCount=1,
+    )
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    rt.logger.addHandler(handler)
+
+    # 4. Load plugins
+    from lore.core.plugins import discover_plugins
+    built_in_tasks_dir = Path(__file__).parent.parent / "tasks"
+    discover_plugins(built_in_tasks_dir)
+    # FUTURE: Load from other dirs as well
+    # user_plugins_dir = rt.settings.plugins_dir
+    # discover_plugins(user_plugins_dir)
+
     return rt

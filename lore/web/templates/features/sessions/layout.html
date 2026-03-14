@@ -1,14 +1,33 @@
 {% extends "layouts/base.html" %}
 
 {% block content %}
-<div class="session-wrapper">
-    <aside class="session-sidebar">
-        {# ... session sidebar navigation ... #}
+<div class="row fill" style="align-items: stretch;">
+
+    <aside class="sidebar">
+
+        {# === Session title and name updater === #}
+        <span class="ui-label">Session</span>
+        {{ ui.editable_header(session.name, "/sessions/" ~ session.id ~ "/update") }}
+        
+        <hr />
+        
+        <label class="strong">Tasks</label>
+
+        <a href="/sessions/{{ session.id }}/tasks/new" class="btn primary fullwidth center">
+            🛠 New Task
+        </a>
+
+        <hr />
+
+        <label class="strong">Artifacts</label>
+
+        <a href="/sessions/{{ session.id }}/artifacts/" class="btn primary fullwidth center">
+            🠩 Manage Artifacts
+        </a>
+
     </aside>
     
-    <div class="session-content">
-        {# This defines a NEW block that children will fill #}
-        {% block workspace %}{% endblock %}
-    </div>
+    {% block workspace %}{% endblock %}
+
 </div>
 {% endblock %}

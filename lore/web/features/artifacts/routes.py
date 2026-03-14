@@ -1,14 +1,89 @@
 """
 Routes for managing individual artifacts within a Session.
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 
-from lore.core.adapters import ImageAdapter, TableAdapter, adapter_registry
-from lore.web.deps import ActiveSession, PageContext, build_breadcrumbs, templates
-from lore.web.utils import get_form_str
+import json
+from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+
+from lore.core.tasks import AdapterConfig
+from lore.core.io import get_reader_for
+from lore.web.deps import ActiveSession, PageContext, templates
+from lore.web.utils.forms import get_form_str
+
+_DEFAULT_EXPLORE_DISPLAY_LIMIT = 1000
+
 
 router = APIRouter(prefix="/sessions/{session_id}/artifacts", tags=["artifacts"])
+
+# --- Artifact views ---
+
+@router.get("/", response_class=HTMLResponse)
+async def view_artifact_manager(
+    s: ActiveSession,
+    ctx: PageContext = Depends(),
+):
+    """
+    Renders the Artifact Manager for staging uploads and remote references.
+    """
+    ctx.generate_breadcrumbs({s.id: s.name, "artifacts": "Artifacts"})
+    return templates.TemplateResponse(
+        "features/artifacts/manage.html",
+        ctx.render(session=s, artifacts=s.artifacts)
+    )
+
+
+@router.post("/ingest", response_class=JSONResponse)
+async def api_ingest_artifacts(
+    s: ActiveSession,
+    metadata: str = Form(...),
+    files: list[UploadFile] = File(default_factory=list),
+):
+    """
+    Receives multipart form containing JSON metadata and binary file data.
+    TODO: Tidy this up, don't make the router do file IO
+    """
+    from pathlib import Path
+    import shutil
+    import tempfile
+    items = json.loads(metadata)
+    file_idx = 0
+
+    for item in items:
+        name = item.get("name")
+        data_type = item.get("type", "unknown")
+
+        if item.get("isRemote"):
+            uri = item.get("uri")
+            s.register_artifact(
+                source=uri,
+                name=name,
+                data_type=data_type,
+            )
+            continue
+        else:
+            upload = files[file_idx]
+            file_idx += 1
+
+            # materialize the file to a temp file for ingestion
+            original_ext = Path(upload.filename).suffix if upload.filename else "bin"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{original_ext}") as tmp_out:
+                shutil.copyfileobj(upload.file, tmp_out)
+                tmp_path = Path(tmp_out.name)
+            
+            try:
+                s.register_artifact(
+                    source=tmp_path,
+                    name=name,
+                    data_type=data_type,
+                )
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+
+    return JSONResponse({"status": "success", "message": "Artifacts ingested successfully"})
 
 
 @router.get("/{artifact_id}", response_class=HTMLResponse)
@@ -20,18 +95,28 @@ async def view_artifact_overview(
     """
     The home page for an Artifact.
     """
-    try:
-        artifact = s.get_artifact(artifact_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e)) from e
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        return ctx.redirect_back(f"/sessions/{s.id}", message="Artifact not found", message_type="error")
 
     adapters = artifact.get_adapters()
     push_tasks = artifact.get_push_tasks()
     parent_task = s.get_task(artifact.created_by_task_id) if artifact.created_by_task_id else None
     parent_artifacts = [s.get_artifact(artifact_id) for artifact_id in artifact.parent_artifact_ids]
-    preview, is_truncated = s.preview_artifact(artifact_id, mode="bytes")
 
-    ctx.breadcrumbs = build_breadcrumbs(s.id, s.name, artifact.ui_name)
+    path = s.get_artifact_path(artifact_id)
+    is_truncated = False
+
+    try:
+        reader = get_reader_for(path)
+        preview = reader.read_text_chunk(max_chars=5000)
+        file_size = reader.get_base_metadata()["file_size_bytes"]
+        is_truncated = file_size > len(preview.encode("utf-8"))
+    except (ValueError, NotImplementedError):
+        preview = "(Preview not available for this file type.)"
+        file_size = path.stat().st_size if path.exists() else 0
+
+    ctx.generate_breadcrumbs({s.id: s.name, artifact_id: artifact.ui_name})
     return templates.TemplateResponse(
         "features/artifacts/detail.html",
         ctx.render(
@@ -57,62 +142,246 @@ async def view_artifact_explore(
     """
     View the adapted data for an Artifact
     """
-    try:
-        artifact = s.get_artifact(artifact_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e)) from e
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        return ctx.redirect_back(f"/sessions/{s.id}/artifacts/{artifact_id}", message="Artifact not found", message_type="error")
 
-    # Adapt the data for view
+    # 1. Allow user to specify an adapter if multiple are available
+    adapters = artifact.get_adapters()
     if adapter_key:
-        adapter = adapter_registry[adapter_key]
+        adapter = next((a for a in adapters if a.name == adapter_key), None)
     else:
-        matches = adapter_registry.get_adapters(artifact)
-        adapter = matches[0] if matches else None
+        adapter = adapters[0] if adapters else None
 
     if not adapter:
         return ctx.redirect_back(
             f"/sessions/{s.id}/artifacts/{artifact_id}",
-            message="No adapter available for this Artifact", message_type="warning",
+            message="No adapter available for this Artifact",
+            message_type="warning",
     )
 
-    explore_data = None
-    keys = None
-    is_truncated = False
+    # 2. Data loading
+    path = s.get_artifact_path(artifact_id)
+    reader = get_reader_for(path)
+    data, io_metadata = reader.preview(100)
+    preview_result = adapter.preview(data, io_metadata)
 
-    if adapter.view_mode == "table" and isinstance(adapter, TableAdapter):
-        # Memory efficient loading
-        if artifact.size_bytes > 3 * 1024 * 1024:
-            raw_data, is_truncated = s.preview_artifact(artifact_id, mode="adapter", limit_lines = 500)
-        else:
-            raw_data = s.load_artifact_data(artifact_id)
-
-        explore_data = adapter.adapt(raw_data)
-        keys = adapter.get_keys()
-
-        if not keys and explore_data:
-            keys = list(explore_data[0].keys())
-
-    elif adapter.view_mode == "image" and isinstance(adapter, ImageAdapter):
-        raw_data = s.load_artifact_data(artifact_id)
-        explore_data = adapter.adapt(raw_data)
-
-    ctx.breadcrumbs = build_breadcrumbs(
-        s.id, s.name,
-        extra=[(artifact.ui_name, f"/sessions/{s.id}/artifacts/{artifact_id}")],
-        final_item="Explore",
-    )
+    ctx.generate_breadcrumbs({
+        s.id: s.name,
+        artifact_id: artifact.ui_name
+    })
     return templates.TemplateResponse(
         "features/artifacts/explore.html",
         ctx.render(
             session=s,
             artifact=artifact,
             adapter=adapter,
+            available_adapters=adapters,
             view_mode=adapter.view_mode,
-            explore_data=explore_data,
-            keys=keys,
-            is_truncated=is_truncated,
+            data=preview_result.data,
+            keys=preview_result.metadata.get("columns", []),
+            metadata=preview_result.metadata,
         )
     )
+
+# --- Explore AJAX ---
+
+class ExploreDataRequest(BaseModel):
+    query: str = ""
+    adapter_key: str | None = None
+    adapter_config: AdapterConfig = Field(default_factory=AdapterConfig)
+
+
+@router.post("/{artifact_id}/explore/data", response_class=JSONResponse)
+def api_explore_data(
+    artifact_id: str,
+    payload: ExploreDataRequest,
+    s: ActiveSession,
+    ctx: PageContext = Depends(),
+):
+    """
+    AJAX endpoint for the Artifact Explorer. Applies sort + pandas query filter
+    on the full dataset and returns a rendered HTML fragment.
+    """
+    try:
+        artifact = s.get_artifact(artifact_id)
+        if not artifact:
+            return JSONResponse({"status": "error", "message": "Artifact not found"}, status_code=400)
+
+        adapters = artifact.get_adapters()
+        if payload.adapter_key:
+            adapter = next((a for a in adapters if a.name == payload.adapter_key), None)
+        else:
+            adapter = adapters[0] if adapters else None
+
+        if not adapter:
+            return JSONResponse({"status": "error", "message": "No adapter available"}, status_code=400)
+
+        path = s.get_artifact_path(artifact_id)
+        reader = get_reader_for(path)
+
+        # 1. Load and adapt the full dataset
+        def _compute_dataframe():
+            """Cacheable helper to compute full DataFrame from Artifact + Adapter."""
+            records = adapter.adapt(reader.read_full())
+            import pandas as pd
+            df = pd.DataFrame(records)
+            if not df.empty:
+                df = df.apply(pd.to_numeric, errors="ignore")
+            return df
+
+        # 2. Caching layer to speed up repeated queries on large data
+        master_df = s.runtime.cache.get_or_compute(
+            session_id=s.id,
+            prefix="explore_df",
+            compute_fn=_compute_dataframe,
+            cache_kwargs={
+                "artifact_id": artifact_id,
+                "adapter": adapter.name,
+                "modified_time": path.stat().st_mtime,  # final boss of cache invalidation
+            }
+        )
+
+        total_rows = len(master_df)
+        df = master_df  # work on a copy to avoid modifying in-memory cache
+
+        # 3. Pandas query + sort
+        if payload.query.strip() and not df.empty:
+            try:
+                df = df.query(payload.query)
+            except Exception as e:
+                return JSONResponse({"status": "error", "message": f"Invalid query: {str(e)}"}, status_code=400)
+
+        view_state = payload.adapter_config.view_state
+        sort_by = view_state.get("sort_by")
+
+        if sort_by and sort_by in df.columns:
+            sort_asc = view_state.get("sort_asc", True)
+            df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
+
+        # 4. Data enhancements
+        # UI data bars: calculate maximums
+        numeric_df = df.select_dtypes(include=["number"])
+        numeric_maxes = numeric_df.max().to_dict() if not numeric_df.empty else {}
+
+        filtered_row_count = len(df)
+
+        # 4. Truncate for display
+        display_limit = s.runtime.settings.explore_display_limit or _DEFAULT_EXPLORE_DISPLAY_LIMIT
+        is_truncated = filtered_row_count > display_limit
+        df_display = df.head(display_limit)
+
+        display_records = df_display.to_dict(orient="records")
+        columns = list(df.columns) if not df.empty else []
+
+        metadata = {
+            "columns": columns,
+            "total_rows": total_rows,
+            "filtered_rows": filtered_row_count,
+            "is_truncated": is_truncated,
+            "numeric_maxes": numeric_maxes,
+            **reader.get_base_metadata(),
+        }
+
+        # 5. Render HTML fragment
+        response = templates.TemplateResponse(
+            request=ctx.request,
+            name="partials/viewers/table.html",
+            context={
+                "request": ctx.request,
+                "data": display_records,
+                "keys": columns,
+                "metadata": metadata,
+                "adapter_name": adapter.name,
+                "view_state": view_state,
+            },
+        )
+        html = bytes(response.body).decode("utf-8")
+
+        return JSONResponse({
+            "status": "success",
+            "html": html,
+            "row_count": filtered_row_count,
+            "total_rows": total_rows,
+        })
+
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@router.post("/{artifact_id}/explore/export")
+def api_explore_export(
+    artifact_id: str,
+    payload: ExploreDataRequest,
+    s: ActiveSession,
+):
+    """Downloads the currently filtered and sorted dataset as a CSV."""
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        raise HTTPException(404, "Artifact not found")
+
+    adapters = artifact.get_adapters()
+    if payload.adapter_key:
+        adapter = next((a for a in adapters if a.name == payload.adapter_key), None)
+    else:
+        adapter = adapters[0] if adapters else None
+
+    if not adapter:
+        raise HTTPException(404, "No adapter available for this Artifact")
+
+    view_state = payload.adapter_config.view_state
+    path = s.get_artifact_path(artifact_id)
+    reader = get_reader_for(path)
+
+    # 1. Fetch from TieredCache (Instant hit!)
+    def _compute_dataframe():
+        records = adapter.adapt(reader.read_full())
+        import pandas as pd
+        df = pd.DataFrame(records)
+        return df.apply(pd.to_numeric, errors="ignore") if not df.empty else df
+
+    df = s.runtime.cache.get_or_compute(
+        session_id=s.id, prefix="explore_df", compute_fn=_compute_dataframe,
+        cache_kwargs={"artifact_id": artifact_id, "adapter": adapter.name, "modified_time": path.stat().st_mtime}
+    )
+
+    # 2. Apply Filters & Sort
+    if payload.query.strip() and not df.empty:
+        try:
+            df = df.query(payload.query)
+        except Exception:
+            pass # Ignore bad queries on export
+    
+    sort_by = view_state.get("sort_by")
+    if sort_by and sort_by in df.columns:
+        sort_asc = view_state.get("sort_asc", True)
+        df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
+
+    # 3. Return CSV Response
+    csv_data = df.to_csv(index=False)
+    filename = f"{artifact.name or 'export'}_filtered.csv"
+
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+# --- Actions ---
+
+@router.post("/{artifact_id}/rename", response_class=RedirectResponse)
+async def rename_artifact_action(
+    artifact_id: str,
+    s: ActiveSession,
+    ctx: PageContext = Depends()
+):
+    """Dedicated endpoint for in-place renaming of Artifacts."""
+    form_data = await ctx.request.form()
+    new_name = get_form_str(form_data, "name")
+
+    if new_name:
+        s.rename_artifact(artifact_id, new_name)
+    return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/artifacts/{artifact_id}")
 
 
 @router.post('/{artifact_id}/update', response_class=RedirectResponse)
@@ -125,15 +394,8 @@ async def update_artifact_action(
     Update an existing Artifacts's basic metadata (like name) via a web form.
     """
     form_data = await ctx.request.form()
-    # 1. Handle renaming (changes file paths)
-    new_name = get_form_str(form_data, "name")
-    if new_name:
-        try:
-            s.rename_artifact(artifact_id, new_name)
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from e
 
-    # 2. Metadata (updates manifest, no FS changes)
+    # Metadata (updates manifest, no FS changes)
     # FUTURE: This is where various metadata fields can change
     # s.update_artifact_metadata(artifact_id, {"notes": new_notes})
 

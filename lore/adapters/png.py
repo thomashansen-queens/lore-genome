@@ -1,11 +1,26 @@
 """
-FUTURE: This file is a placeholder for any PNG-specific adapter logic. Currently, PNGs are handled by the generic ImageAdapter, but if we want to add PNG-specific features (like metadata extraction, thumbnail generation, etc.) we can implement them here.
+Adapter for PNG image data.
 """
 import base64
-from lore.core.adapters import ImageAdapter
+from pathlib import Path
+from typing import ClassVar
+
+from lore.core.adapters import adapter_registry, ImageAdapter
+
 
 class PNGAdapter(ImageAdapter):
-    def adapt(self, raw_bytes: bytes) -> str:
-        """HTML requires base64-encoding for inline images"""
-        encoded = base64.b64encode(raw_bytes).decode('utf-8')
+    accepted_formats: ClassVar[set[str]] = {"png"}
+    accepted_types: ClassVar[set[str]] = {"*"}
+    view_mode: ClassVar[str] = "image"
+
+    def parse(self, source: Path) -> bytes:
+        return source.read_bytes()
+
+    def adapt(self, path: Path) -> str:
+        """HTML requires base64-encoding for inline images."""
+        raw_bytes = self.parse(path)
+        encoded = base64.b64encode(raw_bytes).decode("utf-8")
         return f"data:image/png;base64,{encoded}"
+
+
+adapter_registry.register(PNGAdapter())

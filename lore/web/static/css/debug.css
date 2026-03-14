@@ -1,0 +1,13 @@
+/* ======================
+   FLEXBOX DEBUG OUTLINES
+   Add to base.html <head> to activate. Remove when done.
+   Uses outline (not border) so layout is not affected.
+   ====================== */
+* { outline: 1px solid red; }
+* * { outline: 1px solid orange; }
+* * * { outline: 1px solid gold; }
+* * * * { outline: 1px solid green; }
+* * * * * { outline: 1px solid dodgerblue; }
+* * * * * * { outline: 1px solid blueviolet; }
+* * * * * * * { outline: 1px solid deeppink; }
+* * * * * * * * { outline: 1px solid red; }

@@ -1,0 +1,125 @@
+{# === Manager for sessions in data_root. Each session is a directory with metadata and artifacts === #}
+{% extends "/layouts/base.html" %}
+{% import "/macros/ui.html" as ui %}
+
+{% block content %}
+
+<div class="column">
+    <div class="row" style="flex-shrink: 0;">
+        <div>
+            <h4 style="margin: 0;">Sessions</h4>
+            <small class="text-muted">Each Session is an isolated workspace for analysis.</small>
+        </div>
+
+        <div class="dropdown push-right">
+            <button class="btn primary" popovertarget="new-session-menu">
+                ＋ New Session ▾
+            </button>
+            <div id="new-session-menu" class="dropdown-menu left" popover>
+                <form action="/sessions/new" method="POST">
+                    <button class="primary" type="submit">＋ New Session</button>
+                </form>
+                
+                <form id="import-form" action="/sessions/import" method="POST" enctype="multipart/form-data" style="display: none;">
+                    <input type="file" id="import-file-input" name="file" accept=".zip" onchange="document.getElementById('import-form').submit();">
+                </form>
+                <button type="button" onclick="document.getElementById('import-file-input').click();">
+                    ⬆ Import Session
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    {# === Table of sessions to manage. Currently, the only action is "delete". === #}
+    <div class="card" style="margin-top: 1rem;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Session</th>
+                    <th>ID</th>
+                    <th>Created</th>
+                    <th>Size</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in sessions %}
+                <tr>
+                    <td>
+                        <a href="/sessions/{{ s.id }}">
+                            <code>{{ s.name }}</code>
+                        </a>
+                    </td>
+                    <td>
+                        {{ s.id[:8] }}
+                    </td>
+                    <td class="text-muted">
+                        {{ s.created_at.strftime("%Y-%m-%d") }}
+                        <span class="text-muted">{{ s.created_at.strftime("%H:%M:%S") }}</span>
+                    </td>
+                    <td>
+                        {{ s.display_size }}
+                    </td>
+                    <td>
+                        {# === Kebab menu === #}
+                        <div class="dropdown">
+                            <button class="btn-kebab" popovertarget="menu-{{ s.id }}">
+                                ⋮
+                            </button>
+                            <div id="menu-{{ s.id }}" popover class="dropdown-menu right">
+                                <a href="/sessions/{{ s.id }}">
+                                    🗁 Open
+                                </a>
+                            
+                                {{ ui.rename_item("/sessions/" ~ s.id ~ "/update", "name", s.name) }}
+
+                                <form action="/sessions/{{ s.id }}/clone" method="POST">
+                                    <button type="submit">⟳ Clone</button>
+                                </form>
+                                
+                                <a href="/sessions/{{ s.id }}/export">
+                                    ⬇ Export (.zip)
+                                </a>
+
+                                <hr />
+
+                                {{ ui.delete_item("/sessions/" ~ s.id ~ "/delete") }}
+                            
+                            </div>
+                        </div>
+                    
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="text-muted text-center">No sessions yet! Create a New one to get started.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="row stretch fill">
+        <p>
+            LoRē sessions are stored on your computer as directories in <span class="mono muted">{{ runtime.sessions_dir }}</span>
+            <br><br>This path can be changed in <a href="/settings">settings</a>.
+        </p>
+    </div>
+    
+    <div>
+        <h4>Runtime inspection</h4>
+        <div class="row gapped">
+            <a href="/cache" class="btn secondary">
+                View Cache
+            </a>
+            {# <a href="/tasks/registry" class="btn secondary">
+                View Task Registry
+            </a>
+            <a href="/adapters/registry" class="btn secondary">
+                View Adapter Registry
+            </a> #}
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+

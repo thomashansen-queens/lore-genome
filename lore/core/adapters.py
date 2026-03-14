@@ -5,28 +5,50 @@ and analysis-ready format.
 The BaseAdapter class contains helpers for all Adapters
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
+import csv
+import hashlib
+import itertools
 import json
-from pathlib import Path
-from typing import Any, Callable, ClassVar
+from typing import Any, Callable, ClassVar, Iterator
 from typing import TYPE_CHECKING
+from pydantic import BaseModel, Field
+
+from lore.core.artifacts import Artifact
 
 if TYPE_CHECKING:
     import pandas as pd
 
-from lore.core.artifacts import Artifact
+
+class AdapterPreview(BaseModel):
+    """Strict payload returned by all Adapters for UI rendering."""
+    data: Any = Field(description="The actual data (records, SVG string, etc.)")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Context about the data")
 
 
 class BaseAdapter(ABC):
-    """The base class for all Adapters."""
+    """
+    Translates physical Artifacts (files) into structured in-memory representations.
+    Handles all format-specific I/O to keep Execution Handlers agnostic.
+    """
     accepted_formats: ClassVar[set[str]] = set()  # e.g. {"json", "fasta", "csv"}
     accepted_types: ClassVar[set[str]] = set()  # e.g. {"ncbi_genome_report", "protein_sequence"}
     view_mode: ClassVar[str] = "raw"
+    version: ClassVar[str] = "1.0.0"  # Increment when parsing logic changes for hash purposes
 
     @property
     def name(self) -> str:
         """Adapters do not need a name, but for UI we can use the class name"""
         return self.__class__.__name__
+
+    @classmethod
+    def get_hash(cls) -> str:
+        """
+        Deterministic hash for Manifest provenance. Tracks which version 
+        of the adapter was used to process the data.
+        """
+        fingerprint = f"{cls.__name__}_v{cls.version}".encode('utf-8')
+        return hashlib.md5(fingerprint).hexdigest()[:8]
 
     @property
     def provided_types(self) -> set[str]:
@@ -34,18 +56,101 @@ class BaseAdapter(ABC):
         return set()
 
     def provides(self, requirement: str) -> bool:
-        """Universal check for what this adapter can output."""
+        """
+        Universal check for what this adapter can output. NOTE: Adapters are 
+        transitive. If it accepts a data_type, we will assume it provides that 
+        data_type, albeit in an adapted format.
+        """
         if requirement == "*":
             return True
         return (
             requirement in self.provided_types or
-            requirement in self.accepted_formats
+            requirement in self.accepted_types
         )
 
-    @abstractmethod
-    def adapt(self, raw_data: Any) -> Any:
-        """Convert raw data into a usable Python object (e.g. list of dicts, DataFrame, etc.)"""
-        pass
+    # --- Data translation ---
+
+    def adapt(self, raw_data: Any, config: dict | None = None) -> Any:
+        """Translate a full block of raw data into adapted format"""
+        if isinstance(raw_data, list):
+            return [self.adapt_record(r, config) for r in raw_data]
+        return self.adapt_record(raw_data, config)
+
+    def adapt_record(self, record: Any, config: dict | None = None) -> Any:
+        """Adapts a single item. Override to apply schemas/transformations"""
+        return record
+
+    def adapt_stream(self, raw_stream: Iterator[Any], config: dict | None = None) -> Iterator[Any]:
+        """Adapt a stream of records maintaining statefulness"""
+        return (self.adapt_record(r, config) for r in raw_stream)
+
+    # --- Render and output methods ---
+
+    def serialize(self, records: Any, extension: str = "json") -> str:
+        """Turns adapted data into raw string format. Override as needed."""
+        return str(records)
+
+    def preview(self, raw_data: Any, io_metadata: dict, config: dict | None = None) -> AdapterPreview:
+        """
+        Packages data and IO metadata into UI-friendly format.
+        """
+        adapted_data = self.adapt(raw_data, config)
+
+        final_metadata = {
+            **io_metadata,
+            "view_mode": self.view_mode,
+            "adapter_name": self.name,
+        }
+
+        if final_metadata.get("total_rows") is None and isinstance(adapted_data, list):
+            final_metadata["total_rows"] = len(adapted_data)
+
+        return AdapterPreview(
+            data=adapted_data,
+            metadata=final_metadata,
+        )
+
+
+class RawAdapter(BaseAdapter):
+    """
+    Passthrough adapter for plain text and unstructured formats.
+    Returns raw content as-is for display.
+    """
+    accepted_formats: ClassVar[set[str]] = {"txt", "raw", "info", "nfo", "log", "md", "*"}
+    accepted_types: ClassVar[set[str]] = {"*"}
+    view_mode: ClassVar[str] = "raw"
+    version: ClassVar[str] = "1.0.0"
+
+    @property
+    def provided_types(self) -> set[str]:
+        return {"raw", "text"}
+
+    def adapt(self, raw_data: Any, config: dict | None = None) -> str:
+        """Ensures the raw data is returned as a string for display."""
+        # 1. Already a string
+        if isinstance(raw_data, str):
+            return raw_data
+
+        # 2. A list (i.e. lines of text from a reader)
+        if isinstance(raw_data, list):
+            if not raw_data:
+                return ""
+
+            if isinstance(raw_data[0], str):
+                return "\n".join(raw_data)
+
+            # 3. A list of parsed objects (e.g., dicts from a JSON reader)
+            try:
+                return json.dumps(raw_data, indent=2)
+            except (TypeError, ValueError):
+                # No JSON serialization possible
+                return "\n".join(str(item) for item in raw_data)
+
+        # 3. Single parsed object
+        try:
+            return json.dumps(raw_data, indent=2)
+        except (TypeError, ValueError):
+            return str(raw_data)
 
 
 # Type alias for the Field Map: Key -> (JSON Path or Extraction Function)
@@ -54,19 +159,19 @@ Schema = dict[str, str | Callable[[dict], Any]]
 
 class TableAdapter(BaseAdapter):
     """
-    The bridge between a raw file on disk and a usable Python object.
-    Abstract methods:
-    - load(path): How to read the raw data (override for JSON, Binary, etc)
-    - schema: A mapping of standardized keys to JSON paths or extraction functions
+    The bridge between a raw file on disk and a usable tabular Python object.
+    Native support for JSON, JSONL, CSV, and TSV.
+    # TODO: Refactor TableAdapter to separate parse() from adapt(); eliminate Refused Bequest smell seen in e.g. FastaAdapter
     """
-    accepted_formats: ClassVar[set[str]] = {"*"}  # e.g. {"json", "fasta", "csv"}
+    accepted_formats: ClassVar[set[str]] = {"json", "ndjson", "jsonl", "csv", "tsv"}
     accepted_types: ClassVar[set[str]] = {"*"}  # e.g. {"ncbi_genome_report", "protein_sequence"}
     view_mode: ClassVar[str] = "table"
+    version: ClassVar[str] = "1.0.0"
 
     @property
     def provided_types(self) -> set[str]:
         """Guarantees that this adapter can provide data in a tabular format"""
-        return {"dataframe"}  # For now, every adapter at least provides a table
+        return {"table", "dataframe"}
 
     @property
     def schema(self) -> Schema:
@@ -98,132 +203,81 @@ class TableAdapter(BaseAdapter):
         if super().provides(requirement):
             return True
 
-        # Table-specific schema check for series extraction
-        return requirement in self.schema
+        if hasattr(self, "schema") and self.schema:
+            return requirement in self.schema
+
+        return False
 
     # --- Adapting methods ---
 
-    def parse(self, raw_data: Any) -> list[dict]:
+    def adapt(self, raw_data: Any, config: dict | None = None) -> list[dict]:
         """
-        Translates raw strings/bytes into a list of dicts for processing.
-        Handles common cases like single dict, list of dicts, or JSONL strings.
-        Override in subclass to parse other formats (e.g. binary, fasta, xml)
+        Intercepts monolithic data. Handles headerless text, string lists, and 
+        mangled dicts from readers.
         """
-        # 1. If given a Path, read the file content (maybe dangerous for large files)
-        # if isinstance(raw_data, Path):
-        #     with open(raw_data, "r", encoding="utf-8") as f:
-        #         raw_data = f.read()
-
-        # 2. Already parsed by a previous method
-        if isinstance(raw_data, dict):
-            return [raw_data]
-        if isinstance(raw_data, list):
-            return [d for d in raw_data if isinstance(d, dict)]
-
-        # 3. Raw string or bytes
-        if isinstance(raw_data, bytes):
-            raw_data = raw_data.decode("utf-8")
-        if not isinstance(raw_data, str):
+        if not raw_data:
             return []
 
-        # 4. Try JSONL / NDJSON first
-        lines = raw_data.strip().splitlines()
-        is_jsonl = False
-        if len(lines) > 1:
-            # Heuristic: Line must be a valid JSON object
-            first_line = next((l for l in lines if l.strip()), None)
-            if first_line:
-                try:
-                    is_jsonl = isinstance(json.loads(first_line), dict)
-                except json.JSONDecodeError:
-                    is_jsonl = False
+        # 1. Headerless text lines
+        if isinstance(raw_data, list) and isinstance(raw_data[0], str):
+            # Infer delimiter from config extension, default to comma
+            ext = config.get("ext", "") if config else ""
+            delimiter = "\t" if ext in ("tsv", "txt") else ","
 
-        if is_jsonl:
-            parsed_lines = []
-            for line in lines:
-                if not line.strip():
-                    continue
-                try:
-                    parsed_obj = json.loads(line)
-                    if isinstance(parsed_obj, dict):
-                        parsed_lines.append(parsed_obj)
-                except json.JSONDecodeError:
-                    continue  # Skip malformed lines
-            if parsed_lines:
-                return parsed_lines
+            # csv.DictReader consumes the list of strings and yields dicts
+            dict_reader = csv.DictReader(raw_data, delimiter=delimiter)
 
-        # 5. Try parsing the entire string as one monolothic JSON object
+            return [self.adapt_record(row, config) for row in dict_reader]
+
+        # 2. Already a list of dicts, no special handling
+        return super().adapt(raw_data, config)
+
+    def adapt_record(self, record: dict, config: dict | None = None) -> dict:
+        """Applies the schema mapping to a single record"""
+        if not self.schema:
+            return record
+
+        row = {}
+        for target_col, schema_config in self.schema.items():
+            # 1. Schema specified a path with a converter function
+            if isinstance(schema_config, tuple) and len(schema_config) == 2:
+                path, converter = schema_config
+                raw_val = self._extract_value(record, path)
+                row[target_col] = converter(raw_val) if raw_val is not None else None
+            # 2. Schema specified a lambda/callable function
+            elif callable(schema_config):
+                row[target_col] = schema_config(record)
+            # 3. Schema specified a string path (dot notation)
+            elif isinstance(schema_config, str):
+                row[target_col] = self._extract_value(record, schema_config)
+
+        return self.post_process(row, record)
+
+    def adapt_stream(self, raw_stream: Iterator[Any], config: dict | None = None) -> Iterator[dict]:
+        """Allows for stateful adaptation across a stream of records"""
+        # 1. Peek at first item, then put it back so the stream is intact
         try:
-            data = json.loads(raw_data)
-            if isinstance(data, dict):
-                return [data]
-            if isinstance(data, list):
-                return [d for d in data if isinstance(d, dict)]
-        except json.JSONDecodeError:
-            return []
+            first_item = next(raw_stream)
+        except StopIteration:
+            return  # Empty stream
+        full_stream = itertools.chain([first_item], raw_stream)
 
-        # 6. If all parsing attempts fail, return empty list
-        return []
+        # 2. Text stream handling
+        if isinstance(first_item, str):
+            ext = config.get("ext", "") if config else ""
+            delimiter = "\t" if ext in ("tsv", "txt") else ","
+            dict_stream = csv.DictReader(full_stream, delimiter=delimiter)
+            for row in dict_stream:
+                yield self.adapt_record(row, config)
 
-    def get_series(self, raw_data: Any, series_type: str) -> list[str] | None:
-        """
-        Extracts a specific column if defined in the schema or if schema is
-        missing, directly from dictionary keys.
-        """
-        records = self.parse(raw_data)
-        if not records:
-            return None
-
-        if series_type in self.schema:
-            extractor = self.schema[series_type]
-            return [str(self._extract_value(r, extractor)) for r in records]
-
-        # If no schema is defined, extract from raw record keys
-        if series_type in records[0]:
-            return [str(r.get(series_type, None)) for r in records]
-
-        return None
+        # 3. Already a stream of dicts, no special handling
+        else:
+            for row in full_stream:
+                yield self.adapt_record(row, config)
 
     def post_process(self, row: dict, raw_record: dict) -> dict:
-        """
-        Override to by-row perform logic
-        """
+        """Override to by-row perform logic"""
         return row
-
-    def apply_schema(self, records: list[dict]) -> list[dict]:
-        """
-        Applies the schema mapping to an already-parsed list of dicts.
-        """
-        if not self.schema:
-            return records
-
-        adapted_rows = []
-        for rec in records:
-            row = {}
-            for target_col, config in self.schema.items():
-                # 1. Schema specified a path with a converter function
-                if isinstance(config, tuple) and len(config) == 2:
-                    path, converter = config
-                    raw_val = self._extract_value(rec, path)
-                    row[target_col] = converter(raw_val) if raw_val is not None else None
-                # 2. Schema specified a lambda/callable function
-                elif callable(config):
-                    row[target_col] = config(rec)
-                # 3. Schema specified a string path (dot notation)
-                elif isinstance(config, str):
-                    row[target_col] = self._extract_value(rec, config)
-
-            row = self.post_process(row, rec)
-            adapted_rows.append(row)
-
-        return adapted_rows
-
-    def adapt(self, raw_data: Any) -> list[dict]:
-        """
-        Auto-magically convert raw data into a flat list of dicts
-        """
-        records = self.parse(raw_data)
-        return self.apply_schema(records)
 
     def _extract_value(self, record: dict, extractor: str | Callable[[dict], Any]) -> Any:
         """
@@ -242,9 +296,17 @@ class TableAdapter(BaseAdapter):
         val = record
         for part in extractor.split("."):
             try:
-                if "[" in part and part.endswith("]"):
-                    key, index = part[:-1].split("[", maxsplit=1)
-                    val = val[key][int(index)]
+                if "[" in part:
+                    # Split key and slice (e.g. [5] or [1][2])
+                    key, _, brackets = part.partition("[")
+                    if key:
+                        val = val[key]
+                    # Re-attach the bracket, then check for multiple slices
+                    for index_str in ("[" + brackets).split("["):
+                        if not index_str:
+                            continue
+                        # After split e.g. "["0]", "2]"] -> [0, 2]
+                        val = val[int(index_str.strip("]"))]
                 else:
                     val = val[part]
             except (KeyError, TypeError, AttributeError):
@@ -252,6 +314,39 @@ class TableAdapter(BaseAdapter):
         return val
 
     # --- Outputs ---
+
+    def preview(self, raw_data, io_metadata, config=None):
+        """Override to inject config transformations (e.g. sorting)"""
+        result = super().preview(raw_data, io_metadata, config)
+
+        # 1. Inject tabular metadata
+        if isinstance(result.data, list) and result.data and isinstance(result.data[0], dict):
+            result.metadata["columns"] = list(result.data[0].keys())
+
+        # 2. Apply view-level config transformations (e.g. sorting)
+        view_state = (config or {}).get("view_state", {})
+        sort_by = view_state.get("sort_by")
+
+        if sort_by and isinstance(result.data, list):
+            sort_asc = view_state.get("sort_asc", True)
+            result.data.sort(
+                key=lambda r: (r.get(sort_by) is None, r.get(sort_by)),  # push None to end
+                reverse=not sort_asc,
+            )
+
+        return result
+
+
+    def to_dataframe(self, raw_data: Any, config: dict | None = None) -> "pd.DataFrame":
+        """
+        Converts adapted data directly into a Pandas DataFrame.
+        Accepts raw strings/bytes OR a file Path. 
+        """
+        import pandas as pd
+        records = self.adapt(raw_data, config=config)
+        df = pd.DataFrame(records)
+        df = df.apply(pd.to_numeric, errors='ignore')
+        return df
 
     def serialize(self, records: list[dict], extension: str = "json") -> str:
         """
@@ -262,42 +357,33 @@ class TableAdapter(BaseAdapter):
             return "\n".join(json.dumps(r) for r in records) + "\n"
         return json.dumps(records, indent=2)
 
-    def to_dataframe(self, raw_data_or_path: Any) -> "pd.DataFrame":
+    def get_series(self, raw_data: Any, series_type: str) -> list[str] | None:
         """
-        Converts adapted data directly into a Pandas DataFrame.
-        Accepts raw strings/bytes OR a file Path. 
-
-        NOTE: This default implementation loads the entire dataset into memory 
-        before conversion. Subclasses dealing with massive files (like NCBI 
-        JSONL) should override this method to stream the file line-by-line.
+        Extracts a specific column if defined in the schema or if schema is
+        missing, directly from dictionary keys.
         """
-        import pandas as pd  # pylint: disable=import-outside-toplevel
-        is_path = isinstance(raw_data_or_path, Path)
-        is_path_string = isinstance(raw_data_or_path, str) and len(raw_data_or_path) < 1024
+        records = self.adapt(raw_data)
+        if not records:
+            return None
 
-        if is_path or is_path_string:
-            try:
-                path_obj = Path(raw_data_or_path)
-                if path_obj.is_file():
-                    with open(path_obj, "r", encoding="utf-8") as f:
-                        raw_data_or_path = f.read()
-            except (OSError, IOError):
-                pass  # Not a valid file path, treat as raw data
+        if series_type in records[0]:
+            return [str(r.get(series_type, None)) for r in records]
 
-        records = self.adapt(raw_data_or_path)
-        return pd.DataFrame(records)
+        return None
 
     # --- Helper Methods for Data Cleaning and Type Conversion ---
 
     def safe_int(self, val: Any) -> int | None:
+        """Converts to int, stripping commas, returns None if unable to convert."""
         try:
             if isinstance(val, str):
-                val = val.replace(",", "")  # Comma separators intefere with casting
+                val = val.replace(",", "")
             return int(val)
         except (ValueError, TypeError, AttributeError):
             return None
 
     def safe_float(self, val: Any) -> float | None:
+        """Converts to float if possible"""
         try:
             return float(val)
         except (ValueError, TypeError):
@@ -312,27 +398,31 @@ class TableAdapter(BaseAdapter):
         except (ValueError, TypeError, AttributeError):
             return None
 
+    def safe_str(self, val: Any) -> str | None:
+        """Only converts to string if value is not None or empty, otherwise returns None"""
+        if not val:
+            return None
+        return str(val)
+
 
 class ImageAdapter(BaseAdapter):
     """
     The bridge between image data and a UI-viewable format
     """
-    accepted_formats: ClassVar[set[str]] = set() # e.g. {"svg", "png", "jpg", "jpeg", "gif"} 
-    accepted_types: ClassVar[set[str]] = set() # e.g. {"genome_map", "phylo_tree", "protein_structure"}
+    accepted_formats: ClassVar[set[str]] = {"png", "jpg", "jpeg"}  # e.g. {"svg", "png", "jpg", "jpeg", "gif"} 
+    accepted_types: ClassVar[set[str]] = set()  # e.g. {"genome_map", "phylo_tree", "protein_structure"}
     view_mode: ClassVar[str] = "image"
 
     @property
     def provided_types(self) -> set[str]:
         return {"image"}
 
-    @abstractmethod
-    def adapt(self, raw_data: Any) -> str | bytes:
+    def adapt(self, raw_data: Any, config: dict | None = None) -> Any:
         """
-        Often will just return the raw payload (e.g. SVG string or PNG bytes),
-        but can be overridden to perform transformations or optimizations (e.g. 
-        resizing)
+        Defaults to raw payload (e.g. SVG string or PNG bytes). Subclasses can 
+        override to perform transformations or optimizations (e.g. resizing)
         """
-        pass
+        return raw_data
 
 
 class AdapterRegistry:
@@ -357,7 +447,18 @@ class AdapterRegistry:
             raise ValueError(f"Adapter with key '{adapter.__class__.__name__}' is already registered.")
         self._adapters[adapter.__class__.__name__] = adapter
 
-    def get_adapters(self, artifact: "Artifact", must_provide: str = "*") -> list[BaseAdapter]:
+    def get(self, key: str) -> BaseAdapter | None:
+        """Safe get method that returns None if adapter is not found"""
+        return self._adapters.get(key, None)
+
+    def get_adapters_by_artifact(self, artifact: Artifact, must_provide: str = "*") -> list[BaseAdapter]:
+        """
+        Finds all adapters that can bridge the gap between this Artifact and the
+        Task's data requirements
+        """
+        return self.get_adapters_by_type(artifact.data_type, artifact.extension, must_provide)
+
+    def get_adapters_by_type(self, data_type: str, extension: str, must_provide: str = "*") -> list[BaseAdapter]:
         """
         Finds all adapters that can bridge the gap between this 
         Physical Artifact and the Task's Logical Requirement.
@@ -365,8 +466,8 @@ class AdapterRegistry:
         matches = []
         for adapter in self._adapters.values():
             # 1. Artifact compatibility: Can I read this?
-            format_match = "*" in adapter.accepted_formats or artifact.extension in adapter.accepted_formats
-            type_match = "*" in adapter.accepted_types or artifact.data_type in adapter.accepted_types
+            format_match = "*" in adapter.accepted_formats or extension in adapter.accepted_formats
+            type_match = "*" in adapter.accepted_types or data_type in adapter.accepted_types
             if not (format_match and type_match):
                 continue
 
@@ -381,9 +482,9 @@ class AdapterRegistry:
             semantic type (1.1) scored higher than file format (1.0)
             """
             score = 0
-            if artifact.extension in a.accepted_formats:
+            if extension in a.accepted_formats:
                 score += 1.0
-            if artifact.data_type in a.accepted_types:
+            if data_type in a.accepted_types:
                 score += 1.1
             return score
 
@@ -391,3 +492,7 @@ class AdapterRegistry:
         return matches
 
 adapter_registry = AdapterRegistry()
+
+adapter_registry.register(RawAdapter())
+adapter_registry.register(TableAdapter())
+adapter_registry.register(ImageAdapter())

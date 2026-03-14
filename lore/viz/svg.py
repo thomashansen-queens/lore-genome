@@ -125,6 +125,15 @@ class SvgText(SvgElement):
 
 
 @dataclass
+class SvgTitle(SvgElement):
+    """Title element for SVG, typically used for tooltips."""
+    text: str = ""
+
+    def render(self) -> str:
+        return f'<title {self._common_attrs()}>{self.text}</title>'
+
+
+@dataclass
 class SvgGroup(SvgElement):
     """
     <g> tag

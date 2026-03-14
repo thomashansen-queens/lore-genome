@@ -1,0 +1,238 @@
+{% extends "/features/sessions/layout.html" %}
+{% import "macros/ui.html" as ui %}
+
+{% block workspace %}
+
+<div class="column">
+    <span class="ui-label">Manage artifacts</span>
+    <h4>Artifact Manager</h4>
+
+    <div class="row gapped stretch">
+
+        {# === Select Artifact(s) === #}
+        <div class="card" style="flex: 1;">
+            <h4>Add Artifacts</h4>
+            <p class="muted">Drag files here, or add a remote reference.</p>
+            <div id="dropzone" style="border: 2px dashed var(--border); padding: var(--spacing-lg);">
+                <input type="file" id="file-input" multiple style="display: none;" />
+                <button class="btn primary" onclick="document.getElementById('file-input').click();">
+                    🖿 Select Files
+                </button>
+                <div class="muted small" style="margin-top: var(--spacing-sm);">
+                    or drag and drop here.
+                </div>
+            </div>
+
+            <hr />
+
+            <div class="column gapped">
+                <label class="ui-label">Add Remote Reference</label>
+                <input type="text" id="remote-uri-input" placeholder="e.g. /mnt/shared/blastdb/nt or s3://..." />
+                <button class="btn secondary" id="btn-add-remote">🖴 Add Remote URI</button>
+            </div>
+        </div>
+
+        {# === Stage Artifact(s) === #}
+        <div class="card" style="flex: 2;">
+            <div class="row" style="justify-content: space-between; align-items: center;">
+                <h4>Staging</h4>
+                <button class="btn primary" id="btn-ingest-all" disabled>
+                    ＋ Ingest All
+                </button>
+            </div>
+            <div class="scroll-area">
+                <table style="margin-top: var(--spacing-md);">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Name</th>
+                            <th>Data type</th>
+                            <th>Storage</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="staging-tbody">
+                        <tr id="empty-state">
+                            <td colspan="5" class="muted center">
+                                No artifacts staged for ingestion.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropzone      = document.getElementById('dropzone');
+    const fileInput     = document.getElementById('file-input');
+    const stagingTbody  = document.getElementById('staging-tbody');
+    const emptyState    = document.getElementById('empty-state');
+    const btnAddRemote  = document.getElementById('btn-add-remote');
+    const btnIngestAll  = document.getElementById('btn-ingest-all');
+    const remoteUriInput = document.getElementById('remote-uri-input');
+
+    let stagedItems = [];
+
+    function renderQueue() {
+        // 1. Clear existing rows (after deletion, do this first)
+        Array.from(stagingTbody.children).forEach(child => {
+            if (child.id !== 'empty-state') child.remove();
+        });
+
+        // 2. Handle empty state
+        if (stagedItems.length == 0) {
+            emptyState.style.display = 'table-row';
+            btnIngestAll.disabled = true;
+            return;
+        }
+
+        // 3. Handle populated state
+        emptyState.style.display = 'none';
+        btnIngestAll.disabled = false;
+        
+        stagedItems.forEach((item, index) => {
+            const tr = document.createElement('tr');
+
+            // The source (file or URI for remote references)
+            const sourceText = item.isRemote ? item.uri : item.file.name;
+            const storageBadge = item.isRemote ? '<span class="badge warning">🖴 Remote</span>' : '<span class="badge info">🖿 Session</span>';
+
+            tr.innerHTML = `
+                <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">
+                    ${sourceText}
+                </td>
+                <td>
+                    <input type="text" class="staged-name" data-index="${index}" value="${item.name}" style="min-width: 100px; width: 100%;" />
+                </td>
+                <td>
+                    <input type="text" class="staged-type" data-index="${index}" placeholder="e.g. protein_fasta, blast_results" value="${item.type}" style="width: 100px;" />
+                </td>
+                <td>${storageBadge}</td>
+                <td>
+                    <button class="btn danger btn-remove" data-index="${index}">✖</button>
+                </td>
+            `;
+            stagingTbody.appendChild(tr);
+        });
+
+        // Attach listeners to new inputs and buttons
+        document.querySelectorAll('.btn-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                stagedItems.splice(idx, 1);
+                renderQueue();
+            });
+        });
+
+        document.querySelectorAll('.staged-name').forEach(input => {
+            input.addEventListener('input', (e) => {
+                stagedItems[e.target.dataset.index].name = e.target.value;
+            });
+        });
+
+        document.querySelectorAll('.staged-type').forEach(input => {
+            input.addEventListener('input', (e) => {
+                stagedItems[e.target.dataset.index].type = e.target.value;
+            });
+        });
+    }
+
+    // --- File input handlers ---
+    fileInput.addEventListener('change', (e) => {
+        Array.from(e.target.files).forEach(file => {
+            stagedItems.push({
+                isRemote: false,
+                file: file,
+                name: file.name,
+                type: file.name.split('.').pop() // crude guess by extension
+            });
+        });
+        fileInput.value = '';
+        renderQueue();
+    });
+
+    // --- Remote reference handlers ---
+    btnAddRemote.addEventListener('click', () => {
+        const uri = remoteUriInput.value.trim();
+        if (!uri) return;
+
+        stagedItems.push({
+            isRemote: true,
+            uri: uri,
+            name: uri.split('/').pop(),
+            type: 'unknown' // user must specify
+        });
+        remoteUriInput.value = '';
+        renderQueue();
+    });
+
+    // --- Drag and drop polish ---
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault(); dropzone.style.borderColor = 'var(--primary-hover)';
+        e.preventDefault(); dropzone.style.backgroundColor = 'var(--bg-primary)';
+    });
+    dropzone.addEventListener('dragleave', (e) => {
+        e.preventDefault(); dropzone.style.borderColor = 'var(--border)';
+        e.preventDefault(); dropzone.style.backgroundColor = 'transparent';
+    });
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = 'var(--border)';
+        dropzone.style.backgroundColor = 'transparent';
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            fileInput.dispatchEvent(new Event('change'));
+        }
+    });
+
+    // --- Submit staging queue ---
+    btnIngestAll.addEventListener('click', async function() {
+        btnIngestAll.disabled = true;
+        btnIngestAll.textContent = "⏳︎ Ingesting...";
+
+        const formData = new FormData();
+        const metadataPayload = [];
+
+        stagedItems.forEach(item => {
+            if (item.isRemote) {
+                metadataPayload.push({ isRemote: true, name: item.name, type: item.type, uri: item.uri });
+            } else {
+                metadataPayload.push({ isRemote: false, name: item.name, type: item.type });
+                formData.append('files', item.file);  // actual file content
+            }
+        });
+        
+        formData.append('metadata', JSON.stringify(metadataPayload));
+
+        try {
+            const response = await fetch(`/sessions/{{ session.id }}/artifacts/ingest`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                window.location.href = `/sessions/{{ session.id }}/artifacts/`;
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            alert("Ingestion failed: " + error.message);
+            btnIngestAll.disabled = false;
+            btnIngestAll.textContent = "＋ Ingest All";
+        }
+    });
+
+    // Fire initial render for default state
+    renderQueue();
+});
+</script>
+{% endblock %}

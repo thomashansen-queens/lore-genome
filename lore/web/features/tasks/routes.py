@@ -2,239 +2,126 @@
 Routes for managing individual Tasks within a Session.
 """
 
-import enum
-from typing import Any
-from pydantic_core import PydanticUndefined, ValidationError
+from pydantic import BaseModel, Field
+from pydantic_core import ValidationError
 
-from fastapi import BackgroundTasks, Depends, Query
+from fastapi import Depends, Query
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
-from lore.core.tasks import Cardinality, TaskDefinition
-from lore.web.deps import RT, TEMPLATES_DIR, ActiveSession, templates, build_breadcrumbs, PageContext
-from lore.web.utils import clean, get_form_str, form_to_dict
-from lore.core.tasks import Task, task_registry
+from lore.core.tasks.models import ExecConfig
+from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.utils.forms import get_form_str, format_inputs_for_ui, form_json_to_dict
+from lore.core.tasks import task_registry
 
 
 router = APIRouter(prefix="/sessions/{session_id}/tasks", tags=["tasks"])
 
-# --- Helpers ---
 
-def _apply_and_validate(
-    task: "Task", inputs: dict, action: str | None = None, name: str | None = None, update_inputs: bool = True,
-) -> bool:
-    """
-    Mutate the Task in place. Returns should_run bool.
-    Must be called from within a Session lock context
-    """
-    if name:
-        task.name = name
-    if not update_inputs:
-        return action == "RUN" and task.status == "PENDING"
-    task.inputs = inputs
-    task.error = None
-    try:
-        task.validate_and_serialize()
-        task.status = "PENDING"
-    except ValidationError as e:
-        task.status = "DRAFT"
-        task.error = str(e)
-    return action == "RUN" and task.status == "PENDING"
+@router.get("/", response_class=RedirectResponse)
+def redirect_to_session(s: ActiveSession, ctx: PageContext = Depends()):
+    """Redirect /sessions/{session_id}/tasks to the Session dashboard."""
+    return ctx.redirect(f"/sessions/{s.id}")
 
 
-def _resolve_template(registry_key: str) -> str:
-    """
-    Checks for custom form template for a given Task type, falls back to generic
-    """
-    custom_template = TEMPLATES_DIR / "features" / "tasks" / f"{registry_key}.html"
-    if custom_template.exists():
-        return f"/features/tasks/{registry_key}.html"
-    return "/features/tasks/configure.html"
-
-
-def _map_artifacts_to_inputs(
+@router.get("/new", response_class=HTMLResponse)
+async def list_available_tasks(
     s: ActiveSession,
-    task_def: TaskDefinition,
-    source_artifact_ids: list[str] | None,
-) -> dict[str, Any]:
-    """
-    Auto-magically matches source Artifacts to compatible Task inputs
-    Find which fields this Artifact could fill
-    For single inputs, take the first match. For multi, take all
-    """
-    if not source_artifact_ids:
-        return {}
-
-    prefill = {}
-    candidates = s.get_artifact_candidates(task_def)
-    model_fields = task_def.input_model.model_fields
-
-    # 1. Build mapping of Artifact ID to compatible fields
-    id_to_fields = {}
-    for field_name, artifacts in candidates.items():
-        for a in artifacts:
-            id_to_fields.setdefault(a.id, []).append(field_name)
-
-    # 2. Assign Artifact IDs to fields
-    for aid in source_artifact_ids:
-        target_fields = id_to_fields.get(aid, [])
-        for field_name in target_fields:
-            schema = model_fields[field_name].json_schema_extra or {}
-            cardinality = Cardinality(schema.get("cardinality", "single"))
-
-            if cardinality.allows_multiple:
-                prefill.setdefault(field_name, []).append(aid)
-            else:
-                # First come, first served for single slots
-                if field_name not in prefill:
-                    prefill[field_name] = aid
-
-    return prefill
-
-
-def _format_inputs_for_ui(task_def: TaskDefinition, raw_inputs: dict) -> dict:
-    """Helper to transform raw Python types into UI-friendly prefill strings."""
-    ui_ready = {}
-    model_fields = task_def.input_model.model_fields
-    for key, field_info in model_fields.items():
-        extra = getattr(field_info, "json_schema_extra", {}) or {}
-        widget = extra.get("widget", "text")
-
-        # 1. Priority: User input > Schema default > None
-        if key in raw_inputs and raw_inputs[key] is not None:
-            val = raw_inputs[key]
-        elif field_info.default is not PydanticUndefined:
-            val = field_info.default
-        else:
-            val = None
-
-        # 2. Consider UI widget
-        if widget == "artifact_multi_select":
-            # Multi-selects must have lists of IDs
-            if val is None:
-                ui_ready[key] = []
-            elif isinstance(val, list):
-                ui_ready[key] = [str(v) for v in val]
-            else:
-                ui_ready[key] = [str(val)]
-        elif widget == "artifact_select":
-            ui_ready[key] = str(val) if val is not None else ""
-        else:
-            # Primitive types: Standard inputs
-            if val is None:
-                ui_ready[key] = ""
-            elif isinstance(val, list):
-                # Comma-separate lists for text inputs
-                ui_ready[key] = ", ".join(str(v) for v in val if v is not None)
-            elif isinstance(val, bool):
-                ui_ready[key] = val
-            elif isinstance(val, enum.Enum):
-                ui_ready[key] = val.value
-            else:
-                ui_ready[key] = str(val)
-
-    return ui_ready
-
-# --- Routes ---
-
-@router.get("/new/{registry_key}", response_class=HTMLResponse)
-def configure_new_task(
-    registry_key: str,
-    s: ActiveSession,
-    source_artifact_ids: list[str] = Query(None),
     ctx: PageContext = Depends(),
 ):
     """
-    Render the form for configuring a new Task.
+    Displays all available Tasks that can be configured and committed to the 
+    Session.
     """
-    task_def = task_registry.get(registry_key)
-    if not task_def:
-        raise HTTPException(404, detail=f"Task type '{registry_key}' not found")
+    # We pass the whole registry values so Jinja can loop through them
+    available_tasks = list(task_registry.all.values())
 
-    # 1. Check for candidate source Artifacts
-    artifact_prefill = _map_artifacts_to_inputs(s, task_def, source_artifact_ids)
-    prefill_inputs = _format_inputs_for_ui(task_def, artifact_prefill)
-
-    artifact_candidates = s.get_artifact_candidates(task_def)
-
-    ctx.breadcrumbs = build_breadcrumbs(s.id, s.name, f"New {task_def.name}")
+    ctx.generate_breadcrumbs({s.id: s.name, "catalogue": "Task Catalogue"})
     return templates.TemplateResponse(
-        _resolve_template(registry_key),
+        "features/tasks/catalogue.html",
         ctx.render(
             session=s,
-            task_def=task_def,
-            artifact_candidates=artifact_candidates,
-            prefill_inputs=prefill_inputs,
-            prefill_name=task_def.name,
-            is_new=True,
+            tasks=available_tasks,
         )
     )
 
 
-@router.post("/new/{registry_key}", response_class=RedirectResponse)
-async def create_task_action(
-    registry_key: str,
-    session_id: str,
-    rt: RT,
-    background_tasks: BackgroundTasks,
+@router.get("/new/{task_key}", response_class=HTMLResponse)
+async def configure_new_task(
+    task_key: str,
+    s: ActiveSession,
     ctx: PageContext = Depends(),
+    load_task: str | None = Query(None),
+    source_artifact_ids: list[str] = Query(None),
 ):
     """
-    Submit new Task configuration, create Task, and run if requested
+    Universal Workbench UI. Shows Task config and preview panel. Can be pre-
+    filled with existing Task (?load_task=ID) and Artifacts (?source_artifact_ids=ID)
     """
-    task_def = task_registry.get(registry_key)
+    # 1. Load the Task Definition
+    task_def = task_registry.get(task_key)
     if not task_def:
-        raise HTTPException(404, detail=f"Task type '{registry_key}' not found")
+        raise HTTPException(status_code=404, detail=f"Task '{task_key}' not found in registry.")
 
-    form_data = await ctx.request.form()
-    task_name = clean(form_data.get("task_name")) or task_def.name
-    action = get_form_str(form_data, "action") or "SAVE"  # "SAVE" or "RUN"
-    should_run = False
-    # FUTURE: Other actions like "COMMIT" to workflow
-    raw_inputs = form_to_dict(form_data, task_def.input_model)
+    # 2. Edit if needed
+    raw_inputs = {}
+    prefill_name = task_def.name
+    task_id = None
 
-    # Create Task
-    with rt.get_session(session_id) as s:
-        task = s.add_task(
-            registry_key=registry_key,
-            inputs=raw_inputs,
-            task_name=task_name,
+    if load_task:
+        task = s.get_task(load_task)
+        if task:
+            raw_inputs = dict(task.inputs)
+            prefill_name = task.name
+            task_id = task.id
+
+    # 3. Pushed Artifacts
+    if source_artifact_ids:
+        raw_inputs.update(s.map_artifacts_to_task_inputs(task_def, source_artifact_ids))
+
+    # 4. Format for UI
+    prefilled_inputs = format_inputs_for_ui(task_def, raw_inputs)
+    artifact_candidates = s.get_artifact_candidates(task_def)
+
+    ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
+    return templates.TemplateResponse(
+        "features/tasks/configure.html",
+        ctx.render(
+            session=s,
+            task_def=task_def,
+            prefill_name=prefill_name,
+            prefilled_inputs=prefilled_inputs,
+            artifact_candidates=artifact_candidates,
+            edit_task_id=task_id,
+            # We pass the POST url to the template so JS knows where to fetch
+            preview_api_url=f"/sessions/{s.id}/tasks/new/{task_key}/preview",
+            commit_api_url=f"/sessions/{s.id}/tasks/new/{task_key}",
         )
-        should_run = _apply_and_validate(task, raw_inputs, action, name=task_name)
-        task_id = task.id
-
-    # Run or save and redirect
-    if should_run:
-        background_tasks.add_task(
-            rt.execute_task,
-            session_id=session_id,
-            task_id=task_id,
-        )
-    elif action == "RUN":
-        msg = "Task saved as Draft. Invalid inputs must be fixed before running."
-        return ctx.redirect(f"/sessions/{session_id}", message=msg, message_type="warning")
-
-    return ctx.redirect(f"/sessions/{session_id}")
+    )
 
 
 @router.get("/{task_id}", response_class=HTMLResponse)
 def view_task(
     task_id: str,
-    s: ActiveSession,
+    s: ReadOnlySession,
     ctx: PageContext = Depends(),
 ):
     """
     Ready-only view of a Task's details, outputs, and metadata
     """
-    try:
-        task = s.get_task(task_id)
-        resolved_outputs = s.resolve_task_outputs(task_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e)) from e
+    task = s.get_task(task_id)
+    if task is None:
+        raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-    task_def = task_registry[task.registry_key]
+    resolved_outputs = s.resolve_task_outputs(task_id)
 
-    ctx.breadcrumbs = build_breadcrumbs(s.id, s.name, task.name or task.id)
+    task_def = task_registry.get(task.registry_key)
+    if not task_def:
+        raise HTTPException(404, detail=f"Task definition '{task.registry_key}' not found in registry.")
+
+    task_log = s.get_task_log(task_id)
+
+    ctx.generate_breadcrumbs({s.id: s.name, task_id: task.name or "Task Details"})
     return templates.TemplateResponse(
         "/features/tasks/detail.html",
         ctx.render(
@@ -242,110 +129,81 @@ def view_task(
             task_def=task_def,
             task=task,
             outputs=resolved_outputs,
+            task_log=task_log,
         )
     )
 
 
-@router.get("/{task_id}/edit", response_class=HTMLResponse)
+@router.get("/{task_id}/edit", response_class=RedirectResponse)
 def edit_task(
     task_id: str,
     s: ActiveSession,
-    artifacts: list[str] = Query(None),  # ?source=artifacts
     ctx: PageContext = Depends(),
+    source_artifact_ids: list[str] = Query(None), # Keep this for lineage!
 ):
     """
-    Render the form editing an existing Task. Similar to the "new" form but pre-
-    filled with current values.
+    Redirects the user to the configuration page, pre-loading this Task's
+    inputs as the starting Draft.
     """
-    try:
-        task = s.get_task(task_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e)) from e
+    task = s.get_task(task_id)
+    if task is None:
+        raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-    task_def = task_registry[task.registry_key]
-    raw_inputs = dict(task.inputs)
-    if artifacts:
-        raw_inputs.update(_map_artifacts_to_inputs(s, task_def, artifacts))
-    prefill_inputs = _format_inputs_for_ui(task_def, raw_inputs)
+    target_url = f"/sessions/{s.id}/tasks/new/{task.registry_key}?load_task={task.id}"
 
-    candidates = s.get_artifact_candidates(task_def)
+    # Forward any source artifacts if they exist
+    if source_artifact_ids:
+        # FastAPI handles list queries as multiple params (e.g., ?source_artifact_ids=1&source_artifact_ids=2)
+        query_string = "&".join([f"source_artifact_ids={aid}" for aid in source_artifact_ids])
+        target_url += f"&{query_string}"
 
-    ctx.breadcrumbs = build_breadcrumbs(
-        s.id, s.name,
-        extra=[(task.name or task.id, f"/sessions/{s.id}/tasks/{task_id}")],
-        final_item="Edit",
-    )
-    return templates.TemplateResponse(
-        _resolve_template(task.registry_key),
-        ctx.render(
-            session=s,
-            task_def=task_def,
-            artifact_candidates=candidates,
-            prefill_inputs=prefill_inputs,
-            prefill_name=task.name,
-            edit_task_id=task.id,
-            is_new=False
-        )
-    )
-
-
-@router.post("/{task_id}/edit", response_class=RedirectResponse)
-async def update_task_inputs_action(
-    task_id: str,
-    session_id: str,
-    rt: RT,
-    background_tasks: BackgroundTasks,
-    ctx: PageContext = Depends(),
-):
-    """
-    Update existing Task and optionally execute
-    """
-    form_data = await ctx.request.form()
-    action = get_form_str(form_data, "action")
-    new_name = get_form_str(form_data, "name")
-    is_full_edit = (action != "RENAME")
-
-    with rt.get_session(session_id) as s:
-        task = s.get_task(task_id)
-        task_def = task_registry[task.registry_key]
-        raw_inputs = form_to_dict(form_data, task_def.input_model)
-        should_run = _apply_and_validate(task, raw_inputs, action, name=new_name, update_inputs=is_full_edit)
-
-    # Run or save and redirect
-    if should_run:
-        background_tasks.add_task(
-            rt.execute_task,
-            session_id=session_id,
-            task_id=task_id,
-        )
-    elif action == "RUN":
-        msg = "Task saved as Draft. Invalid inputs must be fixed before running."
-        return ctx.redirect(f"/sessions/{session_id}", message=msg, message_type="warning")
-
-    return ctx.redirect(f"/sessions/{session_id}/tasks/{task_id}")
+    return ctx.redirect(target_url)
 
 # --- Actions ---
 
+class TaskPayload(BaseModel):
+    """Contract for the AJAX payload when previewing or committing a Task"""
+    inputs: dict
+    exec_config: ExecConfig = Field(default_factory=ExecConfig)
+
+
+@router.post("/{task_id}/rename", response_class=RedirectResponse)
+async def rename_task_action(
+    task_id: str,
+    s: ActiveSession,
+    ctx: PageContext = Depends(),
+):
+    """Dedicated endpoint for in-place renaming of Tasks."""
+    form_data = await ctx.request.form()
+    new_name = get_form_str(form_data, "name")
+
+    if new_name:
+        s.rename_task(task_id, new_name)
+    return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/tasks/{task_id}")
+
+
 @router.post("/{task_id}/run", response_class=RedirectResponse)
-def run_task_only_action(
+def run_task_action(
     session_id: str,
     task_id: str,
-    background_tasks: BackgroundTasks,
     rt: RT,
     ctx: PageContext = Depends(),
 ):
-    """Run a pending task"""
-    # Use Runtime to get fresh session lock
-    with rt.get_session(session_id) as s:
+    """Execute a PENDING task"""
+    # 1. Use Runtime to get fresh session lock
+    with rt.open_session(session_id) as s:
         task = s.get_task(task_id)
-        if task.status == "RUNNING":
+        if task is None:
+            raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
+
+        if task.status in {"RUNNING", "COMPLETED"}:
             # prevent double runs, concurrent writes, etc.
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
 
-        # Force re-validation in case Task was somehow edited since last save
+        # 2. Force re-validation in case Task was somehow edited since last save
         try:
             # Reset before running; useful for re-running failed
-            _ = task.validate_and_serialize()
+            task.inputs = task.validate_and_serialize(task.inputs)
             task.status = "PENDING"
             task.error = None
         except ValidationError as e:
@@ -355,16 +213,24 @@ def run_task_only_action(
             msg_type = "warning"
             return ctx.redirect_back(fallback_url=f"/sessions/{s.id}", message=msg, message_type=msg_type)
 
-    background_tasks.add_task(rt.execute_task, session_id, task_id)
-    return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
+        s.mark_dirty()
+
+    # background_tasks.add_task(rt.execute_task, session_id, task_id)
+    rt.execute_task(session_id=session_id, task_id=task_id)
+
+    return ctx.redirect_back(
+        fallback_url=f"/sessions/{session_id}",
+        message="Task execution started.",
+        message_type="info",
+    )
 
 
 @router.post("/{task_id}/clone", response_class=RedirectResponse)
 def clone_task_action(task_id: str, s: ActiveSession, ctx: PageContext = Depends()):
     """Create a deep copy of this Task with a new ID. Does not run the Task."""
     new_task = s.clone_task(task_id)
-    return ctx.redirect_back(
-        fallback_url=f"/sessions/{s.id}/tasks/{new_task.id}",
+    return ctx.redirect(
+        url=f"/sessions/{s.id}/tasks/{new_task.id}",
         message="Task cloned. Remember to update inputs before running.",
         message_type="info",
     )
@@ -375,5 +241,167 @@ def delete_task_action(task_id: str, s: ActiveSession, ctx: PageContext = Depend
     """Delete this Task. NOTE: This is irreversible and will orphan downstream Artifacts."""
     deleted = s.delete_task(task_id)
     if not deleted:
-        return ctx.redirect_back(fallback_url=f"/sessions/{s.id}", message="Something went wrong", message_type="danger")
-    return ctx.redirect(f"/sessions/{s.id}", message="Task deleted", message_type="success")
+        return ctx.redirect_back(fallback_url=f"/sessions/{s.id}", message="Failed to delete task.", message_type="danger")
+    return ctx.redirect(f"/sessions/{s.id}", message="Task deleted successfully.", message_type="success")
+
+
+# --- AJAX routes ---
+
+@router.post("/new/{task_key}", response_class=JSONResponse)
+async def api_task_commit(
+    task_key: str,
+    payload: TaskPayload,
+    s: ActiveSession,
+):
+    """
+    Commits the current configuration to a Task in the Manifest
+    """
+    try:
+        task_def = task_registry.get(task_key)
+        if not task_def:
+            raise ValueError(f"Task '{task_key}' not found in registry.")
+
+        # 1. Extract Metadata BEFORE form_to_dict strips it out!
+        existing_task_id = payload.inputs.get("task_id")
+        task_name = payload.inputs.get("name") or task_def.name
+
+        s.runtime.logger.debug(
+            "api_task_commit [%s]: payload keys=%s", task_key, list(payload.inputs.keys())
+        )
+
+        # 2. Parse JSON payload
+        raw_inputs = form_json_to_dict(payload.inputs, task_def.input_model)
+
+        s.runtime.logger.debug(
+            "api_task_commit [%s]: raw_inputs=%r", task_key, raw_inputs
+        )
+
+        # 3. Extract parent_artifact_ids dynamically
+        parent_ids = []
+        for field_name, field_info in task_def.input_model.model_fields.items():
+            # Check if this field is an ArtifactInput
+            if "ArtifactInput" in str(field_info.annotation):
+                val = raw_inputs.get(field_name)
+                if isinstance(val, list):
+                    parent_ids.extend(val)  # Handle multi-file inputs
+                elif val:
+                    parent_ids.append(val)  # Handle single-file inputs
+
+        # 4. Upsert logic for Task (allows editing existing tasks)
+        task = None
+        if existing_task_id:
+            try:
+                task = s.get_task(existing_task_id)
+                if task is None:
+                    raise ValueError(f"Task with ID '{existing_task_id}' not found in Session '{s.id}'.")
+                if task.status in ["RUNNING", "COMPLETED"]:
+                    task = None  # Cannot edit, save as new
+            except ValueError:
+                pass  # Task ID from form doesn't exist, fallback to new
+
+        if task:
+            task = s.update_task(
+                task.id,
+                inputs=raw_inputs,
+                exec_config=payload.exec_config.model_dump(mode="json"),
+                name=task_name,
+                parent_artifact_ids=list(set(parent_ids)),
+            )
+        else:
+            task = s.add_task(
+                registry_key=task_key,
+                inputs=raw_inputs,
+                name=task_name,
+                parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
+                exec_config=payload.exec_config.model_dump(mode="json"),
+            )
+
+        s.runtime.logger.debug(
+            "api_task_commit [%s]: task.id=%s  status=%s  error=%r  inputs=%r",
+            task_key, task.id, task.status, task.error, task.inputs,
+        )
+
+        # 5. Return success and the redirect URL
+        return JSONResponse(content={
+            "status": "success",
+            "redirect_url": f"/sessions/{s.id}/tasks/{task.id}",
+        })
+
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=400,
+        )
+
+
+# Because this is `def` and not `async def`, FastAPI runs it in a background thread!
+@router.post("/new/{task_key}/preview", response_class=JSONResponse)
+def api_task_preview(
+    session_id: str,
+    task_key: str,
+    payload: TaskPayload,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """
+    AJAX endpoint for the Workbench. Runs the task in memory and returns JSON.
+    """
+    try:
+        # 1. Execute the task, reading inputs from JSON payload
+        form_inputs = form_json_to_dict(payload.inputs, task_registry[task_key].input_model)
+
+        results = rt.preview_task(
+            session_id,
+            task_key,
+            form_inputs,
+            exec_config=payload.exec_config.model_dump(mode="json"),
+        )
+        primary_results = results.primary_data
+        if not primary_results:
+            raise ValueError(
+                "Task execution completed, but no primary result. "
+                "Does the Task plugin have `is_primary` set?"
+            )
+        primary_result = primary_results[0]
+
+        # 2. Extract the metadata
+        output_data = primary_result.get("data", {})
+        view_mode = primary_result.get("view_mode", "raw")
+        metadata = primary_result.get("metadata", {})
+        adapter_name = primary_result.get("adapter_name", "unknown")
+
+        render_context = {
+            "request": ctx.request,
+            "data": output_data,
+            "view_state": payload.exec_config.adapter.view_state,
+            "metadata": metadata,
+            "adapter_name": adapter_name,
+        }
+
+        if view_mode == "table":
+            keys = list(output_data[0].keys()) if output_data else []
+            render_context["keys"] = keys
+
+        elif view_mode == "svg":
+            pass  # placeholder
+
+        # 3. Render the HTML on the Server
+        response = templates.TemplateResponse(
+            request=ctx.request,
+            name=f"partials/viewers/{view_mode}.html",
+            context=render_context,
+        )
+        html_content = bytes(response.body).decode("utf-8")
+
+        # 5. Send the compiled HTML to frontend for display
+        return JSONResponse(content={
+            "status": "success",
+            "html": html_content,
+        })
+
+    except Exception as e:
+        rt.logger.error("Preview API Error: %s", str(e))
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=400,
+        )

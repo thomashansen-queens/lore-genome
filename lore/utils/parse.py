@@ -4,24 +4,6 @@ Utility functions to parse and coerce values from various sources.
 from typing import Any
 import re
 
-# [^\w\-.]: Anything that isn't a word character [a-zA-Z0-9_] or - .
-# [\\/?@]: No slashes, question marks, at signs (more permissive)
-_DEFAULT_BAD_CHARS = re.compile(r'[\\/?@]')
-
-def clean(v: Any, *, empty_to_none: bool = True,
-          reject: re.Pattern | None = _DEFAULT_BAD_CHARS) -> str | None:
-    """Helper cleans strings."""
-    if v is None:
-        return None
-    if not isinstance(v, str):
-        v = str(v)
-    s = v.strip()
-    if empty_to_none and s == "":
-        return None
-    if reject and reject.search(s):
-        raise ValueError(f"Invalid characters: {s}")
-    return s
-
 def as_list_str(v: Any) -> list[str] | None:
     """Helper converts comma-separated strings or lists to cleaned list[str]."""
     if v is None:

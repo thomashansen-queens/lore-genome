@@ -5,6 +5,7 @@ from .svg import (
     SvgPolygon,
     SvgRect,
     SvgText,
+    SvgTitle,
     SvgStyle,
     SvgUnits,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "SvgPolygon",
     "SvgRect",
     "SvgText",
+    "SvgTitle",
     "SvgStyle",
     "SvgUnits",
 ]

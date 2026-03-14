@@ -3,13 +3,13 @@
     {% if status == 'COMPLETED' %}
         <span class="badge success">● Done</span>
     {% elif status == 'FAILED' %}
-        <span class="badge danger">⊗ Failed</span>
+        <span class="badge danger">× Failed</span>
     {% elif status == 'RUNNING' %}
         <span class="badge info pulsing">◐ Running</span>
     {% elif status == 'PENDING' %}
         <span class="badge">○ Pending</span>
     {% elif status == 'DRAFT' %}
-        <span class="badge muted">• Draft</span>
+        <span class="badge muted">🤇 Draft</span>
     {% else %}
         <span class="badge warning">? {{ status|title }}</span>
     {% endif %}
@@ -32,16 +32,16 @@
                 name="{{ input_name }}"
                 value="{{ value }}"
                 data-original="{{ value }}"
-                style="border: none; font-weight: 600;"
+                style="border: none; font-weight: 600; color: var(--primary-dark);"
                 onfocus="this.dataset.original = this.value"
                 onblur="if(this.dataset.original !== this.value) this.form.submit()"
                 onkeypress="if(event.key === 'Enter') this.blur()"
                 title="Click to rename">
     </form>
     {% if subtitle %}
-    <div class="muted">
-        {{ subtitle | safe }}
-    </div>
+        <div class="muted">
+            {{ subtitle | safe }}
+        </div>
     {% endif %}
 </div>
 {% endmacro %}
@@ -60,7 +60,7 @@
 {# === Universal action bar === #}
 {# Usage: call with caller() to inject the buttons. It handles the container and the delete button. #}
 {% macro action_bar(delete_url=None) %}
-<div class="row" style="margin-bottom: var(--spacing-sm);">
+<div class="row gapped">
     
     {# The specific buttons (Download, New Task, etc) go here #}
     {{ caller() }}
@@ -89,6 +89,41 @@
     ">✎ Rename</button>
 </form>
 {% endmacro %}
+
+{# === Task Link Card === #}
+{# Usage: {{ ui.task_card(task, session_id=session.id) }} #}
+{# task may be None (manual upload / ingestion) #}
+{% macro task_card(task, session_id) %}
+{% if task %}
+<a href="/sessions/{{ session_id }}/tasks/{{ task.id }}"
+   class="card clickable"
+   style="padding: var(--spacing-sm);">
+    <div class="row" style="justify-content: space-between; align-items: flex-start;">
+        <span>{{ task.name or task.id[:8] }}</span>
+        {{ status_badge(task.status) }}
+    </div>
+    <div class="muted mono small">{{ task.registry_key }}</div>
+</a>
+{% else %}
+<div class="card muted small">⬆ Manual upload / ingestion</div>
+{% endif %}
+{% endmacro %}
+
+
+{# === Artifact Link Card === #}
+{# Usage: {{ ui.artifact_card(artifact, session_id=session.id) }} #}
+{% macro artifact_card(artifact, session_id) %}
+<a href="/sessions/{{ session_id }}/artifacts/{{ artifact.id }}"
+   class="card clickable"
+   style="padding: var(--spacing-sm);">
+    <div class="row" style="justify-content: space-between; align-items: flex-start;">
+        <span>{{ artifact.name or artifact.id[:8] }}</span>
+        <span class="badge muted">{{ artifact.data_type }}</span>
+    </div>
+    <div class="muted small">{{ artifact.display_size }}</div>
+</a>
+{% endmacro %}
+
 
 {# === Delete Action === #}
 {# Default to 'danger' for simplicity in dropdowns #}

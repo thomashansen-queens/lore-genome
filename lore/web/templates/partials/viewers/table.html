@@ -1,9 +1,76 @@
-<div>
-    <div>
-        <small class="muted">Showing {{ explore_data|length }} records resolved via {{ adapter.name }}
-        <br>Table size: {{ keys|length }} columns x {{ explore_data|length }} rows{% if is_truncated %} (truncated){% endif %}</small>
+{% set data = data | default({}) %}
+{% set metadata = metadata | default({}) %}
+{% set view_state = view_state | default({}) %}
+
+<div class="column">
+
+    <div class="row gapped muted small" style="flex-shrink: 0;">
+        <p>
+            Showing {{ '{:,}'.format(data|length) }} records
+        </p>
+        <p>
+            {{ metadata.columns | count | default('?') }} cols ×
+            {% if metadata.get('total_rows') %}
+                {{ '{:,}'.format(metadata.get('total_rows')) }} rows
+            {% else %}
+                <em>many</em> rows (streamed)
+            {% endif %}
+        </p>
+        {% if metadata.get('is_truncated') %}
+            <span class="badge small info push-right">preview</span>
+        {% endif %}
     </div>
-    <div class="table-container" style="max-height: 80vh; overflow-y: auto;">
-        {{ tables.render_adapter_table(keys, explore_data) }}
+
+    <div class="scroll-area">
+        <table id="preview-table">
+            <thead>
+                <tr>
+                    {% for key in keys %}
+                        {% set is_numeric_col = key in metadata.get('numeric_maxes', {}) %}
+                        <th style="cursor: pointer; text-align: {{ 'right' if is_numeric_col else 'left' }};"
+                            data-explore-action="sort"
+                            data-sort-key="{{ key }}">
+                            {{ key | replace('_', ' ') | title }}
+                            {% if view_state.get('sort_by') == key %}
+                                {{ '▲' if view_state.get('sort_asc', True) else '▼' }}
+                            {% endif %}
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    {% for key in keys %}
+                        {# Parse value properties #}
+                        {% set value = row.get(key, '') %}
+                        {% set is_num = value is number %}
+                        {% set col_max = metadata.get('numeric_maxes', {}).get(key) %}
+                        {% set align = 'right' if is_num else 'left' %}
+                        {% set bg = '' %}
+
+                        {# Numeric data bars #}
+                        {% if is_num and col_max %}
+                            {% set pct = (value / col_max * 100) if col_max else 0 %}
+                            {% set bar_color = "color-mix(in srgb, var(--bg-primary) 50%, transparent)" %}
+                            {% set bg = 'background: linear-gradient(90deg, ' ~ bar_color ~ ' ' ~ pct ~ '%, transparent 0);' %}
+                        {% endif %}
+                        <td class="mono"
+                            style="text-align: {{ align }}; {{ bg }}">
+                            {% if value is none %}
+                                <span class="muted">null</span>
+                            {% elif value is float %}
+                                {{ "%.2f"|format(value) }}
+                            {% else %}
+                                {{ value|safe }}
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
+
 </div>

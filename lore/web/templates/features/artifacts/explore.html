@@ -1,53 +1,244 @@
-{% extends "features/sessions/layout.html" %}
+{% extends "/features/sessions/layout.html" %}
 {% import "macros/ui.html" as ui %}
-{% import "macros/jinja_tables.html" as tables %}
 
 {% block workspace %}
-<div>
+<div class="column">
+
+    {# === Header === #}
+    <span class="ui-label">Explore</span>
     <div>
-        <h2>Explore data: {{ artifact.name }}</h2>
-    </div>
+        <h4>
+            {{ artifact.name or artifact.path.split('/')[-1] }} (Explore)
+        </h4>
+        <div class="muted small mono">
+            Adapter: <span class="badge small muted">{{ adapter.name }}</span> &bull; Type: {{ artifact.data_type }}
+        </div>
+
         {# === Action bar === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
             <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="btn secondary">
-                ⬅ Overview
+                ⬅ Back to Overview
             </a>
-            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download" class="btn primary">
-                ⬇ Download raw
-            </a>
+            <button popovertarget="export-menu" class="btn primary">
+                ⬇ Export ▾
+            </button>
+            <div id="export-menu" class="dropdown-menu left" popover>
+                <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download">
+                    Download Original
+                </a>
+                {% if view_mode == 'table' %}
+                <button id="btn-export-artifact" title="Export current view as CSV">
+                    Save as Artifact
+                </button>
+                <button id="btn-export-csv" title="Export current view as CSV">
+                    Export CSV
+                </button>
+                {% elif view_mode == 'svg' %}
+                <button id="btn-export-png" title="Rasterize current view as PNG">
+                    Save as .png
+                </button>
+                {% endif %}
+            </div>
+            {% if available_adapters | length > 1 %}
+                <button popovertarget="explore-menu-{{ artifact.id }}" class="btn primary">
+                    🔍︎ Adapters ▾
+                </button>
+                <div id="explore-menu-{{ artifact.id }}" class="dropdown-menu left" popover>
+                    <span class="ui-label">Adapters</span>
+                    {% for a in available_adapters %}
+                        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/explore?adapter_key={{ a.name }}">
+                            {{ a.name }}
+                        </a>
+                    {% endfor %}
+                </div>
+            {% endif %}
         {% endcall %}
     </div>
-</div>
 
-{# <div class="card">
-    <h4 style="color: var(--danger);">🛠 Debug Inspector</h4>
-    <ul class="mono small">
-        <li><strong>Adapter Name:</strong> {{ adapter.name }}</li>
-        <li><strong>Adapter fields:</strong> {{ adapter.fields }}</li>
-        <li><strong>Table Data Type:</strong> {{ table_data.__class__.__name__ }}</li>
-        <li><strong>Table Data Length:</strong> {{ table_data|length }}</li>
-    </ul>
-    
-    <p class="mono small" style="max-height: 150px; overflow-y: auto; padding: 0.5rem;">
-        <strong>Raw Output Preview:</strong><br>
-        {{ table_data | default('No data passed to template', true) | string | truncate(500) }}
-    </p>
-</div> #}
+    {# === Viewer Card === #}
+    <div class="card column" id="explore-card"
+         style="margin-top: var(--spacing-md); overflow: auto; position: relative;"
+         data-session-id="{{ session.id }}"
+         data-artifact-id="{{ artifact.id }}">
 
-    {% block content %}
-    <div class="explore-container">
+        <div id="preview-loader" style="display: none; position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
+            <span class="badge warning pulsing">⏳︎ Computing...</span>
+        </div>
+
         {% if view_mode == 'table' %}
-            {% include 'partials/viewers/table.html' %}
-            
-        {% elif view_mode == 'image' %}
-            {% include 'partials/viewers/svg.html' %}
-            
-        {% else %}
-            <div class="alert alert-warning">
-                Unsupported view mode: {{ view_mode }}
+        {# === Data Controls (table only) === #}
+        <div class="row">
+            <input type="text" id="query-input"
+                   placeholder="pandas query e.g. symbol == 'ctxA' and name.str.contains('toxin')"
+                   style="flex: 1; font-family: var(--font-mono); font-size: 0.85rem;" />
+            <div id="row-counter" class="badge small muted">
+                {{ metadata.get('total_rows', data | length) }} rows
             </div>
+        </div>
         {% endif %}
+
+        {# === Viewer === #}
+        <div id="viewer-target" class="column" style="transition: opacity 0.2s ease;">
+            {% if view_mode == 'table' %}
+                {% include 'partials/viewers/table.html' %}
+
+            {% elif view_mode in ['svg', 'image'] %}
+                {% include 'partials/viewers/svg.html' ignore missing %}
+                {% include 'partials/viewers/image.html' ignore missing %}
+
+            {% elif view_mode == 'raw' %}
+                {% include 'partials/viewers/raw.html' %}
+
+            {% else %}
+                <div>
+                    <h4 class="muted">Unsupported view mode: <code>{{ view_mode }}</code></h4>
+                    <p class="muted small">No viewer partial found for this adapter type.</p>
+                </div>
+            {% endif %}
+        </div>
+
     </div>
-    {% endblock %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if view_mode == 'table' %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const card         = document.getElementById('explore-card');
+    const sessionId    = card.dataset.sessionId;
+    const artifactId   = card.dataset.artifactId;
+    const viewerTarget = document.getElementById('viewer-target');
+    const queryInput   = document.getElementById('query-input');
+    const rowCounter   = document.getElementById('row-counter');
+    const loader       = document.getElementById('preview-loader');
+
+    const apiUrl = `/sessions/${sessionId}/artifacts/${artifactId}/explore/data`;
+    const exportUrl = `/sessions/${sessionId}/artifacts/${artifactId}/explore/export`;
+    
+    const currentAdapter = "{{ adapter.name }}";
+    let viewState = { sort_asc: true };
+    let debounceTimer;
+    let abortController = null;
+
+    // --- Payload Generator ---
+    function getPayload() {
+        return {
+            query: queryInput.value,
+            adapter_key: currentAdapter,
+            adapter_config: {
+                view_state: viewState,
+                strategy: "auto"
+            }
+        };
+    }
+
+    // --- Sort: click on table header ---
+    viewerTarget.addEventListener('click', function(e) {
+        const sortEl = e.target.closest('[data-explore-action="sort"]');
+        if (!sortEl) return;
+        const key = sortEl.dataset.sortKey;
+        if (viewState.sort_by === key) {
+            viewState.sort_asc = !viewState.sort_asc;
+        } else {
+            viewState.sort_by = key;
+            viewState.sort_asc = true;
+        }
+        fetchData();
+    });
+
+    // --- Filter: query input (debounced) ---
+    queryInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fetchData, 500);
+    });
+
+    // --- Fetch Data Preview ---
+    async function fetchData() {
+        if (abortController) abortController.abort();
+        abortController = new AbortController();
+
+        loader.style.display = 'block';
+        viewerTarget.style.opacity = '0.5';
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getPayload()),
+                signal: abortController.signal,
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                viewerTarget.innerHTML = result.html;
+                rowCounter.textContent = result.row_count !== result.total_rows
+                    ? `${result.row_count} / ${result.total_rows} rows`
+                    : `${result.total_rows} rows`;
+            } else {
+                viewerTarget.innerHTML = `<div class="alert error">${result.message}</div>`;
+            }
+        } catch (error) {
+            // If abort, do nothing
+            if (error.name === 'AbortError') return;
+            viewerTarget.innerHTML = `<div class="alert error">${error.message}</div>`;
+        } finally {
+            if (!abortController.signal.aborted) {
+                loader.style.display = 'none';
+                viewerTarget.style.opacity = '1';
+            }
+        }
+    }
+
+    // --- Export with current view state ---
+    const btnExport = document.getElementById('btn-export-csv');
+
+    btnExport.addEventListener('click', async function() {
+        btnExport.disabled = true;
+        btnExport.textContent = "⏳ Exporting...";
+
+        try {
+            const response = await fetch(exportUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getPayload())
+            });
+
+            if (!response.ok) throw new Error("Export failed");
+
+            // Convert response to a blob and trigger a hidden download link
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+            // Extract filename from Content-Disposition header if possible
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'export.csv';
+            if (contentDisposition && contentDisposition.includes('filename=')) {
+                filename = contentDisposition.split('filename=')[1].replace(/["']/g, '');
+            }
+            a.download = filename;
+            
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            btnExport.disabled = false;
+            btnExport.textContent = "⬇ Export CSV";
+        }
+    });
+    
+    // Fire off an initial fetch on page load
+    fetchData();
+});
+</script>
+{% endif %}
 
 {% endblock %}

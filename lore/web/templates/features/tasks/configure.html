@@ -4,46 +4,243 @@
 
 {% block content %}
 
-<div class="card">
-    {% if is_new %}
-        <form action="/sessions/{{ session.id }}/tasks/new/{{ task_def.key }}" method="POST">
-    {% else %}
-        <form action="/sessions/{{ session.id }}/tasks/{{ edit_task_id }}/edit" method="POST">
-    {% endif %}
+{# Empty data-carrying div #}
+<div id="task-def" data-live-preview="{{ task_def.live_preview }}"></div>
 
-    <h4>{{ task_def.icon }}</h4>
-    <input type="text" name="task_name"
-            value="{{ task_def.name }}"
-            style="border: none; font-weight: 600;"
-            title="Click to rename">
-    <p>{{ task_def.description }}</p>
-    <hr />
+<div class="row fill stretch">
+    
+    <aside class="sidebar">
 
-        {% for field_name, field_info in task_def.input_model.model_fields.items() %}
-            {% set prefill_val = prefill_inputs.get(field_name) %}
-            {% set field_candidates = artifact_candidates.get(field_name, []) %}
-            {{ forms.render_field(field_name, field_info, prefill_val, candidates=field_candidates) }}
-        {% endfor %}
-        
-        <div class="row">
-
-            <button type="submit" name="action" value="SAVE" class="btn secondary">
-                🗒 Save draft
-            </button>
-            
-            <button type="submit" name="action" value="RUN" class="btn primary">
-                ▶ Save & Run
-            </button>
-            
-            <span class="push-right">
-                <a href="/sessions/{{ session.id }}" class="btn danger" style="border: 1px solid;">
-                    ✕ Cancel
-                </a>
-            </span>
-
+        <div class="row" style="flex-shrink: 0;">
+            <span class="ui-label">{% if edit_task_id %}Edit Task{% else %}New Task{% endif %}</span>
+            {% if task_def.live_preview %}
+                <span class="badge small info push-right">🖵 Live Preview</span>
+            {% endif %}
         </div>
-    </form>
 
+        <form id="workbench-form">
+            <input type="hidden" name="task_id" value="{{ edit_task_id | default('') }}">
+            <input type="text"
+                    name="name"
+                    value="{{ prefill_name | default(task_def.name) }}"
+                    data-original="{{ task_def.name }}"
+                    style="border: none; font-weight: 600; color: var(--primary-dark);"
+                    onfocus="this.dataset.original = this.value"
+                    onkeypress="if(event.key === 'Enter') this.blur()"
+                    title="Click to rename">
+            
+            <p class="muted small">{{ task_def.description }}</p>
+            <hr />
+
+            {# Loop through your task inputs and render your custom ValueInput widgets here! #}
+            {% for field_name, field_info in task_def.input_model.model_fields.items() %}
+                {% set prefilled_val = prefilled_inputs.get(field_name) %}
+                {% set field_candidates = artifact_candidates.get(field_name, []) %}
+                {{ forms.render_field(field_name, field_info, prefilled_val, candidates=field_candidates) }}
+            {% endfor %}
+
+            <div class="column gapped">
+                <button id="commit-button" type="submit" class="btn primary">
+                    {% if edit_task_id %}
+                        🗒 Save edits
+                    {% else %}
+                        ➡ Commit to Task
+                    {% endif %}
+                </button>
+                <button id="preview-button" class="btn secondary">
+                    👁 Preview
+                </button>
+            </div>
+        </form>
+    </aside>
+
+    <section class="column fill padded"
+             style="position: relative; background: var(--secondary); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.1); ">
+        
+        <div id="preview-loader" style="display: none; position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
+            <span class="badge warning pulsing">⏳︎ Computing...</span>
+        </div>
+
+        <div id="preview-target" class="card" style="max-height: 100%; overflow: auto;">
+            <p class="muted">
+                {% if task_def.live_preview %}
+                    Change a parameter to generate preview...
+                {% else %}
+                    Click "Preview" to generate a preview...
+                {% endif %}
+            </p>
+        </div>
+
+    </section>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const form = document.getElementById('workbench-form');
+    const target = document.getElementById('preview-target');
+    const loader = document.getElementById('preview-loader');
+    const previewBtn = document.getElementById('preview-button');
+    const livePreviewEnabled = document.getElementById('task-def').dataset.livePreview === 'True';
+    const commitBtn = document.getElementById('commit-button');
+
+    // --- Helper to gather form inputs into a dict ---   
+    function gatherInputs(form) {
+        const formData = new FormData(form);
+        const inputs = {};
+        for (let [key, value] of formData.entries()) {
+            if (inputs.hasOwnProperty(key)) {
+                if (!Array.isArray(inputs[key])) {
+                    inputs[key] = [inputs[key]];
+                }
+                inputs[key].push(value);
+            } else {
+                inputs[key] = value;
+            }
+        }
+        return inputs;
+    }
+    let debounceTimer;
+    let abortController = null;
+
+    // --- State ---
+    let currentViewState = {
+        sort_asc: true // Default to ascending sort
+    };
+
+    // --- Input triggers ---
+    // Prevent the form from submitting normally on "Enter"
+    form.addEventListener('submit', e => e.preventDefault());
+
+    // Listen to ANY change on the form (typing, sliding, checking boxes)
+    if (livePreviewEnabled) {
+        form.addEventListener('input', function() {
+            // 1. Debounce: If they are sliding a slider, don't fire 100 requests. Wait until they pause for 400ms.
+            currentViewState = { sort_asc: true };  // Reset view_state when inputs change
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchPreview(), 400);
+        });
+    }
+
+    // --- UI triggers: Listens to clicks in preview canvas ---
+    target.addEventListener('click', function(e) {
+        const sortElement = e.target.closest('[data-workbench-action="sort"]');
+        if (sortElement) {
+            const sortKey = sortElement.dataset.sortKey;
+
+            // Toggle sort direction
+            if (currentViewState.sort_by === sortKey) {
+                currentViewState.sort_asc = !currentViewState.sort_asc;
+            } else {
+                currentViewState.sort_by = sortKey;
+                currentViewState.sort_asc = true; // Ascending sort: default
+            }
+
+            // Re-fetch preview with new view_state
+            fetchPreview();
+        }
+
+        // FUTURE: Add more UI triggers here (e.g. pagination buttons, filter toggles, etc.)
+    })
+
+    // --- PREVIEW ENGINE ---
+    if (previewBtn) {
+        previewBtn.addEventListener('click', function(e) {
+            e.preventDefault();  // Don't GET
+            fetchPreview();
+        });
+    }
+
+    async function fetchPreview() {
+        loader.style.display = 'block';
+        
+        // Cancel pending requests before starting a new one
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+
+        const inputs = gatherInputs(form);
+
+        try {
+            const response = await fetch(`{{ preview_api_url }}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    inputs: inputs,
+                    exec_config: {
+                        adapter: {
+                            view_state: currentViewState
+                        }
+                    }
+                }),
+                signal: abortController.signal
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                target.innerHTML = data.html;  // Inject the rendered HTML from the server
+            } else {
+                target.innerHTML = `<div class="alert error">${data.message}</div>`;
+            }
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log("Stale preview request aborted")
+                return;
+            }
+            console.error("Preview failed:", error);
+            target.innerHTML = `<div class="alert error">${error.message}</div>`;
+        } finally {
+            if (!abortController.signal.aborted) {
+                loader.style.display = 'none';
+            }
+        }
+    }
+    
+    // --- COMMIT TO MANIFEST ---
+    commitBtn.addEventListener('click', async function(e) {
+        e.preventDefault();
+        
+        if (!confirm("Commit this configuration to your Session?")) {
+            return;
+        }
+
+        // 1. Gather inputs
+        const inputs = gatherInputs(form);
+
+        try {
+            const response = await fetch(`{{ commit_api_url }}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    inputs: inputs,
+                    exec_config: { adapter: { view_state: currentViewState } }
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // Redirect to the new Task page
+                window.location.href = data.redirect_url;
+            } else {
+                let errorMsg = "An unknown error occurred.";
+                if (data.message) {
+                    errorMsg = data.message;
+                } else if (data.detail) {
+                    errorMsg = Array.isArray(data.detail)
+                        ? data.detail.map(d => d.msg).join("<br>")
+                        : data.detail;
+                }
+                target.innerHTML = `<div class="alert error">${errorMsg}</div>`;
+            }
+        } catch (error) {
+            target.innerHTML = `<div class="alert error">Network Error: ${error.message}</div>`;
+        }
+    });
+});
+</script>
 {% endblock %}

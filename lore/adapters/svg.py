@@ -1,27 +1,52 @@
 """
 Adapter for SVG data
 """
-from typing import Any, ClassVar
+from pathlib import Path
+import re
+from typing import ClassVar
 
-from lore.core.adapters import adapter_registry, ImageAdapter
+from lore.core.adapters import AdapterPreview, ImageAdapter, adapter_registry
 
 
 class SvgAdapter(ImageAdapter):
     """
-    Pass-through adapter for SVG files. 
-    Tells the UI to render this directly as an image.
+    Pass-through adapter for SVG files.
+    Tells the UI to render embedded XML directly as an vector image.
     """
     accepted_formats: ClassVar[set[str]] = {"svg"}
     accepted_types: ClassVar[set[str]] = {"*"}
-    view_mode: ClassVar[str] = "image"
+    view_mode: ClassVar[str] = "svg"
+    version: ClassVar[str] = "1.0.0"
 
-    def adapt(self, raw_data: Any) -> str:
-        """For SVGs, adapting just means ensuring it's a string."""
-        if isinstance(raw_data, bytes):
-            return raw_data.decode("utf-8")
-        return str(raw_data)
+    def provides(self, requirement: str) -> bool:
+        if super().provides(requirement):
+            return True
+        return requirement == "svg"
 
-    def to_png(self, path_or_data: Any, scale: float = 2.0):
+    def preview(self, raw_data: str, io_metadata: dict, config: dict | None = None) -> AdapterPreview:
+        """
+        UI Contract: Packages the SVG string and extracts spatial metadata.
+        """
+        # 1. Extract basic metadata
+        # Looks for <svg ... viewBox="0 0 100 100" ... >
+        viewbox_match = re.search(r'viewBox="([^"]+)"', raw_data)
+        viewbox = viewbox_match.group(1) if viewbox_match else "Unknown"
+
+        final_metadata = {
+            **io_metadata,
+            "strategy_used": "embedded_xml",
+            "viewbox": viewbox,
+            "is_truncated": False, # SVGs can't be truncated or they break!
+            "view_mode": self.view_mode,
+        }
+
+        # 3. Return the Standardized Payload
+        return AdapterPreview(
+            data=raw_data,
+            metadata=final_metadata
+        )
+
+    def to_png(self, path: Path, scale: float = 2.0):
         """
         FUTURE: helper using something like cairosvg to rasterize
         vector graphics for tasks that require standard images.

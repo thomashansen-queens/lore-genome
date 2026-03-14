@@ -1,7 +1,7 @@
 """
 Adapter definition for NCBI data.
 """
-from typing import Any
+from pathlib import Path
 
 from lore.core.adapters import TableAdapter, adapter_registry
 
@@ -10,7 +10,7 @@ class NcbiGenomeReportsAdapter(TableAdapter):
     Adapter for NCBI Genome Reports JSON data. Transforms the nested, complex JSON
     into a flat list of dictionaries with consistent keys for easier use in LoRe.
     """
-    accepted_formats = {"json"}
+    accepted_formats = {"json", "jsonl"}
     accepted_types = {"ncbi_genome_reports"}
 
     @property
@@ -64,17 +64,6 @@ class NcbiGenomeReportsAdapter(TableAdapter):
             # "ani_comment": "average_nucleotide_identity.comment",
             "genome_notes": "assembly_info.genome_notes",
         }
-
-    def parse(self, raw_data: Any) -> list[dict]:
-        records = super().parse(raw_data)
-        # Unwrap NCBI payload
-        unwrapped = []
-        for rec in records:
-            if "reports" in rec and isinstance(rec["reports"], list):
-                unwrapped.extend(rec["reports"])
-            else:
-                unwrapped.append(rec)
-        return unwrapped
 
 
 adapter_registry.register(NcbiGenomeReportsAdapter())

@@ -2,6 +2,7 @@
 OS-specific file locking
 """
 import time
+from pathlib import Path
 
 HAS_FCNTL = None
 HAS_MSVCRT = None
@@ -16,7 +17,7 @@ except ImportError:
     except ImportError:
         HAS_MSVCRT = False
 
-def acquire_lock(file_obj, timeout=10):
+def acquire_lock(file_obj, timeout: float = 10):
     """Dependency-free cross-platform file locking."""
     start_time = time.time()
     while True:
@@ -35,7 +36,27 @@ def acquire_lock(file_obj, timeout=10):
         except OSError:
             if time.time() - start_time >= timeout:
                 raise RuntimeError("Timeout acquiring session lock.")
-            time.sleep(0.1) # Wait 100ms and try again
+            time.sleep(0.1)  # Wait 100ms and try again
+
+def is_file_locked(file_path: Path) -> bool:
+    """
+    Non-blocking probe to test if a file is currently locked by another process.
+    """
+    if not file_path.exists():
+        return False
+
+    try:
+        # Open briefly just to probe the OS lock
+        with open(file_path, "a", encoding="utf-8") as f:
+            try:
+                acquire_lock(f, timeout=0)
+                release_lock(f)  # Release lock immediately
+                return False
+            except RuntimeError:
+                return True  # Locked!
+    except OSError:
+        # If the OS completely denies opening the file (e.g. Windows strict locks)
+        return True
 
 def release_lock(file_obj):
     """Release the file lock."""

@@ -1,0 +1,34 @@
+{% extends "features/sessions/layout.html" %}
+{% import "macros/ui.html" as ui %}
+
+{% block workspace %}
+<div class="column fill stretch">
+    <h2>
+        🛠 New Task
+    </h2>
+    <p class="muted">Select a tool to configure and preview in real-time before saving.</p>
+
+    <div class="column">
+        <div class="scroll-area" style="padding-right: var(--spacing-md);">
+            {% for task in tasks %}
+                <a href="/sessions/{{ session.id }}/tasks/new/{{ task.key }}" 
+                class="card clickable"
+                style="margin-top: var(--spacing-sm);">
+                    <div>
+                        <h3>
+                            <span style="margin-right: 0.5rem;">{{ task.icon }}</span> 
+                            {{ task.name }}
+                        </h3>
+                        <p class="muted">
+                            {# {{ task.description | truncate(120) }} #}
+                            {{ task.description }}
+                        </p>
+                    </div>
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+
+</div>
+
+{% endblock workspace %}

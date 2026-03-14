@@ -4,11 +4,15 @@ LoRe API routes for managing Sessions.
 Manages top level Session routes (CRUD)
 """
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from pathlib import Path
+import shutil
+import tempfile
 
-from lore.utils.parse import clean
-from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, build_breadcrumbs, PageContext
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+
+from lore.core.utils import clean
+from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -27,10 +31,17 @@ def list_sessions(rt: RT, ctx: PageContext = Depends()):
     """Render the Sessions dashboard."""
     sessions = rt.list_sessions()  # List of sessions as dictionaries
 
+    ctx.generate_breadcrumbs()
     return templates.TemplateResponse(
-        "/core/sessions.html",
+        "features/sessions/sessions.html",
         ctx.render(runtime=rt, sessions=sessions),
     )
+
+@router.post("/new", response_class=RedirectResponse)
+def create_session_action(rt: RT, ctx: PageContext = Depends()):
+    """Make a new Session and redirect to its detail page."""
+    session_obj = rt.create_session()
+    return ctx.redirect(f"/sessions/{session_obj.id}")
 
 
 @router.get("/{session_id}", response_class=HTMLResponse)
@@ -40,7 +51,7 @@ def show_session(s: ActiveSession, ctx: PageContext = Depends()):
     artifacts = s.list_artifacts(reverse=True)
     push_task_targets = _build_push_task_targets(artifacts)
 
-    ctx.breadcrumbs = build_breadcrumbs(session_id=s.id, session_name=s.name)
+    ctx.generate_breadcrumbs({s.id: s.name})
     return templates.TemplateResponse(
         "/features/sessions/detail.html",
         ctx.render(
@@ -50,15 +61,6 @@ def show_session(s: ActiveSession, ctx: PageContext = Depends()):
             push_task_targets=push_task_targets,
         )
     )
-
-# --- Management (CRUD) ---
-
-@router.post("/new", response_class=RedirectResponse)
-def create_session_action(rt: RT, ctx: PageContext = Depends()):
-    """Make a new Session and redirect to its detail page."""
-    session_obj = rt.create_session()
-    return ctx.redirect(f"/sessions/{session_obj.id}")
-
 
 @router.post("/{session_id}/clone", response_class=RedirectResponse)
 def clone_session_action(rt: RT, session_id: str, ctx: PageContext = Depends()):
@@ -97,6 +99,64 @@ def delete_session(rt: RT, session_id: str, ctx: PageContext = Depends()):
         return ctx.redirect_back(fallback_url="/sessions", message="Session not found", message_type="warning")
     except RuntimeError as e:  # Locked/Running a background task
         return ctx.redirect_back(fallback_url="/sessions", message=str(e), message_type="error")
+
+
+@router.get("/{session_id}/export")
+async def api_export_session(
+    session_id: str, 
+    background_tasks: BackgroundTasks,
+    rt: RT,
+    ctx: PageContext = Depends()
+):
+    """
+    Downloads the session as a zip file.
+    TODO: This is rough. Add better logic, take file handling out of the router
+    """
+    try:
+        # Temp dir to hold the zip file
+        temp_dir = Path(tempfile.mkdtemp())
+
+        # Ask the engine to build the zip
+        zip_path = rt.export_session(session_id, temp_dir)
+
+        # Clean up the temp file AFTER the user finishes downloading
+        background_tasks.add_task(lambda p: shutil.rmtree(p.parent, ignore_errors=True), zip_path)
+
+        return FileResponse(
+            path=zip_path,
+            filename=zip_path.name,
+            media_type="application/zip",
+        )
+    except Exception as e:
+        return ctx.redirect_back("/sessions", message=f"Error exporting session: {str(e)}", message_type="error")
+
+
+@router.post("/import")
+async def api_import_session(
+    rt: RT,
+    ctx: PageContext = Depends(),
+    file: UploadFile = File(...)
+):
+    """Uploads and ingests a zipped session archive."""
+    if not file.filename:
+        return ctx.redirect_back("/sessions", message="No file provided.", message_type="error")
+    if not file.filename.endswith('.zip'):
+        return ctx.redirect_back("/sessions", message="File must be a .zip archive.", message_type="error")
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = Path(tmp.name)
+
+        try:
+            new_session_id = rt.import_session(tmp_path)
+            return ctx.redirect(f"/sessions/{new_session_id}", message="Session imported successfully!", message_type="success")
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    except Exception as e:
+        return ctx.redirect_back("/sessions", message=f"Error importing session: {str(e)}", message_type="error")
 
 # --- AJAX for live updates ---
 
