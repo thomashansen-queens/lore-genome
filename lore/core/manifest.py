@@ -5,6 +5,7 @@ Run manifest management for LoRe Genome pipeline.
 import inspect
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -35,6 +36,7 @@ class Manifest(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Ledger
+    size_bytes: int | None = None
     tasks: dict[str, Task] = Field(default_factory=dict)
     artifacts: dict[str, Artifact] = Field(default_factory=dict)
 
@@ -46,8 +48,9 @@ class Manifest(BaseModel):
         return cls(session_id=session_id, session_name=session_name)
 
     @classmethod
-    def load(cls, path) -> "Manifest":
+    def load(cls, path: Path | str) -> "Manifest":
         """Load an existing Session Manifest from file."""
+        path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Session Manifest not found: {path}")
         try:
@@ -63,13 +66,13 @@ class Manifest(BaseModel):
         self.session_id = new_id
         self.created_at = datetime.now(timezone.utc)
 
-    def save(self, path) -> None:
+    def save(self, path: Path | str) -> None:
         """Atomic write Manifest to disk."""
         self.updated_at = datetime.now(timezone.utc)
         data = self.model_dump(mode="json")
 
         # Atomic write: temp file then move to prevent corruption on crash
-        temp_path = path.with_suffix(".tmp")
+        temp_path = Path(path).with_suffix(".tmp")
         try:
             temp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
             temp_path.replace(path)
@@ -86,7 +89,10 @@ class Manifest(BaseModel):
         *,
         default: str | None = None,
     ) -> str:
-        """Generate unique names, handling cleaning and duplicates with auto-incrementing."""
+        """
+        Generate unique names, handling cleaning and duplicates with auto-incrementing.
+        Use ignore_id to exclude `self` from duplicate checks during renaming.
+        """
         existing = [x.name for x in getattr(self, kind).values() if x.name and x.id != ignore_id]
         base = normalize_display_name(proposed, default=default or f"Unnamed {kind[:-1].capitalize()}")
         return auto_increment(base, existing)
@@ -95,7 +101,11 @@ class Manifest(BaseModel):
 
     def add_task(self, task: Task) -> None:
         """Add or update a Task in the manifest."""
-        task.name = self._unique_name(task.name, task.id, kind="tasks")
+        task.name = self._unique_name(
+            proposed=task.name,
+            ignore_id=task.id,
+            kind="tasks",
+        )
         self.tasks[task.id] = task
 
     def get_task(self, task_id: str) -> Task | None:
@@ -117,7 +127,11 @@ class Manifest(BaseModel):
         task = self.get_task(task_id)
         if not task:
             raise ValueError(f"Task ID '{task_id}' not found in manifest.")
-        task.name = self._unique_name(new_name, task_id, kind="tasks")
+        task.name = self._unique_name(
+            proposed=new_name,
+            ignore_id=task_id,
+            kind="tasks",
+        )
         return task.name
 
     def remove_task(self, task_id: str) -> None:
@@ -129,7 +143,11 @@ class Manifest(BaseModel):
 
     def add_artifact(self, artifact: Artifact) -> None:
         """Add or update an Artifact in the manifest."""
-        artifact.name = self._unique_name(artifact.name, artifact.id, kind="artifacts")
+        artifact.name = self._unique_name(
+            proposed=artifact.name,
+            ignore_id=artifact.id,
+            kind="artifacts",
+        )
         self.artifacts[artifact.id] = artifact
 
     def get_artifact(self, artifact_id: str) -> Artifact | None:
@@ -144,7 +162,7 @@ class Manifest(BaseModel):
             return list(self.artifacts.values())
         if not _valid_sort_key(Artifact, sort_by):
             raise ValueError(f"Invalid sort key '{sort_by}' for Artifact.")
-        return sorted(self.artifacts.values(), key=lambda a: getattr(a, sort_by), reverse=reverse)
+        return sorted(self.artifacts.values(), key=lambda a: getattr(a, sort_by, ""), reverse=reverse)
 
     def rename_artifact(self, artifact_id: str, new_name: str | None, new_path: str | None = None) -> str:
         """Rename an Artifact, ensuring uniqueness. Returns the new name."""

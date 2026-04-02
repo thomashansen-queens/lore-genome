@@ -1,0 +1,94 @@
+{# === Cache inspector: L1/L2 stats and CAS entry listing === #}
+{% extends "/features/runtime/layout.html" %}
+
+{% block workspace %}
+
+<div class="column fill gapped">
+
+    {# === Header === #}
+    <div>
+        <div>
+            <h4>Cache</h4>
+            <small class="text-muted">Two-tier LRU cache shared across all Sessions.</small>
+        </div>
+    </div>
+
+    {# === L1 / L2 status and controls === #}
+    <div class="row gapped stretch">
+
+        <div class="card stretch">
+            <header>L1 · RAM</header>
+            <div>Count: {{ stats.l1_count }}</div>
+            <div class="muted">{{ stats.l1_usage }}</div>
+            {% if stats.l1_pct > 0 %}
+                <span>({{ stats.l1_pct }}%)</span>
+                <div style="background: var(--bg-secondary); border-radius: 4px; height: 8px; margin-top: 0.5rem;">
+                    <div style="width: {{ stats.l1_pct }}%; height: 100%; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="card stretch">
+            <header>L2 · Disk (CAS)</header>
+            <div>Count: {{ stats.l2_count }}</div>
+            <div class="muted">{{ stats.l2_usage }}</div>
+            {% if stats.l2_pct > 0 %}
+                <span>({{ stats.l2_pct }}%)</span>
+                <div style="background: var(--bg-secondary); border-radius: 4px; height: 8px; margin-top: 0.5rem;">
+                    <div style="width: {{ stats.l2_pct }}%; height: 100%; background: var(--primary); border-radius: 4px;"></div>
+                </div>
+            {% endif %}
+        </div>
+
+        <form action="/runtime/cache/clear" method="POST"
+              class="push-right"
+              style="display: flex; align-items: flex-end;"
+              onsubmit="return confirm('Clear all L1 (RAM) and L2 (disk) cache entries?')">
+            <button class="btn danger" type="submit">💣︎ Clear All</button>
+        </form>
+
+    </div>
+
+    {# === CAS entry table === #}
+    <div class="card fill">
+        <div class="scroll-area">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Key (MD5)</th>
+                        <th>Size</th>
+                        <th>Last Modified</th>
+                        <th title="Hot = currently loaded in L1 RAM">Hot</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for item in items %}
+                    <tr>
+                        <td><code class="muted"><a href="/cache/view/{{ item.key }}">{{ item.key[:12] }}…</a></code></td>
+                        <td>{{ item.size }}</td>
+                        <td class="muted">{{ item.modified }}</td>
+                        <td>
+                            {% if item.in_ram %}
+                                <span class="warning" title="In L1 RAM">●</span>
+                            {% else %}
+                                <span class="muted" title="Disk only">○</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="muted center">Cache is empty.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row">
+        <p class="muted" style="font-size: 0.85rem;">
+            CAS directory: <span class="mono">{{ stats.cas_dir }}</span>
+        </p>
+    </div>
+
+</div>
+
+{% endblock %}

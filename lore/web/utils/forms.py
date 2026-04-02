@@ -81,6 +81,21 @@ def format_inputs_for_ui(task_def: TaskDefinition, raw_inputs: dict) -> dict:
 
     return ui_ready
 
+
+def format_binding_for_ui(val: Any) -> str:
+    """Converts rich Python types into HTML-safe, user-friendly strings."""
+    if val is None:
+        return ""
+    if isinstance(val, enum.Enum):
+        return str(val.value)
+    if isinstance(val, list):
+        # Recursively sanitize items, then join them safely
+        return ", ".join(format_binding_for_ui(v) for v in val)
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    
+    return str(val)
+
 # --- Form -> Python ---
 
 def get_form_str(form_data: FormData, key: str, **clean_kwargs) -> str | None:
@@ -138,7 +153,12 @@ def _extract_raw_values(
             return ([main_val] if main_val is not None else []), ([manual_val] if manual_val is not None else [])
 
 
-def form_html_to_dict(form_data: FormData | dict, model_class: Type[BaseModel], **clean_kwargs) -> dict[str, Any]:
+def form_html_to_dict(
+    form_data: FormData | dict,
+    model_class: Type[BaseModel],
+    blank_to_default: bool = False,
+    **clean_kwargs,
+) -> dict[str, Any]:
     """
     Extracts FormData into a dictionary based on Pydantic model field types.
     Handles HTML form weirdness for list, bool, and optional fields.
@@ -153,62 +173,92 @@ def form_html_to_dict(form_data: FormData | dict, model_class: Type[BaseModel], 
 
         # 2. Determine type (List? Bool?)
         origin = get_origin(annotation)
+        is_optional = False
+
         # Handle Union types (Optional[...] or | None)
-        if origin is Union or (hasattr(types, "UnionType") and isinstance(origin, types.UnionType)):
-            args = get_args(annotation)
-            non_none_type = next((a for a in args if a is not type(None)), None)
-            if non_none_type:
-                annotation = non_none_type
+        args = get_args(annotation)
+        if args and type(None) in args:
+            is_optional = True
+            non_none_args = tuple(a for a in args if a is not type(None))
+            if len(non_none_args) == 1:
+                annotation = non_none_args[0]
                 origin = get_origin(annotation)
+
         # Check if it's a list-like type
-        is_list = origin in (list, set, tuple) or (isinstance(annotation, type) and issubclass(annotation, list))
+        is_list = annotation in (list, set, tuple) or origin in (list, set, tuple)
 
         # 3. Extract raw value(s) from FormData and Normalize
         main_vals, manual_vals = _extract_raw_values(form_data, form_key, is_list)
 
+        field_present = form_key in form_data or f"{form_key}__manual" in form_data
+        if not field_present:
+            continue
+
         if is_list:
-            if not any(main_vals) and not any(manual_vals):
-                continue  # No value provided for this field
+            raw_items = [v for v in (main_vals + manual_vals) if v not in (None, "")]
+            if not raw_items:
+                if blank_to_default:
+                    result[key] = field.get_default(call_default_factory=True)
+                continue
 
             values = []
-            for val in filter(None, main_vals + manual_vals):
+            for val in raw_items:
                 pieces = re.split(r"[,\n;\r]+", val) if isinstance(val, str) else [val]
                 for piece in pieces:
                     if isinstance(piece, str) and not piece.strip():
                         continue
 
                     cleaned_val = clean(piece, **clean_kwargs)
-                    if cleaned_val is not None and cleaned_val != "":
+                    if cleaned_val not in (None, ""):
                         values.append(cleaned_val)
 
             result[key] = values
+            continue
 
-        elif annotation == bool:
+        elif annotation is bool:
             # HTML forms send "on" (or "true" or "1") for checked, key not present for unchecked
-            result[key] = "true" in (v.lower() for v in main_vals if isinstance(v, str))
-
-        else:
-            # Standard fields: Str, Int, Enum
-            raw_value = manual_vals[0] if (
-                manual_vals and isinstance(manual_vals[0], str) and manual_vals[0].strip()
-            ) else (
-                main_vals[0] if main_vals else None
+            result[key] = any(
+                isinstance(v, str) and v.lower() in {"on", "true", "1", "yes"}
+                for v in (main_vals + manual_vals)
             )
+            continue
 
-            if raw_value is not None:
-                try:
-                    cleaned = clean(raw_value, **clean_kwargs)
-                    if cleaned is not None and cleaned != "":
-                        if annotation is int:
-                            result[key] = int(cleaned)
-                        elif annotation is float:
-                            result[key] = float(cleaned)
-                        else:
-                            result[key] = cleaned
-                except ValueError as e:
-                    raise ValueError(f"Invalid value for field '{form_key}': {e}") from e
+        # 4. Scalar fields: prefer __manual override when present
+        raw_value = (
+            manual_vals[0]
+            if manual_vals and isinstance(manual_vals[0], str) and manual_vals[0].strip()
+            else main_vals[0] if main_vals else None
+        )
+
+        if raw_value is None:
+            if blank_to_default:
+                result[key] = field.get_default(call_default_factory=True)
+            continue
+
+        # 5. Clean and type-cast value (if present) or apply defaults
+        try:
+            # Literal "None" string should be treated as Python None
+            if isinstance(raw_value, str) and raw_value.strip() == "None":
+                raw_value = ""
+            cleaned = clean(raw_value, **clean_kwargs)
+
+            if cleaned is None and cleaned != "":
+                if blank_to_default:
+                    result[key] = field.get_default(call_default_factory=True)
+                continue
+
+            if annotation is int:
+                result[key] = int(cleaned)
+            elif annotation is float:
+                result[key] = float(cleaned)
+            else:
+                result[key] = cleaned
+
+        except ValueError as e:
+            raise ValueError(f"Invalid value for field '{form_key}': {e}") from e
 
     return result
+
 
 def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, Any]:
     """
@@ -218,8 +268,6 @@ def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, 
     result = {}
     raw_dict = dict(payload) if not isinstance(payload, dict) else payload
 
-    logger.debug("form_json_to_dict: raw payload keys=%s", list(raw_dict.keys()))
-
     for field_name, field_info in model.model_fields.items():
         val = raw_dict.get(field_name)
         manual_val = raw_dict.get(f"{field_name}__manual")
@@ -227,11 +275,6 @@ def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, 
         annotation_str = str(field_info.annotation).lower()
         is_list_expected = "list[" in annotation_str or "typing.list" in annotation_str
         is_bool_expected = "bool" in annotation_str
-
-        logger.debug(
-            "  field=%-30s annotation=%-50s val=%r  manual=%r  is_list=%s  is_bool=%s",
-            field_name, annotation_str[:50], val, manual_val, is_list_expected, is_bool_expected,
-        )
 
         # Bool: handle hidden-input trick (always sends "false"; checked also sends "true")
         if is_bool_expected:
@@ -265,5 +308,5 @@ def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, 
             continue
         result[field_name] = actual_val
 
-    logger.debug("form_json_to_dict: result keys=%s", list(result.keys()))
+    # logger.debug("form_json_to_dict: result keys=%s", list(result.keys()))
     return result

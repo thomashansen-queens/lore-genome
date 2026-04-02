@@ -3,7 +3,7 @@ LoRe Genome Public DSL (Domain Specific Language).
 This is the single import point for all plugin authors writing Tasks or Adapters.
 """
 # 1. Task Inputs & Configuration
-from lore.core.tasks.dsl import (
+from lore.core.tasks.parameters import (
     TaskInput,
     ValueInput,
     TaskOutput,
@@ -13,6 +13,7 @@ from lore.core.tasks.dsl import (
     Materialization,
 )
 from lore.core.tasks.registry import task_registry
+from lore.core.settings import config_registry
 
 # 2. Execution State
 from lore.core.execution.context import (
@@ -20,14 +21,21 @@ from lore.core.execution.context import (
 )
 from lore.core.cache import memoize
 
-# 3. FUTURE: Adapters
-# from lore.core.adapters import Adapter, adapter_registry
+# 3. Adapters
+from lore.core.adapters import (
+    adapter_registry,
+    AdapterPreview,
+    BaseAdapter,
+    ImageAdapter,
+    TableAdapter,
+)
 
 # 4. Aliases
-# Function
+adapter = adapter_registry
 task = task_registry.register
+config = config_registry.register
 
-# Direct Enum access
+# 5. Direct Enum access
 # Cardinality for ArtifactInputs
 OPTIONAL = Cardinality.OPTIONAL_SINGLE
 SINGLE = Cardinality.SINGLE
@@ -43,8 +51,24 @@ RAW_STREAM = Materialization.RAW_STREAM
 ADAPTED_STREAM = Materialization.ADAPTED_STREAM
 PREVIEW = Materialization.PREVIEW
 
+# Widgets for GUI
+ARTIFACT_MULTI = Widget.ARTIFACT_MULTI
+ARTIFACT_SINGLE = Widget.ARTIFACT_SINGLE
+CHECKBOX = Widget.CHECKBOX
+CHECKBOX_GROUP = Widget.CHECKBOX_GROUP
+DATE = Widget.DATE
+DATETIME = Widget.DATETIME
+FLOAT = Widget.FLOAT
+INTEGER = Widget.INTEGER
+RADIO = Widget.RADIO
+SEGMENTED_RADIO = Widget.SEGMENTED_RADIO
+SELECT = Widget.SELECT
+SLIDER = Widget.SLIDER
+TEXT = Widget.TEXT
+TEXTAREA = Widget.TEXTAREA
 
-# The __all__ list strictly defines your Public API. 
+
+# Public API
 __all__ = [
     "task_registry",
     "TaskInput",
@@ -56,8 +80,19 @@ __all__ = [
     "Materialization",
     "ExecutionContext",
     "memoize",
+    # Adapter layer
+    "AdapterPreview",
+    "BaseAdapter",
+    "ImageAdapter",
+    "TableAdapter",
     # aliases
+    "adapter",
     "task",
+    "config",
+    # Enums
     "OPTIONAL", "SINGLE", "MULTIPLE", "OPTIONAL_MULTIPLE",
     "ARTIFACT", "PATH", "RAW", "ADAPTED", "RAW_STREAM", "ADAPTED_STREAM", "PREVIEW",
+    # Widgets
+    "ARTIFACT_MULTI", "ARTIFACT_SINGLE", "CHECKBOX", "CHECKBOX_GROUP", "DATE", "DATETIME",
+    "FLOAT", "INTEGER", "RADIO", "SEGMENTED_RADIO", "SELECT", "SLIDER", "TEXT", "TEXTAREA",
 ]

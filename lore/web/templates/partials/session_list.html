@@ -1,0 +1,73 @@
+{% import "/macros/ui.html" as ui %}
+
+<table>
+    <thead>
+        <tr>
+            <th>Session</th>
+            <th>ID</th>
+            <th>Created</th>
+            <th>Size</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for s in sessions %}
+        <tr>
+            <td>
+                <a href="/sessions/{{ s.id }}">
+                    <code>{{ s.name }}</code>
+                </a>
+            </td>
+            <td>
+                {{ s.id[:8] }}
+            </td>
+            <td class="muted">
+                {{ s.created_at.strftime("%Y-%m-%d") | default("Unknown") }}
+                <span>{{ s.created_at.strftime("%H:%M:%S") | default("") }}</span>
+            </td>
+            <td>
+                {{ s.display_size }}
+            </td>
+            <td>
+                {# === Kebab menu === #}
+                <div class="dropdown">
+                    <button class="btn-kebab" popovertarget="menu-{{ s.id }}">
+                        ⋮
+                    </button>
+                    <div id="menu-{{ s.id }}" popover class="dropdown-menu right">
+                        <a href="/sessions/{{ s.id }}">
+                            🗁 Open
+                        </a>
+                    
+                        {{ ui.rename_item("/sessions/" ~ s.id ~ "/update", "name", s.name) }}
+
+                        <form action="/sessions/{{ s.id }}/clone" method="POST">
+                            <button type="submit">⟳ Clone</button>
+                        </form>
+                        
+                        <a href="/sessions/{{ s.id }}/export">
+                            ⬇ Export (.zip)
+                        </a>
+                        {# TODO: Better logic. Right now, if it has tasks, it's extractable! #}
+                        {% if s.tasks %}
+                        <form action="/sessions/{{ s.id }}/extract-workflow" method="POST" 
+                                onsubmit="let n = prompt('Name this Workflow template:', '{{ s.name }} Pipeline'); if(n){ this.workflow_name.value = n; return true; } return false;">
+                            <input type="hidden" name="workflow_name" value="">
+                            <button type="submit">🖫 Extract to Workflow</button>
+                        </form>
+                        {% endif %}
+
+                        <hr />
+
+                        {{ ui.delete_item("/sessions/" ~ s.id ~ "/delete") }}
+                    
+                    </div>
+                </div>
+            
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5" class="text-muted text-center">No sessions yet! Create a New one to get started.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>

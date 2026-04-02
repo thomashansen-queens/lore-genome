@@ -1,0 +1,432 @@
+{
+  "id": "rtx_adhesin_clustering_pipeline",
+  "name": "RTX Adhesin clustering pipeline",
+  "description": "Fetch, filter, and cluster proteins from long-read genomes. This workflow was designed to cluster proteins based on a large C-terminal region of their sequence in order to identify RTX Adhesin isoforms and loci.",
+  "created_at": "2026-04-02T03:38:34.769058Z",
+  "steps": [
+    {
+      "id": "b6089fbb-42c5-4ce1-87eb-4f10c10891ba",
+      "task_key": "analysis.summarize_cluster_origins",
+      "inputs": {
+        "cluster_map": [
+          {
+            "type": "reference",
+            "source_id": "9093870b-0f86-490a-8eff-c0d0c260ed40",
+            "output_key": "cluster_tsv"
+          }
+        ],
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "8d32e52e-3edd-46f3-9a90-963db635202e",
+            "output_key": "merged_data"
+          }
+        ],
+        "genome_annotations": [
+          {
+            "type": "reference",
+            "source_id": "2bb8e4e9-580a-4fc7-a2e3-9d5da6df5bee",
+            "output_key": "report"
+          }
+        ]
+      },
+      "name": "Summarize cluster origins",
+      "description": "Prepare a report showing the results of the clustering pipeline."
+    },
+    {
+      "id": "9093870b-0f86-490a-8eff-c0d0c260ed40",
+      "task_key": "mmseqs.easy_cluster",
+      "inputs": {
+        "source_fasta": [
+          {
+            "type": "reference",
+            "source_id": "8d32e52e-3edd-46f3-9a90-963db635202e",
+            "output_key": "merged_data"
+          }
+        ],
+        "keep_truncated": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "cluster_window": [
+          {
+            "type": "literal",
+            "value": "-800"
+          }
+        ],
+        "coverage": [
+          {
+            "type": "literal",
+            "value": "0.8"
+          }
+        ],
+        "sensitivity": [
+          {
+            "type": "literal",
+            "value": "4.0"
+          }
+        ],
+        "min_seq_id": [
+          {
+            "type": "literal",
+            "value": ".75"
+          }
+        ],
+        "threads": [
+          {
+            "type": "literal",
+            "value": "4"
+          }
+        ],
+        "strict_window": [
+          {
+            "type": "literal",
+            "value": "true"
+          }
+        ],
+        "keep_representative_fasta": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ]
+      },
+      "name": "Cluster by 800 C-terminal residues",
+      "description": "Cluster protein sequences based on their 800 C-terminal residues. In cases where a protein is under 800 residues long, it is culled from the data set."
+    },
+    {
+      "id": "2bb8e4e9-580a-4fc7-a2e3-9d5da6df5bee",
+      "task_key": "ncbi.fetch_genome_annotation_package",
+      "inputs": {
+        "table_fields": [],
+        "include_annotation_type": [],
+        "gene_types": [],
+        "locations": [],
+        "search_text": [],
+        "fetch_limit": [],
+        "annotation_ids": [],
+        "genome_accessions": [
+          {
+            "type": "reference",
+            "source_id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
+            "output_key": "sampled_data"
+          }
+        ]
+      },
+      "name": "Fetch gene annotations",
+      "description": "Task handler to fetch annotation packages from NCBI Datasets API for a list of accessions."
+    },
+    {
+      "id": "8d32e52e-3edd-46f3-9a90-963db635202e",
+      "task_key": "merge",
+      "inputs": {
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "81de0f92-b4aa-46af-b68a-8b6ea2d122e4",
+            "output_key": "protein_fastas"
+          }
+        ],
+        "group_by": [
+          {
+            "type": "literal",
+            "value": "accession"
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": "true"
+          }
+        ]
+      },
+      "name": "Merge and deduplicate protein FASTAs",
+      "description": "Merge and deduplicate protein FASTAs to prepare them for clustering"
+    },
+    {
+      "id": "81de0f92-b4aa-46af-b68a-8b6ea2d122e4",
+      "task_key": "ncbi.fetch_assembly_package",
+      "inputs": {
+        "extract_catalog": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "fetch_limit": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ],
+        "save_map": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "hydrated": [
+          {
+            "type": "literal",
+            "value": "FULLY_HYDRATED"
+          }
+        ],
+        "genome_accessions": [
+          {
+            "type": "reference",
+            "source_id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
+            "output_key": "sampled_data"
+          }
+        ],
+        "chromosomes": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ],
+        "include_annotation_type": [
+          {
+            "type": "literal",
+            "value": "PROT_FASTA"
+          }
+        ]
+      },
+      "name": "Fetch protein fastas",
+      "description": "Fetch all protein sequences as FASTA for each sampled genome assembly"
+    },
+    {
+      "id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
+      "task_key": "filter.sample",
+      "inputs": {
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "5bfc6d92-52d5-4332-8bd8-14c385f9a472",
+            "output_key": "filtered_data"
+          }
+        ],
+        "sample_by": [
+          {
+            "type": "literal",
+            "value": "collection_country"
+          },
+          {
+            "type": "literal",
+            "value": "collection_year"
+          }
+        ],
+        "strategy": [
+          {
+            "type": "literal",
+            "value": "stratified_strict"
+          }
+        ],
+        "partition": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "seed": [
+          {
+            "type": "literal",
+            "value": "42"
+          }
+        ],
+        "sample_size": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ]
+      },
+      "name": "stratified sample",
+      "description": "Use stratified sampling to maximize diversity of genome assemblies by collection country and year."
+    },
+    {
+      "id": "5bfc6d92-52d5-4332-8bd8-14c385f9a472",
+      "task_key": "filter.query",
+      "inputs": {
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "220d2bb5-c9b4-429f-9ff1-012242c49713",
+            "output_key": "report"
+          }
+        ],
+        "regex": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "query_string": [
+          {
+            "type": "literal",
+            "value": "~(genome_accession.str.startswith('GCA_', na=False) & paired_accession.str.startswith('GCF_', na=False)) and assembly_level in ['Complete Genome', 'Chromosome'] and genome_notes.isnull()"
+          }
+        ]
+      },
+      "name": "NCBI Post Hoc",
+      "description": "Post-hoc NCBI API filters allows manual inspection of initial results."
+    },
+    {
+      "id": "220d2bb5-c9b4-429f-9ff1-012242c49713",
+      "task_key": "ncbi.fetch_genome_reports",
+      "inputs": {
+        "filters_has_annotation": [
+          {
+            "type": "literal",
+            "value": "true"
+          }
+        ],
+        "filters_is_metagenome_derived": [
+          {
+            "type": "literal",
+            "value": "METAGENOME_DERIVED_UNSET"
+          }
+        ],
+        "filters_last_release_date": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ],
+        "filters_assembly_source": [
+          {
+            "type": "literal",
+            "value": "all"
+          }
+        ],
+        "search_terms": [
+          {
+            "type": "literal",
+            "value": "ONT"
+          },
+          {
+            "type": "literal",
+            "value": "Nanopore"
+          },
+          {
+            "type": "literal",
+            "value": "Flongle"
+          },
+          {
+            "type": "literal",
+            "value": "MinION"
+          },
+          {
+            "type": "literal",
+            "value": "GridION"
+          },
+          {
+            "type": "literal",
+            "value": "PromethION"
+          },
+          {
+            "type": "literal",
+            "value": "PacBio"
+          },
+          {
+            "type": "literal",
+            "value": "SMRT"
+          },
+          {
+            "type": "literal",
+            "value": "RS II"
+          },
+          {
+            "type": "literal",
+            "value": "Sequel"
+          }
+        ],
+        "taxons": [
+          {
+            "type": "user_input",
+            "input_key": "taxons"
+          }
+        ],
+        "fetch_limit": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ],
+        "filters_is_ictv_exemplar": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "filters_exclude_paired_reports": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "filters_exclude_multi_isolate": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "filters_exclude_atypical": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "filters_assembly_level": [
+          {
+            "type": "literal",
+            "value": "complete_genome"
+          },
+          {
+            "type": "literal",
+            "value": "chromosome"
+          }
+        ],
+        "filters_assembly_version": [
+          {
+            "type": "literal",
+            "value": "current"
+          }
+        ],
+        "filters_type_material_category": [
+          {
+            "type": "literal",
+            "value": "NONE"
+          }
+        ],
+        "filters_is_type_material": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "tax_exact_match": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ],
+        "filters_first_release_date": [
+          {
+            "type": "literal",
+            "value": null
+          }
+        ],
+        "filters_reference_only": [
+          {
+            "type": "literal",
+            "value": "false"
+          }
+        ]
+      },
+      "name": "Fetch long-read genomes",
+      "description": "Fetch genome assemblies from NCBI Datasets that have been sequenced using long-read technology."
+    }
+  ]
+}

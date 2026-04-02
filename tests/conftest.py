@@ -3,11 +3,14 @@ Fixtures for tests.
 """
 import json
 from pathlib import Path
+from unittest.mock import patch
+from pydantic import BaseModel
 import pytest
 
 from lore.core.adapters import TableAdapter
 from lore.core.runtime import build_runtime, Runtime
-from lore.core.session import Session
+from lore.core.sessions import Session
+from lore.core.tasks import task_registry
 
 # --- Data fixtures ---
 
@@ -90,6 +93,20 @@ def closed_session(temp_runtime: Runtime) -> Session:
     with session:
         pass  # Immediately exit to close the session
     return session
+
+# --- Task registry fixtures ---
+
+@pytest.fixture
+def isolated_task_registry(monkeypatch: pytest.MonkeyPatch):
+    """
+    Creates a sandboxed TaskRegistry.
+    """
+    # shallow copy of built-in tasks
+    pristine_tasks = task_registry.all.copy()
+
+    # force global registry to become this temporary dict for the duration of the test
+    monkeypatch.setattr(task_registry, "_tasks", pristine_tasks)
+    return task_registry
 
 # --- Semantic Matching Adapter Fixtures ---
 

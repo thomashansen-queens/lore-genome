@@ -1,0 +1,94 @@
+{# === Main dashboard for LoRe === #}
+{% extends "/layouts/base.html" %}
+{% import "/macros/ui.html" as ui %}
+
+{% block content %}
+
+<div class="column gapped">
+    {# === Runtime: Workflows === #}
+    <div class="card" style="flex: 1;">
+        <div class="row">
+            <h4 style="margin: 0;">Workflows</h4>
+            <small class="muted">A pre-made analysis pipeline.</small>
+            <div class="dropdown push-right">
+                <button class="btn primary" popovertarget="new-workflow-menu">
+                    ＋ New Workflow ▾
+                </button>
+                <div id="new-workflow-menu" class="dropdown-menu left" popover>
+                    <form action="/workflows/new" method="POST">
+                        <button type="submit" disabled>＋ Blank Workflow</button>
+                    </form>
+
+                    <form id="import-workflow-form" action="/workflows/import" method="POST" enctype="multipart/form-data" style="display: none;">
+                        <input type="file" id="import-workflow-input" name="file" accept=".json" onchange="document.getElementById('import-workflow-form').submit();">
+                    </form>
+                    <button type="button" onclick="document.getElementById('import-workflow-input').click();">
+                        ⬆ Import Workflow
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="scroll-area" id="workflow-list-container" style="margin-top: 1rem;">
+            {% include "/partials/workflow_list.html" %}
+        </div>
+    </div>
+
+    {# === Runtime: Sessions === #}
+    <div class="card" style="flex: 1;">
+        <div class="row">
+            <h4 style="margin: 0;">Sessions</h4>
+            <small class="muted">A place for interactive analysis.</small>
+
+            <div class="dropdown push-right">
+                <button class="btn primary" popovertarget="new-session-menu">
+                    ＋ New Session ▾
+                </button>
+                <div id="new-session-menu" class="dropdown-menu left" popover>
+                    <form action="/sessions/new" method="POST">
+                        <button class="primary" type="submit">＋ Blank Session</button>
+                    </form>
+                    
+                    <form id="import-session-form" action="/sessions/import" method="POST" enctype="multipart/form-data" style="display: none;">
+                        <input type="file" id="import-session-input" name="file" accept=".zip" onchange="document.getElementById('import-session-form').submit();">
+                    </form>
+                    <button type="button" onclick="document.getElementById('import-session-input').click();">
+                        ⬆ Import Session
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {# === Table of sessions to manage. Currently, the only action is "delete". === #}
+        <div class="scroll-area" id="session-list-container" style="margin-top: 1rem;">
+            {% include "/partials/session_list.html" %}
+        </div>
+    </div>
+        
+    <div class="row stretch">
+        <p>
+            LoRē sessions are stored on your computer as directories in <span class="mono muted">{{ runtime.sessions_dir }}</span>
+            <br><br>This path can be changed in <a href="/settings">settings</a>.
+        </p>
+    </div>
+    
+    <div>
+        <h4>Runtime inspection</h4>
+        <div class="row gapped">
+            <a href="runtime/log" class="btn secondary">
+                View Log
+            </a>
+            <a href="runtime/cache" class="btn secondary">
+                View Cache
+            </a>
+            <a href="runtime/tasks" class="btn secondary">
+                View Task Registry
+            </a>
+            <a href="runtime/adapters" class="btn secondary">
+                View Adapter Registry
+            </a>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+

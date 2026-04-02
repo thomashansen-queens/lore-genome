@@ -1,0 +1,89 @@
+{% extends "layouts/base.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "macros/forms.html" as forms %}
+
+{% block content %}
+<div class="row fill stretch">
+
+    <aside class="sidebar">
+
+        {# === Session title and name updater === #}
+        <div class="ui-label">Workflow</div>
+        {{ ui.editable_header(workflow.name, "/workflows/" ~ workflow.id ~ "/rename") }}
+
+        <div class="ui-label">Description</div>
+        <form action="/workflows/{{ workflow.id }}/update_description" method="POST" style="display: flex; flex-direction: column;">
+            <textarea name="description"
+                    rows="3"
+                    class="fullwidth"
+                    placeholder="Describe what this workflow does...">{{ workflow.description if workflow.description else "" }}</textarea>
+            <button type="submit" class="small btn secondary" style="margin-top: 0.5rem; align-self: flex-start;">
+                Save description
+            </button>
+        </form>
+        <hr />
+
+        {# === Hydration form === #}
+        <div class="scroll-area">
+            <div class="ui-label">Configuration</div>
+            <form action="/workflows/{{ workflow.id }}/hydrate" method="POST" style="display: flex; flex-direction: column; min-height: 0;">
+                <div class="form-group">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem; margin-top: 1rem;" 
+                        for="session_name">
+                        New Session name (optional)
+                    </label>
+                    <input type="text" id="session_name" name="session_name" placeholder="e.g. Run 1: {{ workflow.name }}">
+                </div>
+                
+                {% set ns = namespace(requires_input=false) %}
+                
+                {% for step in workflow.steps %}
+                    {% set task_def = task_registry.get(step.task_key) %}
+                    {% for key, bindings in step.inputs.items() %}
+                        {% for b in bindings %}
+                            {% if b.type == "user_input" %}
+                                {% set field_info, extra = task_def.field_meta(key) if task_def else (None, {}) %}
+
+                                {% set ns.requires_input = true %}
+
+                                <label style="display: block; font-weight: bold; margin-bottom: 0.25rem; margin-top: 1rem;">
+                                    {{ extra.label or (key | replace('_', ' ') | title) }} <span class="required">*</span>
+                                </label>
+                                
+                                {% if b.description %}
+                                    <div class="muted small" style="margin-bottom: 0.5rem;">
+                                        {{ extra.description }}
+                                    </div>
+                                {% endif %}
+
+                                {% set input_name = "input__" ~ step.id ~ "__" ~ key ~ "__" ~ loop.index0 %}
+
+                                {{ forms.render_user_input(input_name, extra) }}
+
+                                <div class="muted small">
+                                    Step: {{ task_def.name if task_def else step.task_key }}
+                                </div>
+                                
+                            {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+                
+                {% if not ns.requires_input %}
+                    <div class="success muted">No input required! This pipeline is fully self-contained.</div>
+                {% endif %}
+
+                <button type="submit" class="btn primary fullwidth center" style="margin-top: 1rem;">
+                    ➡ Use in Session
+                </button>
+            </form>
+        </div>
+    
+    </aside>
+    
+    {% block workspace %}
+        {% include "features/workflows/graph.html" %}
+    {% endblock %}
+
+</div>
+{% endblock %}

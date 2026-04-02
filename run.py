@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LoRe bootstrap helper.
+LoRē bootstrap helper.
 
 Generates novice-friendly launcher scripts:
 - run.sh   (macOS/Linux)
@@ -10,16 +10,27 @@ Important: This script only writes local files and prints instructions.
 The generated launcher scripts will create the venv and install dependencies.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import platform
 import stat
+import sys
+import time
 from pathlib import Path
 
+if sys.version_info < (3, 10):
+    print("LoRē bootstrap")
+    print("==============")
+    print("WARNING: Python 3.10 or higher is required to run this script.")
+    print(f"Your current Python version is: {sys.version.split()[0]}")
+    try:
+        time.sleep(3)
+    except KeyboardInterrupt:
+        sys.exit(1)
+
+
 REPO_ROOT = Path(__file__).resolve().parent
-WHEEL_REL_PATH = Path("wheels/ncbi_datasets_pylib-1.0.0-py3-none-any.whl")
+
 
 RUN_SH = """#!/usr/bin/env bash
 set -euo pipefail
@@ -28,42 +39,75 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 PY=python3
+
+# Python 3.10+ is required
+if ! $PY -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+    echo "ERROR: Python 3.10 or higher is required to run LoRē."
+    echo "Your default $PY is: $($PY --version 2>&1)"
+    echo ""
+    echo "To fix:"
+    echo "Option A: Edit this run.sh file and change 'PY=python3' to"
+    echo "point to your specific version (e.g. 'PY=python3.10')."
+    echo "Option B: Install a newer version of Python and ensure it's in your PATH."
+    exit 1
+fi
+
 if [ ! -d ".venv" ]; then
   $PY -m venv .venv
 fi
 
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install --upgrade ./wheels/ncbi_datasets_pylib-1.0.0-py3-none-any.whl
 python -m pip install --upgrade .
 
 python -m lore ui
 """
+
 
 RUN_BAT = """@echo off
 setlocal
 
 cd /d "%~dp0"
 
+:: 1. Detect Python executable and check version
+set "PY_CMD=python"
+where py >nul 2>nul && set "PY_CMD=py -3"
+
+%PY_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Python 3.10 or higher is required to run LoRē.
+    echo Your current version is:
+    %PY_CMD% --version
+    echo.
+    echo To fix:
+    echo Option A: Edit this run.bat file and change 'set "PY_CMD=python"' to 
+    echo point to your specific version (e.g. 'set "PY_CMD=py -3.10"').
+    echo Option B: Install a newer version of Python and ensure it's in your PATH.
+    pause
+    exit /b 1
+)
+
+:: 2. Create and activate virtual environment
 if not exist ".venv\\Scripts\\python.exe" (
-    where py >nul 2>nul
-    if %errorlevel%==0 (
-        py -3 -m venv .venv
-    ) else (
-        python -m venv .venv
-    )
+    %PY_CMD% -m venv .venv
 )
 
 call .venv\\Scripts\\activate.bat
-python -m pip install --upgrade pip
-python -m pip install --upgrade .\\wheels\\ncbi_datasets_pylib-1.0.0-py3-none-any.whl
-python -m pip install --upgrade .
 
+:: 3. Upgrade pip and install dependencies
+python -m pip install --upgrade pip
+if %errorlevel% neq 0 ( echo ERROR: pip upgrade failed & pause & exit /b 1 )
+
+python -m pip install --upgrade .
+if %errorlevel% neq 0 ( echo ERROR: package install failed & pause & exit /b 1 )
+
+:: 4. Launch the UI
 python -m lore ui
+pause
 """
 
 
-def write_file(path: Path, content: str, force: bool, dry_run: bool) -> str:
+def write_file(path: Path, content: str, force: bool, dry_run: bool, newline: str = "\n") -> str:
     """Write file unless it exists and force=False. Returns action label."""
     if path.exists() and not force:
         return "kept"
@@ -71,7 +115,8 @@ def write_file(path: Path, content: str, force: bool, dry_run: bool) -> str:
     if dry_run:
         return "would-write"
 
-    path.write_text(content, encoding="utf-8", newline="\n")
+    with open(path, "w", encoding="utf-8", newline=newline) as f:
+        f.write(content)
     return "written"
 
 
@@ -103,8 +148,12 @@ def main() -> int:
     run_sh_path = REPO_ROOT / "run.sh"
     run_bat_path = REPO_ROOT / "run.bat"
 
-    sh_state = write_file(run_sh_path, RUN_SH, force=args.force, dry_run=args.dry_run)
-    bat_state = write_file(run_bat_path, RUN_BAT, force=args.force, dry_run=args.dry_run)
+    sh_state = write_file(
+        run_sh_path, RUN_SH, force=args.force, dry_run=args.dry_run,
+    )
+    bat_state = write_file(
+        run_bat_path, RUN_BAT, force=args.force, dry_run=args.dry_run, newline="\r\n",
+    )
     make_executable(run_sh_path, dry_run=args.dry_run)
 
     print("LoRē bootstrap")
@@ -112,13 +161,6 @@ def main() -> int:
     print(f"Repository: {REPO_ROOT}")
     print(f"run.sh: {sh_state}")
     print(f"run.bat: {bat_state}")
-
-    wheel_path = REPO_ROOT / WHEEL_REL_PATH
-    if wheel_path.exists():
-        print(f"Wheel found: {WHEEL_REL_PATH}")
-    else:
-        print(f"WARNING: Wheel not found at {WHEEL_REL_PATH}")
-        print("         Update the wheel path in run.py or add the wheel file.")
 
     current_os = platform.system().lower()
     print("\nNow, you can run LoRē with the following file:")

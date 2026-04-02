@@ -1,6 +1,7 @@
 """
 Data access policy and memory-safe file reading.
 """
+
 from abc import ABC, abstractmethod
 import csv
 import json
@@ -10,14 +11,17 @@ from typing import Any, Iterator
 ACCEPTED_BINARY_FILES = {"bam", "vcf", "hdf5", "h5"}
 ACCEPTED_IMAGE_FILES = {"png", "jpg", "jpeg", "svg"}
 ACCEPTED_TABLE_FILES = {"csv", "tsv", "parquet", "jsonl", "json"}
-ACCEPTED_TEXT_FILES = {"fasta", "faa", "fa", "fastq", "fq", "pdb", "aln",
-                       "txt", "log", "md", "info", "nfo", "raw"}
+ACCEPTED_TEXT_FILES = {
+    "fasta", "faa", "fa", "fastq", "fq",
+    "pdb", "aln", "txt", "log", "md", "info", "nfo", "raw",
+}
 
 
 class DataReader(ABC):
     """
     Abstract foundation. Every Reader implements three concepts.
     """
+
     def __init__(self, path: Path):
         self.path = path
 
@@ -41,7 +45,7 @@ class DataReader(ABC):
     @abstractmethod
     def get_metadata(self) -> dict:
         """
-        Deep metadata. Forces subclasses to peek inside the file if necessary 
+        Deep metadata. Forces subclasses to peek inside the file if necessary
         (e.g., counting rows for a CSV, or getting dimensions for an Image).
         """
         pass
@@ -82,6 +86,7 @@ class TableReader(DataReader):
     Delegates the loading of tabular data
     (CSV, Parquet, JSONL, JSON array)
     """
+
     def get_metadata(self) -> dict:
         """
         Deep metadata. For tables, can't do a full row count (would require full
@@ -93,7 +98,7 @@ class TableReader(DataReader):
         base_meta["can_stream"] = ext in {"csv", "tsv", "txt", "jsonl", "ndjson"}
         return base_meta
 
-    def stream(self, config: dict | None = None) -> Iterator[Any]:
+    def stream(self, config: dict | None = None) -> Iterator[str | dict]:
         """
         Memory-safe generator for large tabular files
         """
@@ -102,7 +107,7 @@ class TableReader(DataReader):
         if ext in ("csv", "tsv", "txt"):
             with open(self.path, "r", encoding="utf-8") as f:
                 for line in f:
-                    yield line.rstrip("\n")
+                    yield line
 
         elif ext in ("jsonl", "ndjson"):
             with open(self.path, "r", encoding="utf-8") as f:
@@ -123,13 +128,16 @@ class TableReader(DataReader):
                     if line.strip():
                         try:
                             yield json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
+                        except json.JSONDecodeError as e:
+                            raise ValueError(
+                                f"Corrupted JSONL data in '{self.path.name}': {str(e)}\nLine "
+                                f"content: {line[:100]}..."
+                            )
 
         else:
             raise NotImplementedError(f"Streaming not implemented for '{ext}'")
 
-    def read_full(self, config: dict | None = None) -> list[dict]:
+    def read_full(self, config: dict | None = None) -> list[str | dict]:
         """
         Loads the entire file into memory (or raises MemoryError if too big)
         """
@@ -150,7 +158,11 @@ class TableReader(DataReader):
 
         return []
 
-    def preview(self, limit: int = 100, config: dict | None = None) -> tuple[list[dict], dict]:
+    def preview(
+        self,
+        limit: int = 100,
+        config: dict | None = None,
+    ) -> tuple[list[str | dict], dict]:
         """
         Smart preview with graceful monolithic fallback
         Returns: tuple[preview_data, preview_metadata]
@@ -168,6 +180,7 @@ class TableReader(DataReader):
             strategy = "Streamed preview"
         except NotImplementedError:
             # fallback to monolithic load
+            # TODO: Use ijson to stream monolithic JSON arrays to protect RAM
             all_records = self.read_full(config)
             total_rows = len(all_records)
             data = all_records[:limit]
@@ -181,13 +194,15 @@ class TableReader(DataReader):
         if data and isinstance(data[0], dict):
             columns = list(data[0].keys())
 
-        metadata.update({
-            "strategy_used": strategy,
-            "is_truncated": not hit_eof,
-            "preview_limit": limit,
-            "total_rows": total_rows, # Will be None if streamed, which is correct!
-            "columns": columns,
-        })
+        metadata.update(
+            {
+                "strategy_used": strategy,
+                "is_truncated": not hit_eof,
+                "preview_limit": limit,
+                "total_rows": total_rows,  # Will be None if streamed, which is correct!
+                "columns": columns,
+            }
+        )
 
         return data, metadata
 
@@ -197,6 +212,7 @@ class ImageReader(DataReader):
     Loads image bytes
     (PNG, JPEG, SVG)
     """
+
     def get_metadata(self) -> dict:
         meta = self.get_base_metadata()
         ext = meta.get("extension")
@@ -222,7 +238,7 @@ class ImageReader(DataReader):
         meta = self.get_metadata()
 
         # 10MB safety limit for inline web previews
-        MAX_IMAGE_SIZE = 10 * 1024 * 1024 
+        MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
         if meta["file_size_bytes"] > MAX_IMAGE_SIZE:
             raise MemoryError(
@@ -232,10 +248,12 @@ class ImageReader(DataReader):
 
         data = self.read_full(config)
 
-        meta.update({
-            "strategy_used": "read_full",
-            "is_truncated": False,
-        })
+        meta.update(
+            {
+                "strategy_used": "read_full",
+                "is_truncated": False,
+            }
+        )
 
         return data, meta
 
@@ -245,6 +263,7 @@ class TextReader(DataReader):
     Handles massive text files (e.g. FASTQ) with chunking/streaming
     (FASTA, FASTQ, PDB, ALN)
     """
+
     def get_metadata(self) -> dict:
         """Deep metadata. Line counting is skipped as it requires a full scan."""
         meta = self.get_base_metadata()
@@ -275,12 +294,14 @@ class TextReader(DataReader):
             lines.append(line)
 
         metadata = self.get_metadata()
-        metadata.update({
-            "strategy_used": "streamed lines",
-            "is_truncated": not hit_eof,
-            "preview_limit": limit,
-            "total_lines_previewed": len(lines)
-        })
+        metadata.update(
+            {
+                "strategy_used": "streamed lines",
+                "is_truncated": not hit_eof,
+                "preview_limit": limit,
+                "total_lines_previewed": len(lines),
+            }
+        )
 
         return lines, metadata
 
@@ -290,7 +311,9 @@ class BinaryBioReader(DataReader):
     Handles binary bioinformatics files with chunking/streaming
     (BAM, VCF, HDF5)
     """
+
     ...
+
 
 def get_reader_for(path: Path | str) -> DataReader:
     """

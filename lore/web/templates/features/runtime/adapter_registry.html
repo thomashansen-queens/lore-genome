@@ -1,0 +1,51 @@
+{% extends "/features/runtime/layout.html" %}
+
+{% block workspace %}
+
+<div class="scroll-area">
+    <div class="ui-label">Adapter Registry</div>
+
+    <div class="column gapped">
+        {% for a in adapters %}
+            <details class="card">
+            {# Clickable header #}
+                <summary style="cursor: pointer; list-style: none;">
+                    <div class="row gapped">
+                        <div class="strong">{{ a.name }}</div>
+                        <div class="small muted mono">v{{ a.version }} ({{ a.get_hash() }})</div>
+                    </div>
+                </summary>
+            {# Expanded content #}
+                <div style="overflow-x: auto;">
+                    <h5>Description (Handler function doc string)</h5>
+                    <pre class="small" style="white-space: pre-wrap;">{{ a.__doc__ | trim if a.__doc__ else "No description provided." }}</pre>
+
+                    <h5>Routing capabilities</h5>
+                    <ul class="small" style="line-height: 1.6;">
+                        <li>
+                            <strong>Accepted Formats:</strong> 
+                            <code class="muted">{{ a.accepted_formats | join(', ') if a.accepted_formats else "*" }}</code>
+                        </li>
+                        <li>
+                            <strong>Accepted Data Types:</strong> 
+                            <code class="muted">{{ a.accepted_types | join(', ') if a.accepted_types else "*" }}</code>
+                        </li>
+                        <li>
+                            <strong>Provided Data Types:</strong> 
+                            <code class="muted">{{ a.provided_types | join(', ') if a.provided_types else "(Inherits accepted types)" }}</code>
+                        </li>
+                        <li>
+                            <strong>UI View Mode:</strong> 
+                            <code class="muted">{{ a.view_mode }}</code>
+                        </li>
+                    </ul>
+                    
+                </div>
+            </details>
+            
+        {% endfor %}
+    </div>
+
+</div>
+
+{% endblock %}

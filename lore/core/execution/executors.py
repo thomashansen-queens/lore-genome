@@ -22,6 +22,11 @@ class BaseExecutor(ABC):
         pass
 
     @abstractmethod
+    def wait(self, task_id: str) -> int | None:
+        """Blocks until the Task completes. Returns the exit code."""
+        pass
+
+    @abstractmethod
     def cancel(self, task_id: str) -> bool:
         """Attempt to cancel a running Task."""
         pass
@@ -64,6 +69,19 @@ class LocalSubprocessExecutor(BaseExecutor):
 
         # The background process will independently update the Session JSON manifest 
         # when it finishes
+
+    def wait(self, task_id: str) -> int | None:
+        proc = self._active_processes.get(task_id)
+        if not proc:
+            return None
+
+        logger.info("Waiting for Task %s (PID: %s) to complete", task_id, proc.pid)
+        return_code = proc.wait()
+        logger.info("Task %s (PID: %s) completed with exit code %s", task_id, proc.pid, return_code)
+
+        # Clean up
+        del self._active_processes[task_id]
+        return return_code
 
     def cancel(self, task_id: str) -> bool:
         proc = self._active_processes.get(task_id)

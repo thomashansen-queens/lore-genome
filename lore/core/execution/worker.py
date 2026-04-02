@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 import logging
 
+from lore.core.bindings import wrap_in_bindings
 from lore.core.settings import LOG_FORMAT
-from lore.core.tasks import task_registry, TaskResults, Task
+from lore.core.tasks import task_registry, TaskResults, Task, TaskStatus
 from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.execution.resolver import resolve_task_inputs
+from lore.core.execution.materializer import materialize_task_inputs
 
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
@@ -56,27 +57,29 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
             if not task:
                 rt.logger.error("Task ID: '%s' not found in Session %s", task_id, session_id)
                 return
-            if task.status != "PENDING":
+            if task.status != TaskStatus.READY:
                 rt.logger.warning("Task ID: '%s' is %s: skipping execution.)", task_id, task.status)
                 return
 
             task_def = task_registry[task.registry_key]
 
-            # Resolve Task inputs
+            # Materialize Task inputs
             try:
-                resolved_kwargs, input_artifacts = resolve_task_inputs(
+                unwrapped_inputs = task.validate_and_serialize()
+
+                resolved_kwargs, input_artifacts = materialize_task_inputs(
                     s=s,
                     task_def=task_def,
-                    raw_inputs=task.inputs,
+                    raw_inputs=unwrapped_inputs,
                 )
             except Exception as e:
-                task.status = "FAILED"
+                task.status = TaskStatus.FAILED
                 task.error = f"Input resolution failed: {str(e)}"
                 rt.logger.error("Input resolution failed: %s", e)
                 s.mark_dirty()
                 return
 
-            task.status = "RUNNING"
+            task.status = TaskStatus.RUNNING
             task.started_at = datetime.now(tz=timezone.utc)
             s.mark_dirty()
             rt.logger.info("Task ID: '%s' is now RUNNING", task_id)
@@ -107,12 +110,12 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
             if task is None:
                 rt.logger.error("Task ID: '%s' vanished during execution in Session %s", task_id, session_id)
                 return
-            if task.status != "RUNNING":
+            if task.status != TaskStatus.RUNNING:
                 rt.logger.warning("Task ID: '%s' is %s during completion phase: skipping finalization.)", 
                             task_id, task.status)
                 return
 
-            task.status = "COMPLETED"
+            task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now(tz=timezone.utc)
             task.outputs = ctx.results.to_dict()
             s.mark_dirty()
@@ -129,7 +132,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                     rt.logger.error("Task ID: '%s' vanished during execution in Session %s", task_id, session_id)
                     return
 
-                task.status = "FAILED"
+                task.status = TaskStatus.FAILED
                 task.error = error_msg
                 task.completed_at = datetime.now(tz=timezone.utc)
                 s.mark_dirty()
@@ -165,20 +168,28 @@ def run_preview_worker(
     if not task_def.live_preview:
         rt.logger.info("Generating preview for '%s'", task_key)
 
-    # 1. Create ephemeral Task
+    # 1. Auto-wrap primitives into LiteralBindings for ergonomics
+    binding_inputs = wrap_in_bindings(raw_inputs)
+
+    # 2. Create ephemeral Task
     ephemeral_task = Task(
         id=f"preview_{uuid4().hex[:8]}",
         registry_key=task_key,
-        status="RUNNING",
+        status=TaskStatus.RUNNING,
+        inputs=binding_inputs,
     )
-    ephemeral_task.inputs = ephemeral_task.validate_and_serialize(raw_inputs)
     ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
 
-    # 2. Resolve inputs (requires a short lock on the session)
-    with rt.open_session(session_id, read_only=True) as s:
-        resolved_inputs, input_artifacts = resolve_task_inputs(s, task_def, ephemeral_task.inputs)
+    try:
+        unwraped_inputs = ephemeral_task.validate_and_serialize()
+    except Exception as e:
+        raise ValueError(f"Input validation failed: {str(e)}") from e
 
-    # 3. Execute handler
+    # 3. Resolve inputs (requires a short lock on the session)
+    with rt.open_session(session_id, read_only=True) as s:
+        resolved_inputs, input_artifacts = materialize_task_inputs(s, task_def, unwraped_inputs)
+
+    # 4. Execute handler
     ctx = None
     try:
         ctx = PreviewContext(

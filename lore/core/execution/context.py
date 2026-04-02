@@ -5,7 +5,7 @@ Allows long-running tasks to run without holding locks on the session manifest.
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from pathlib import Path
 import logging
 import tempfile
@@ -27,6 +27,7 @@ class ExecutionContext:
     in case it needs momentary access to session data (e.g. saving artifacts).
     Helpers safely open the session as needed.
     """
+
     runtime: "Runtime"
     session_id: str
     task: "Task"
@@ -42,6 +43,13 @@ class ExecutionContext:
     def logger(self) -> logging.Logger:
         """Namespaced logger for the task."""
         return self.runtime.logger.getChild(f"task.{self.task.registry_key}")
+
+    def get_config(self, plugin_key: str) -> Any:
+        """Pass-through to get plugin-specific config from Runtime settings."""
+        config_obj = self.runtime.settings.get_plugin_config(plugin_key)
+        if config_obj is None:
+            self.logger.warning("No config found for plugin '%s'", plugin_key)
+        return config_obj
 
     def get_input_artifact(self, key: str) -> "list[Artifact] | None":
         """Get input Artifact record"""
@@ -65,9 +73,6 @@ class ExecutionContext:
                 prefix=f"task_{self.task.id[:8]}_",
                 dir=cache_dir,
             )
-        else:
-            self._temp_dir = tempfile.TemporaryDirectory(prefix=f"task_{self.task.id[:8]}_")
-
         return Path(self._temp_dir.name) / filename
 
     def memoize(self, key_prefix: str, func, **kwargs):
@@ -77,14 +82,12 @@ class ExecutionContext:
         Usage:
             my_obj = ctx.memoize("my_unique_key", expensive_function, arg1=val1)
         """
+
         def _thunk():
             return func(**kwargs)
 
         return self.runtime.cache.get_or_compute(
-            session_id=self.session_id,
-            prefix=key_prefix,
-            compute_fn=_thunk,
-            **kwargs
+            session_id=self.session_id, prefix=key_prefix, compute_fn=_thunk, cache_kwargs=kwargs,
         )
 
     def cleanup(self):
@@ -125,14 +128,7 @@ class ExecutionContext:
         """
         Derives a human-readable name from the Task definition's Output label
         """
-        label = None
-        if output_key and self.task_def and self.task_def.output_model:
-            field_info = self.task_def.output_model.model_fields.get(output_key)
-            if field_info and hasattr(field_info.default, "label"):
-                label = field_info.default.label
-
-        fallback = label or output_key or data_type or "output"
-
+        fallback = output_key or data_type or "output"
         if self.task.name:
             return f"{str(self.task.name)[:12]}_{fallback}"
         return fallback
@@ -170,14 +166,16 @@ class ExecutionContext:
 
             try:
                 self.results.add(output_key, artifact)
-            except KeyError as e:
-                self.logger.error("Error adding artifact to results: %s", str(e))
-            except (AttributeError, ValueError) as e:
+            except (AttributeError, KeyError, ValueError) as e:
                 self.logger.error("Error adding artifact to results: %s", str(e))
                 raise
 
-            self.logger.info("Task ID: %s emitted Artifact: %s to slot: %s",
-                             self.task.id, artifact.id, output_key)
+            self.logger.info(
+                "Task ID: %s emitted Artifact: %s to slot: %s",
+                self.task.id,
+                artifact.id,
+                output_key,
+            )
             return artifact
 
     def materialize_content(
@@ -197,7 +195,7 @@ class ExecutionContext:
         """
         output_key = self._resolve_output_key(output_key)
         data_type = self._resolve_data_type(output_key, data_type)
-        ext = f".{extension.lstrip(".")}"
+        ext = f".{extension.lstrip('.')}"
 
         tmp_path = self.get_temp_path(f"inline_content_{output_key}{ext}")
 
@@ -219,16 +217,22 @@ class ExecutionContext:
                 try:
                     tmp_path.unlink()  # Clean up temp file on failure
                 except OSError as e:
-                    self.logger.warning("Failed to clean up temporary file: %s, (%s)", tmp_path, str(e))
+                    self.logger.warning(
+                        "Failed to clean up temporary file: %s, (%s)", tmp_path, str(e)
+                    )
+
 
 # --- Preview execution for the Workbench ---
+
 
 @dataclass
 class DummyPreviewArtifact:
     """A mock Artifact to prevent AttributeErrors in Handlers during preview."""
+
     id: str = "preview_artifact_id"
     name: str = "preview_data"
     data_type: str = "unknown"
+
 
 class PreviewContext(ExecutionContext):
     """
@@ -236,6 +240,7 @@ class PreviewContext(ExecutionContext):
     Intercepts materialization to return UI-ready data payloads.
     Leaves the Manifest untouched.
     """
+
     def materialize_file(
         self,
         source_path: Path | str,
@@ -261,7 +266,7 @@ class PreviewContext(ExecutionContext):
         payload = self._adapt_for_preview(source_path, data_type)
 
         # 3. Store in ephemeral results object
-        setattr(self.results, output_key, payload)
+        self.results.add(output_key, payload)
         self.logger.debug("Preview intercepted file materialization for slot: %s", output_key)
 
         return DummyPreviewArtifact()  # Return a mock artifact for preview mode
@@ -274,8 +279,11 @@ class PreviewContext(ExecutionContext):
         adapter = adapters[0] if adapters else None
 
         if not adapter:
-            self.logger.warning("No adapter found for previewing data type '%s' with extension '%s'",
-                                data_type, source_path.suffix)
+            self.logger.warning(
+                "No adapter found for previewing data type '%s' with extension '%s'",
+                data_type,
+                source_path.suffix,
+            )
             return {
                 "is_preview": True,
                 "view_mode": "raw",
@@ -300,7 +308,9 @@ class PreviewContext(ExecutionContext):
             }
 
         except Exception as e:
-            self.logger.error("Adapter preview failed for data type '%s': %s", data_type, str(e), exc_info=True)
+            self.logger.error(
+                "Adapter preview failed for data type '%s': %s", data_type, str(e), exc_info=True
+            )
             return {
                 "is_preview": True,
                 "view_mode": "raw",

@@ -7,7 +7,7 @@
         </thead>
         <tbody>
             {% for t in tasks %}
-            <tr data-status="{{ t.status }}">
+            <tr data-status="{{ t.status.value if t.status.value else t.status | string | lower }}">
                 <td>
                     <small class="muted">{{ loop.index }}</small>
                 </td>
@@ -29,7 +29,7 @@
                     <div class="dropdown">
                         <button class="btn-kebab" popovertarget="menu-{{ t.id }}">⋮</button>
                         <div id="menu-{{ t.id }}" class="dropdown-menu right" popover>
-                            {% if t.status == 'PENDING' or t.status == 'DRAFT' %}
+                            {% if t.status == 'ready' %}
                                 {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ t.id ~ "/run", "Run", "▶") }}
                                 <hr />
                             {% endif %}

@@ -1,0 +1,27 @@
+{% extends "features/settings/layout.html" %}
+{% import "/macros/ui.html" as ui %}
+{% import "/macros/forms.html" as forms %}
+
+{% block workspace %}
+<div style="max-width: 800px;">
+    <h4>Core Engine</h4>
+    <p class="muted" style="margin-bottom: var(--spacing-lg);">Manage global runtime parameters and caching limits.</p>
+
+    <form action="/settings/core" method="POST" class="column gapped">
+        
+        <div class="card column gapped">
+            {% for field_name, field_meta in core_fields.items() %}
+                
+                {% set current_val = settings | attr(field_name) %}
+
+                {{ forms.render_field(field_name, field_meta, current_val) }}
+            {% endfor %}
+        </div>
+
+        <div class="row" style="margin-top: var(--spacing-md);">
+            <button type="submit" class="btn primary">Save Core Settings</button>
+        </div>
+        
+    </form>
+</div>
+{% endblock %}

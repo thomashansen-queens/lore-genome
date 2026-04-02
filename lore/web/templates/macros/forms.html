@@ -1,4 +1,4 @@
-{# === Generic form component using LoRe DSL === #}
+{# === Generic Task form component using LoRe DSL === #}
 {% macro render_field(name, field_info, prefill_val, candidates=[]) %}
     {% set extra = field_info.json_schema_extra or {} %}
     {% set widget = extra.get('widget', 'text') %}
@@ -144,7 +144,7 @@
                        min="{{ extra.get('min', 0) }}" 
                        max="{{ extra.get('max', 100) }}" 
                        step="{{ extra.get('step', 1) }}"
-                       value="{{ prefill }}"
+                       value="{{ prefill if prefill is not none else '' }}"
                        class="form-range" style="flex-grow: 1; cursor: pointer;"
                        oninput="this.parentElement.querySelector('input[type=\'number\']').value = this.value">
                 
@@ -152,7 +152,7 @@
                        min="{{ extra.get('min', 0) }}" 
                        max="{{ extra.get('max', 100) }}" 
                        step="{{ extra.get('step', 1) }}"
-                       value="{{ prefill }}"
+                       value="{{ prefill if prefill is not none else '' }}"
                        class="form-control" style="width: 5.5rem; padding: 0.25rem 0.5rem;"
                        oninput="this.parentElement.querySelector('input[type=\'range\']').value = this.value">
             </div>
@@ -160,22 +160,27 @@
         {# Float #}
         {% elif widget == 'float' %}
             <input type="number" name="{{ name }}" step="any" 
-                   value="{{ prefill }}"
+                   value="{{ prefill if prefill is not none else '' }}"
                    placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
                    class="form-control">
 
         {# Integer #}
         {% elif widget == 'integer' %}
             <input type="number" name="{{ name }}" step="1" 
-                   value="{{ prefill }}"
+                   value="{{ prefill if prefill is not none else '' }}"
                    placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
                    class="form-control">
-            </label>
+
+        {# Datetime #}
+        {% elif widget == 'datetime' %}
+            <input type="datetime-local" name="{{ name }}"
+                value="{{ prefill.strftime('%Y-%m-%dT%H:%M') if prefill and prefill.strftime else prefill }}"
+                class="form-control">
         
         {# Fallback to standard input types #}
         {% else %}
             <input type="{{ widget }}" name="{{ name }}" 
-                   value="{{ prefill }}"
+                   value="{{ prefill if prefill is not none else '' }}"
                    placeholder="{{ (field_info.examples[0] if field_info.examples else '') }}"
                    class="form-control">
         {% endif %}
@@ -188,4 +193,112 @@
         {% endif %}
 
     </div>
+{% endmacro %}
+
+
+{# === User Input for Workflows === #}
+
+{% macro render_user_input(name, schema, current_val='') %}
+    {% set widget = schema.get('widget', 'text') %}
+    {% set options = schema.get('options', []) %}
+    {% set data_type = schema.get('annotated_type', 'string') %}
+
+    {% set min_val = schema.get('min') if schema.get('min') is not none else 0 %}
+    {% set max_val = schema.get('max') if schema.get('max') is not none else 100 %}
+    {% set step_val = schema.get('step') if schema.get('step') is not none else 1 %}
+
+    {# 1. Dropdown Select #}
+    {% if widget == 'select' or widget == 'radio' %}
+        <select name="{{ name }}" class="form-control fullwidth" 
+                {%if schema.get('is_required', False) %}required{% endif %}>
+            <option value="">Select an option...</option>
+            {% for opt in options %}
+                {% set val = opt.value if opt is mapping else opt %}
+                {% set lbl = opt.label if opt is mapping else opt %}
+                <option value="{{ val }}"
+                        {% if val | string == current_val | string %}selected{% endif %}>
+                    {{ lbl }}
+                </option>
+            {% endfor %}
+        </select>
+
+    {# 2. Segmented Radio #}
+    {% elif widget == 'segmented_radio' %}
+        <div class="segmented-control">
+            {% for opt in options %}
+                {% set val = opt.value if opt is mapping else opt %}
+                {% set lbl = opt.label if opt is mapping else opt %}
+                <label>
+                    <input type="radio" name="{{ name }}" value="{{ val }}" 
+                           {%if schema.get('is_required', False) %}required{% endif %}
+                           {% if val | string == current_val | string %}checked{% endif %}>
+                    <span>{{ lbl }}</span>
+                </label>
+            {% endfor %}
+        </div>
+
+    {# 3. Boolean / Checkbox #}
+    {% elif widget == 'checkbox' or data_type == 'boolean' %}
+        <select name="{{ name }}" class="form-control fullwidth"
+                {%if schema.get('is_required', False) %}required{% endif %}>
+            <option value="" disabled {% if current_val == '' %}selected{% endif %}>Select Yes / No...</option>
+            <option value="true" {% if current_val == 'true' %}selected{% endif %}>True / Yes</option>
+            <option value="false" {% if current_val == 'false' %}selected{% endif %}>False / No</option>
+        </select>
+
+    {# 4. Checkbox group (lists of Enums) #}
+    {% elif widget == 'checkbox_group' %}
+        <div class="checkbox-group">
+            {% set current_list = current_val.split(', ') if current_val else [] %}
+            
+            {% for opt in options %}
+                {% set val = opt.value if opt is mapping else opt %}
+                {% set lbl = opt.label if opt is mapping else opt %}
+                <label class="checkbox">
+                    <input type="checkbox" name="{{ name }}" value="{{ val }}"
+                           {%if schema.get('is_required', False) %}required{% endif %}
+                           {% if val | string in current_list %}checked{% endif %}>
+                    {{ lbl }}
+                </label>
+            {% endfor %}
+        </div>
+
+    {# 5. Range Slider #}
+    {% elif widget == 'slider' %}
+        <div style="display: flex; align-items: center; gap: var(--spacing-sm);">    
+            <input type="range" 
+                    min="{{ min_val }}" 
+                    max="{{ max_val }}" 
+                    step="{{ step_val }}" 
+                    value="{{ current_val if current_val != '' else min_val }}" 
+                    class="form-range" style="flex-grow: 1; cursor: pointer;"
+                    oninput="this.parentElement.querySelector('input[type=\'number\']').value = this.value">
+            
+            <input type="number" name="{{ name }}" 
+                    min="{{ min_val }}" 
+                    max="{{ max_val }}" 
+                    step="{{ step_val }}" 
+                    value="{{ current_val if current_val != '' else min_val }}" 
+                    class="form-control small" style="width: 5.5rem; padding: 0.25rem 0.5rem;"
+                    {%if schema.get('is_required', False) %}required{% endif %}
+                    oninput="this.parentElement.querySelector('input[type=\'range\']').value = this.value">
+        </div>
+
+    {# 6. Numbers #}
+    {% elif widget == 'integer' or widget == 'float' or data_type in ['integer', 'float'] %}
+        <input type="number" name="{{ name }}"
+               step="{{ 'any' if widget == 'float' or data_type == 'float' else step_val }}" 
+               min="{{ min_val }}" max="{{ max_val }}"
+               value="{{ current_val }}"
+               {%if schema.get('is_required', False) %}required{% endif %}
+               class="form-control fullwidth small" placeholder="Enter a number...">
+
+    {# 7. Fallback (Text / Artifact IDs) #}
+    {% else %}
+        <input type="text" name="{{ name }}"
+               value="{{ current_val | escape }}" 
+               {%if schema.get('is_required', False) %}required{% endif %}
+               class="form-control fullwidth small" placeholder="Enter value...">
+    {% endif %}
+
 {% endmacro %}

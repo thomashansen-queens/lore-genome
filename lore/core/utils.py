@@ -3,13 +3,16 @@ Simple utility functions for use across the codebase.
 """
 
 import re
-from typing import Any, Collection
+import types
+from typing import Any, Collection, get_args, get_origin, Union
 try:
     from fastapi import UploadFile
     _HAS_FASTAPI = True
 except ImportError:
     _HAS_FASTAPI = False
     UploadFile = type("UploadFile", (), {}) # Dummy type for isinstance checks
+
+# --- String cleaning and normalization ---
 
 # [^\w\-.]: Anything that isn't a word character [a-zA-Z0-9_] or - .
 # [\\/?@]: No slashes, question marks, at signs (more permissive)
@@ -30,10 +33,12 @@ def _compile_bad_chars(bad_chars: BadChars) -> re.Pattern[str] | None:
     return re.compile(f"[{re.escape(chars)}]") if chars else None
 
 
-def clean(v: Any, *,
-          empty_to_none: bool = True,
-          bad_chars: BadChars = _DEFAULT_BAD_CHARS,
-          replace_with: str | None = None,
+def clean(
+    v: Any,
+    *,
+    empty_to_none: bool = True,
+    bad_chars: BadChars = _DEFAULT_BAD_CHARS,
+    replace_with: str | None = None,
 ) -> str | None:
     """Helper cleans strings. Guards against objects to prevent type errors."""
     if v is None:
@@ -54,29 +59,6 @@ def clean(v: Any, *,
 
     return s
 
-ARTIFACT_ID_HEURISTIC = re.compile(r"^[0-9a-f]{12}$")
-
-def is_artifact_id(val: Any) -> bool:
-    """Heuristic check to see if a string looks like a LoRe Artifact ID."""
-    if not isinstance(val, str):
-        return False
-    return bool(ARTIFACT_ID_HEURISTIC.match(val))
-
-
-# def serialize_to(records: list[dict], data_type: str, extension: str) -> str:
-#     """
-#     Serialize a list of records to a string in the given data_type and extension.
-#     Work-in-progress, currently only JSON and JSONL
-#     """
-#     ext = extension.lower().strip(".")
-
-#     # JSON lines
-#     if ext in {"jsonl", "ndjson"} or "jsonl" in data_type:
-#         return "\n".join(json.dumps(rec) for rec in records)
-
-#     # Standard JSON
-#     return json.dumps(records, indent=2)
-
 
 def normalize_query(query_string: str) -> str:
     """
@@ -95,6 +77,48 @@ def normalize_query(query_string: str) -> str:
     query_string = " ".join(query_string.split())
 
     return query_string
+
+
+def fmt_bytes(n: float) -> str:
+    """Format bytes as human-readable string."""
+    for unit in ("B", "kB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}"
+        n = n / 1024.0
+    return f"{n:.1f} TB"
+
+
+# --- Type checking ---
+
+ARTIFACT_ID_HEURISTIC = re.compile(r"^[0-9a-f]{12}$")
+
+def is_artifact_id(val: Any) -> bool:
+    """Heuristic check to see if a string looks like a LoRe Artifact ID."""
+    if not isinstance(val, str):
+        return False
+    return bool(ARTIFACT_ID_HEURISTIC.match(val))
+
+
+COLLECTION_TYPES = {list, set, tuple}
+
+def is_collection_type(annotation: Any) -> bool:
+    """
+    Recursive check if a Pydantic type hint represents a collection (list, set, 
+    dict, etc.) even if buried in Optional or Union.
+    """
+    origin = get_origin(annotation)
+
+    # 1. Base case: Is a collection type
+    if annotation in COLLECTION_TYPES or origin in COLLECTION_TYPES:
+        return True
+
+    # 2. Recursive case: Optional or Union
+    is_union = origin is Union or (hasattr(types, "UnionType") and origin is types.UnionType)
+    if is_union:
+        return any(is_collection_type(arg) for arg in get_args(annotation))
+
+    return False
+
 
 # --- Object naming ---
 

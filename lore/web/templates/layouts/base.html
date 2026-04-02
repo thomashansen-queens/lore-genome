@@ -26,7 +26,7 @@
                 LoRē Genome
             </h3>
         </a>
-        <div class="push-right">
+        <div class="gapped push-right" style="display: flex;">
             {# Global control (settings, user) go here #}
             <a href="/settings" class="btn secondary">
                 💻︎ Settings
@@ -56,7 +56,7 @@
         {% if messages %}
             {% for category, msg in messages %}
                 <section class="flash-message {{ category }}">
-                    <pre>{{ msg }}</pre>
+                    <code>{{ msg }}</code>
                 </section>
             {% endfor %}
         {% endif %}

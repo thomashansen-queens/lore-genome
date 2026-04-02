@@ -1,27 +1,23 @@
 {# === Status Badge === #}
 {% macro status_badge(status) %}
-    {% if status == 'COMPLETED' %}
-        <span class="badge success">● Done</span>
-    {% elif status == 'FAILED' %}
-        <span class="badge danger">× Failed</span>
-    {% elif status == 'RUNNING' %}
-        <span class="badge info pulsing">◐ Running</span>
-    {% elif status == 'PENDING' %}
-        <span class="badge">○ Pending</span>
-    {% elif status == 'DRAFT' %}
+    {% if status == 'draft' %}
         <span class="badge muted">🤇 Draft</span>
+    {% elif status == 'ready' %}
+        <span class="badge info">○ Ready</span>
+    {% elif status == 'queued' %}
+        <span class="badge">○ Queued</span>
+    {% elif status == 'running' %}
+        <span class="badge info pulsing">◐ Running</span>
+    {% elif status == 'completed' %}
+        <span class="badge success">● Completed</span>
+    {% elif status == 'failed' %}
+        <span class="badge danger">× Failed</span>
+    {% elif status == 'cancelled' %}
+        <span class="badge warning">× Cancelled</span>
     {% else %}
         <span class="badge warning">? {{ status|title }}</span>
     {% endif %}
 {% endmacro %}
-{# {% macro status_badge(status) %}
-<span class="badge {{ 'bg-success' if status == 'COMPLETED' 
-                   else 'bg-warning text-dark' if status == 'RUNNING' or status == 'PENDING'
-                   else 'bg-danger' if status == 'FAILED'
-                   else 'bg-secondary' }}">
-    {{ status }}
-</span>
-{% endmacro %} #}
 
 {# === Universal object renamer === #}
 {% macro editable_header(value, update_url, subtitle=None, input_name='name') %}

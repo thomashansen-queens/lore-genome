@@ -3,6 +3,7 @@ Routes for managing individual artifacts within a Session.
 """
 
 import json
+import re
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
@@ -10,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 
 from lore.core.tasks import AdapterConfig
 from lore.core.io import get_reader_for
-from lore.web.deps import ActiveSession, PageContext, templates
+from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.forms import get_form_str
 
 _DEFAULT_EXPLORE_DISPLAY_LIMIT = 1000
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/sessions/{session_id}/artifacts", tags=["artifacts"]
 
 @router.get("/", response_class=HTMLResponse)
 async def view_artifact_manager(
-    s: ActiveSession,
+    s: ReadOnlySession,
     ctx: PageContext = Depends(),
 ):
     """
@@ -86,14 +87,37 @@ async def api_ingest_artifacts(
     return JSONResponse({"status": "success", "message": "Artifacts ingested successfully"})
 
 
-@router.get("/{artifact_id}", response_class=HTMLResponse)
-async def view_artifact_overview(
+@router.get("/{artifact_id}", response_class=RedirectResponse)
+def explore_artifact_default(
     artifact_id: str,
-    s: ActiveSession,
+    s: ReadOnlySession,
+    ctx: PageContext = Depends(),
+):
+    """Redirects to the default view for an Artifact."""
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        return ctx.redirect_back(
+            f"/sessions/{s.id}",
+            message="Artifact not found",
+            message_type="error",
+        )
+    adapters = artifact.get_adapters()
+    if adapters:
+        adapter = adapters[0]
+        return ctx.redirect(
+            f"/sessions/{s.id}/artifacts/{artifact_id}/explore?adapter_key={adapter.name}"
+        )
+    return ctx.redirect(f"/sessions/{s.id}/artifacts/{artifact_id}/explore")
+
+
+@router.get("/{artifact_id}/details", response_class=HTMLResponse)
+def view_artifact_details(
+    artifact_id: str,
+    s: ReadOnlySession,
     ctx: PageContext = Depends(),
 ):
     """
-    The home page for an Artifact.
+    Presents details about an Artifact's lineage and metadata.
     """
     artifact = s.get_artifact(artifact_id)
     if not artifact:
@@ -135,7 +159,7 @@ async def view_artifact_overview(
 @router.get("/{artifact_id}/explore", response_class=HTMLResponse)
 async def view_artifact_explore(
     artifact_id: str,
-    s: ActiveSession,
+    s: ReadOnlySession,
     adapter_key: str | None = None,
     ctx: PageContext = Depends(),
 ):
@@ -188,15 +212,25 @@ async def view_artifact_explore(
 
 class ExploreDataRequest(BaseModel):
     query: str = ""
+    regex: bool = False
     adapter_key: str | None = None
     adapter_config: AdapterConfig = Field(default_factory=AdapterConfig)
+
+
+def _make_query_pattern(query_string: str) -> str:
+    """Convert a simple query string into a case-insensitive substring search pattern."""
+    new_query = query_string.strip().replace('"', '').replace("'", "")
+    if "," in new_query:
+        parts = [re.escape(p.strip()) for p in new_query.split(",") if p.strip()]
+        return "|".join(parts)
+    return re.escape(new_query)
 
 
 @router.post("/{artifact_id}/explore/data", response_class=JSONResponse)
 def api_explore_data(
     artifact_id: str,
     payload: ExploreDataRequest,
-    s: ActiveSession,
+    s: ReadOnlySession,
     ctx: PageContext = Depends(),
 ):
     """
@@ -245,12 +279,38 @@ def api_explore_data(
         total_rows = len(master_df)
         df = master_df  # work on a copy to avoid modifying in-memory cache
 
-        # 3. Pandas query + sort
+        # 3. 3-tier filtering
         if payload.query.strip() and not df.empty:
-            try:
-                df = df.query(payload.query)
-            except Exception as e:
-                return JSONResponse({"status": "error", "message": f"Invalid query: {str(e)}"}, status_code=400)
+            # i. Regex search (by row)
+            if payload.regex:
+                try:
+                    mask = df.astype(str).apply(
+                        lambda col: col.str.contains(
+                            payload.query, case=False, na=False, regex=True,
+                        )
+                    ).any(axis=1)
+                    df = df[mask]
+                except Exception as e:
+                    return JSONResponse({"status": "error", "message": f"Invalid regex pattern: {str(e)}"}, status_code=400)
+            else:
+                # ii. Pandas query string
+                try:
+                    df = df.query(payload.query)
+                except Exception:
+                    # iii. Case-insensitive substring search
+                    try:
+                        search_pattern = _make_query_pattern(payload.query)
+                        mask = df.astype(str).apply(
+                            lambda col: col.str.contains(
+                                search_pattern, case=False, na=False, regex=True,
+                            )
+                        ).any(axis=1)
+                        df = df[mask]
+                    except Exception as e:
+                        return JSONResponse(
+                            {"status": "error", "message": f"Invalid query: {str(e)}"},
+                            status_code=400,
+                        )
 
         view_state = payload.adapter_config.view_state
         sort_by = view_state.get("sort_by")
@@ -313,7 +373,7 @@ def api_explore_data(
 def api_explore_export(
     artifact_id: str,
     payload: ExploreDataRequest,
-    s: ActiveSession,
+    s: ReadOnlySession,
 ):
     """Downloads the currently filtered and sorted dataset as a CSV."""
     artifact = s.get_artifact(artifact_id)
@@ -347,10 +407,31 @@ def api_explore_export(
 
     # 2. Apply Filters & Sort
     if payload.query.strip() and not df.empty:
-        try:
-            df = df.query(payload.query)
-        except Exception:
-            pass # Ignore bad queries on export
+        if payload.regex:
+            # i. Regex search (by row)
+            try:
+                mask = df.astype(str).apply(
+                    lambda col: col.str.contains(payload.query, case=False, na=False, regex=True)
+                ).any(axis=1)
+                df = df[mask]
+            except Exception as e:
+                raise HTTPException(400, f"Invalid regex pattern: {str(e)}") from e
+        else:
+            # ii. Pandas query string
+            try:
+                df = df.query(payload.query)
+            except Exception:
+                # iii. Case-insensitive substring search
+                try:
+                    search_pattern = _make_query_pattern(payload.query)
+                    mask = df.astype(str).apply(
+                        lambda col: col.str.contains(
+                            search_pattern, case=False, na=False, regex=True,
+                        )
+                    ).any(axis=1)
+                    df = df[mask]
+                except Exception as e:
+                    raise HTTPException(400, f"Invalid query: {str(e)}") from e
     
     sort_by = view_state.get("sort_by")
     if sort_by and sort_by in df.columns:
@@ -384,7 +465,7 @@ async def rename_artifact_action(
     return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/artifacts/{artifact_id}")
 
 
-@router.post('/{artifact_id}/update', response_class=RedirectResponse)
+@router.post("/{artifact_id}/update", response_class=RedirectResponse)
 async def update_artifact_action(
     artifact_id: str,
     s: ActiveSession,
@@ -403,7 +484,7 @@ async def update_artifact_action(
 
 
 @router.get("/{artifact_id}/download")
-def download_artifact(artifact_id: str, s: ActiveSession):
+def download_artifact(artifact_id: str, s: ReadOnlySession):
     """Triggers a browser download"""
     try:
         path = s.get_artifact_path(artifact_id)

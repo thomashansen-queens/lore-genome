@@ -1,0 +1,37 @@
+{% extends "layouts/base.html"%}
+
+{% block content %}
+<div class="row fill" style="align-items: stretch;">
+
+    <aside class="sidebar">
+        <span class="ui-label">Runtime</span>
+        <h4>LoRē Runtime</h4>
+        
+        <p>Inspect the runtime environment. I made this for debugging and developing, but I think
+        it will be generally useful.</p>
+
+        <hr />
+
+        <div class="scroll-area column gapped">
+            <a href="/runtime/log" class="btn secondary">
+                View Log
+            </a>
+            <a href="/runtime/cache" class="btn secondary">
+                View Cache
+            </a>
+            <a href="/runtime/tasks" class="btn secondary">
+                View Task Registry
+            </a>
+            <a href="/runtime/adapters" class="btn secondary">
+                View Adapter Registry
+            </a>
+        </div>
+
+    </aside>
+
+    {% block workspace %}
+    {% endblock %}
+
+</div>
+
+{% endblock %}

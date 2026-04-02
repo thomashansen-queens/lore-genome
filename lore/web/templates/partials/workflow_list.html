@@ -1,0 +1,59 @@
+{# List of Workflows #}
+{% import "macros/ui.html" as ui %}
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Steps</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for w in workflows %}
+        <tr>
+            <td>
+                <code><a href="/workflows/{{ w.id }}">{{ w.name }}</a></code>
+            </td>
+            <td>{{ w.description|truncate(100) }}</td>
+            <td>{{ w.step_count }}</td>
+            <td class="muted">{{ w.created_at[:10] }}</td>
+            <td>
+                {# === Kebab menu === #}
+                <div class="dropdown">
+                    <button class="btn-kebab" popovertarget="menu-{{ w.id }}">
+                        ⋮
+                    </button>
+                    <div id="menu-{{ w.id }}" popover class="dropdown-menu right">
+                        <a href="/workflows/{{ w.id }}">
+                            👁 Inspect
+                        </a>
+
+                        {{ ui.rename_item("/workflows/" ~ w.id ~ "/rename", "name", w.name) }}
+
+                        <form action="/workflows/{{ w.id }}/hydrate" method="POST" onsubmit="return confirm('Start a new Session from this Workflow?');">
+                            <button type="submit">➡ Use this Workflow</button>
+                        </form>
+                        <form action="/workflows/{{ w.id }}/clone" method="POST">
+                            <button type="submit">⟳ Clone</button>
+                        </form>
+                        <a href="/workflows/{{ w.id }}/export">
+                            ⬇ Export (.json)
+                        </a>
+                        <hr />
+                        {{ ui.delete_item("/workflows/" ~ w.id ~ "/delete") }}
+                    </div>
+                </div>
+            </td>
+        </tr>
+    {% else %}
+        <tr>
+            <td colspan="6" class="text-muted">
+                No workflows yet. Import one or make a new one from a Session!
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>

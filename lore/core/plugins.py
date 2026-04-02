@@ -7,7 +7,7 @@ import sys
 import logging
 
 
-logger = logging.getLogger("lore.plugins")
+logger = logging.getLogger(__name__)
 
 
 def discover_plugins(directory: Path | str) -> None:
@@ -28,9 +28,9 @@ def discover_plugins(directory: Path | str) -> None:
         if py_file.name.startswith("__") or py_file.name.startswith("."):
             continue
 
-        # 2. Create a module name based on relative path to avoid collisions
+        # 2. OS-Agnostic dot-notation module name
         rel_path = py_file.relative_to(target_dir)
-        module_name = "lore_plugin_" + str(rel_path.with_suffix("")).replace("/", "_").replace("\\", "_")
+        module_name = "lore_plugins." + ".".join(rel_path.with_suffix("").parts)
 
         if module_name in sys.modules:
             continue  # already loaded
@@ -42,10 +42,18 @@ def discover_plugins(directory: Path | str) -> None:
             if spec and spec.loader:
                 # B. Create empty module from spec and register it in sys.modules
                 module = importlib.util.module_from_spec(spec)
+
+                # C. Define the package so relative imports work
+                module.__package__ = module_name.rsplit(".", 1)[0]
                 sys.modules[module_name] = module
 
-                # C. Execute the module to populate it (triggers decorators)
-                spec.loader.exec_module(module)
+                # D. Execute the module to populate it (triggers decorators)
+                try:
+                    spec.loader.exec_module(module)
+                except Exception:
+                    # E. If execution fails, remove zombie module
+                    del sys.modules[module_name]
+                    raise  # re-raise to trigger outer exception handler
 
                 logger.debug("Loaded plugin module: %s", module_name)
 

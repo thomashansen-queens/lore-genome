@@ -1,0 +1,43 @@
+{% extends "layouts/base.html"%}
+
+{% block content %}
+<div class="row fill" style="align-items: stretch;">
+
+    <aside class="sidebar">
+        <span class="ui-label">Settings</span>
+        <h4>Configuration</h4>
+        <p class="small muted">Manage core engine parameters and plugin-specific options.</p>
+
+        {# --- CORE SETTINGS --- #}
+        <a href="/settings/core"
+            class="btn primary"
+            style="justify-content: flex-start;">
+            Core Engine
+        </a>
+
+        <hr />
+
+        {# --- PLUGIN SETTINGS --- #}
+        <div class="ui-label">Plugins</div>
+        <div class="scroll-area column" style="gap: var(--spacing-sm);">
+            {% if registered_plugins %}
+                {% for plugin in registered_plugins %}
+                    <a href="/settings/plugins/{{ plugin.key }}" 
+                       class="btn secondary {{ 'primary' if request.url.path == '/settings/plugins/' ~ plugin.key else '' }}" 
+                       style="justify-content: flex-start; overflow: hidden; text-overflow: ellipsis;">
+                        {{ plugin.title }}
+                    </a>
+                {% endfor %}
+            {% else %}
+                <span class="small muted">No plugins configured.</span>
+            {% endif %}
+        </div>
+    </aside>
+
+    {# --- WORKSPACE --- #}
+    <div class="workspace scroll-area" style="flex: 1; padding: var(--spacing-lg);">
+        {% block workspace %}{% endblock %}
+    </div>
+
+</div>
+{% endblock %}

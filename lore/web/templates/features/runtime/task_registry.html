@@ -1,0 +1,43 @@
+{% extends "/features/runtime/layout.html" %}
+
+{% block workspace %}
+
+<div class="scroll-area">
+    <div class="ui-label">Task Registry</div>
+
+    {% for category, tasks in task_definitions | groupby('category') %}
+        <h4>{{ category if category else "Uncategorized" }}</h4>
+        <div class="column gapped">
+            {% for t in tasks %}
+                <details class="card">
+                {# Clickable header #}
+                    <summary style="cursor: pointer; list-style: none;">
+                        <div class="row gapped">
+                            <div>{{ t.icon }}</div>
+                            <div>{{ t.name }}</div>
+                            <div class="small muted mono">{{ t.key }}</div>
+                        </div>
+                    </summary>
+                {# Expanded content #}
+                    <div style="overflow-x: auto;">
+                        <h5>Description (Handler function doc string)</h5>
+                        <p>{{ t.description }}</p>
+                        {# Inputs #}
+                        {% if t.input_model %}
+                            <h5>Inputs</h5>
+                            <pre>{{ t.input_model.schema_json(indent=2) }}</pre>
+                        {% endif %}
+                        {# Outputs #}
+                        {% if t.output_model %}
+                            <h5>Outputs</h5>
+                            <pre>{{ t.output_model.schema_json(indent=2) }}</pre>
+                        {% endif %}
+                    </div>
+                </details>
+                
+            {% endfor %}
+        </div>
+    {% endfor %}
+</div>
+
+{% endblock %}

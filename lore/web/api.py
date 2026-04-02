@@ -11,11 +11,10 @@ from lore.core.runtime import Runtime
 from lore.web.features.sessions.routes import router as sessions_router
 from lore.web.features.settings.routes import router as settings_router
 from lore.web.features.home.routes import router as home_router
-# from lore.web.features.registry.routes import router as registry_router
 from lore.web.features.artifacts.routes import router as artifacts_router
 from lore.web.features.tasks.routes import router as tasks_router
-from lore.web.features.workbench.routes import router as workbench_router
-from lore.web.features.cache.routes import router as cache_router
+from lore.web.features.runtime.routes import router as runtime_router
+from lore.web.features.workflows.routes import router as workflows_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,8 +43,8 @@ def create_app(rt: Runtime) -> FastAPI:
     app.include_router(sessions_router)
     app.include_router(artifacts_router)
     app.include_router(tasks_router)
-    app.include_router(workbench_router)
-    app.include_router(cache_router)
+    app.include_router(runtime_router)
+    app.include_router(workflows_router)
     # Health check endpoint
     @app.get("/health")
     def health():

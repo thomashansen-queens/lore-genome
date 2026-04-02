@@ -91,3 +91,13 @@ def execute_task(rt: Runtime, session: str, task: str):
     from lore.core.execution.worker import run_task_worker
 
     run_task_worker(rt, session, task)
+
+
+@main.command(name="execute-session", hidden=True)
+@click.option("--session", required=True, help="ID of Session containing the Task.")
+@pass_runtime
+def execute_session(rt: Runtime, session: str):
+    """Internal headless worker entrypoint for a single Task execution."""
+    rt.logger.info("CLI orchestrator booting up for Session %s", session)
+    from lore.core.execution.orchestrator import SequentialOrchestrator
+    SequentialOrchestrator(rt).run_cascade(session)

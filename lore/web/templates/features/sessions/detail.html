@@ -33,7 +33,7 @@
 function hasActiveTasks() {
     // DYNAMIC CHECK: Look for any status badge in the DOM that says RUNNING
     // FUTURE: Add Pending to this list if DAG auto-run is implemented
-    const activeBadges = document.querySelectorAll('[data-status="RUNNING"]');
+    const activeBadges = document.querySelectorAll('[data-status="running"], [data-status="ready"]');
     return activeBadges.length > 0;
 }
 

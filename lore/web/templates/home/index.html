@@ -1,0 +1,46 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="container-constrained" style="padding-top: 4rem; padding-bottom: 4rem;">
+    
+    {# === Hero Header === #}
+    <div style="margin-bottom: 2rem;">
+        <h1 style="color: var(--primary);">
+            LoRē Genome
+        </h1>
+        <p style="font-size: 1.25rem; color: var(--text-muted); max-width: 600px;">
+            An interactive, reproducible, extensible workbench for comparative genome analysis.
+        </p>
+        <a href="/dashboard" class="btn primary" style="font-size: 1.1rem; padding: 1rem 2rem;">
+            Get Started
+        </a>
+    </div>
+
+    {# === Feature Grid === #}
+    <div class="grid-narrow">
+        
+        <div class="card">
+            <h3 style="color: var(--info-border); margin-top: 0;">🏠︎ Local</h3>
+            <p style="color: var(--text-muted); margin-bottom: 0;">
+                This browser interface is running directly on your local machine. You can always work and access your data even without an internet connection!
+            </p>
+        </div>
+
+        <div class="card">
+            <h3 style="color: var(--success-border); margin-top: 0;">🖮 Interactive</h3>
+            <p style="color: var(--text-muted); margin-bottom: 0;">
+                Work in self-contained sessions. Upload data, run complex analyses, and visualize results instantly without writing a single line of code.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3 style="color: var(--primary-dark); margin-top: 0;">🗐 Reproducible</h3>
+            <p style="color: var(--text-muted); margin-bottom: 0;">
+                Every action is tracked in a detailed manifest. Export your entire session to share with colleagues and guarantee perfect reproducibility for publications.
+            </p>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}

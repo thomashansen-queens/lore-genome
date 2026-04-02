@@ -14,7 +14,7 @@ from .executors import (
 from .context import ExecutionContext
 
 # 4. Input resolver
-from .resolver import resolve_task_inputs
+from .materializer import materialize_task_inputs
 
 # 5. Publicize
 __all__ = [
@@ -22,5 +22,5 @@ __all__ = [
     "BaseExecutor",
     "LocalSubprocessExecutor",
     "ExecutionContext",
-    "resolve_task_inputs",
+    "materialize_task_inputs",
 ]

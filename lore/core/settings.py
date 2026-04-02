@@ -4,7 +4,8 @@ Docstring for lore.settings
 import os
 from pathlib import Path
 import json
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, create_model, field_validator
+from typing import Any, Callable, Type
 
 from lore.core.paths import default_data_root
 
@@ -13,28 +14,125 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 DEFAULT_SETTINGS_FILE = "settings.json"
 DEFAULT_SECRETS_FILE = "secrets.json"
 
+# --- Plugin config ---
+
+class ConfigRegistry:
+    """Global registry for plugin-specific configuration."""
+    def __init__(self):
+        self._schemas: dict[str, Type[BaseModel]] = {}
+
+    def register(self, key: str, title: str | None = None) -> Callable:
+        """Decorator to compile a DSL config class into a Pydantic schema."""
+        def wrapper(cls: type) -> type:
+            fields = {}
+
+            # 1. Use dir() so MRO is respected, allowing inherited fields
+            for attr_name in dir(cls):
+                # Skip dunder methods and callables
+                if attr_name.startswith("__") or callable(getattr(cls, attr_name)):
+                    continue
+
+                attr_value = getattr(cls, attr_name)
+
+                # 2. Duck-typing checks to avoid circular imports with DSL
+                if hasattr(attr_value, "to_field_info") and hasattr(attr_value, "get_type_annotation"):
+                    field_type = attr_value.get_type_annotation()
+                    field_info = attr_value.to_field_info()
+                    fields[attr_name] = (field_type, field_info)
+
+            # 3. Create dynamic Pydantic model
+            safe_name = f"{key.replace(".", "_")}_ConfigModel"
+            pydantic_model = create_model(safe_name, **fields)
+
+            # 4. Attach UI metadata to the new model
+            pydantic_model.model_config["title"] = title or key.replace("_", " ").title()
+            pydantic_model.__doc__ = cls.__doc__
+
+            # 5. Save the compiled model to the registry
+            self._schemas[key] = pydantic_model
+
+            return cls
+        return wrapper
+
+    def __getitem__(self, key: str) -> Type[BaseModel]:
+        return self._schemas[key]
+
+    @property
+    def all(self) -> dict[str, Type[BaseModel]]:
+        """Return all registered configuration models."""
+        return self._schemas
+
+config_registry = ConfigRegistry()
+
+# --- Global settings ---
 
 class Settings(BaseModel):
     """Configuration settings for LoRe Genome."""
     # --- Paths ---
     data_root: Path = Field(
         default_factory=default_data_root,
+        title="Data Root",
         description="Root directory for all LoRe Genome data (sessions, outputs, etc).",
         json_schema_extra={"widget": "text"},
         examples=[str(default_data_root())],
     )
     cache_root: Path | None = Field(
         default=None,
+        title="Cache Root",
         description="Path for temp files. Defaults to {data_root}/cache if empty.",
         json_schema_extra={"widget": "text"},
         examples=["leave blank for {data_root}/cache or specify custom path i.e. $SCRATCH/lore_cache"],
     )
-    mmseqs_path: Path = Field(
-        default_factory=lambda: Path("mmseqs"),
-        description="Path to MMSeqs2 executable. If not in PATH, provide full path. On Windows, path/to/mmseqs.bat",
+    plugins_dir: Path | None = Field(
+        default=None,
+        title="Plugins Directory",
+        description="Path for plugin files. Defaults to {data_root}/plugins if empty.",
         json_schema_extra={"widget": "text"},
-        examples=["mmseqs or C:/path/to/mmseqs.bat"],
+        examples=["leave blank for {data_root}/plugins or specify custom path i.e. $SCRATCH/lore_plugins"],
     )
+    workflows_dir: Path | None = Field(
+        default=None,
+        title="Workflows Directory",
+        description="Path for custom user workflows. Defaults to {Data Root}/workflows if left blank.",
+        json_schema_extra={"widget": "text"},
+    )
+
+    @property
+    def active_cache_root(self) -> Path:
+        """
+        Dynamically resolves the active cache directory. 
+        Uses the explicit cache_root if provided, otherwise falls back to data_root/cache.
+        """
+        if self.cache_root:
+            # Expand environment variables e.g. $SCRATCH
+            expanded = os.path.expandvars(str(self.cache_root))
+            return Path(expanded).expanduser().resolve()
+        return self.data_root / "cache"
+
+    @property
+    def active_plugins_dir(self) -> Path:
+        """
+        Dynamically resolves the active plugins directory. 
+        Uses the explicit plugins_dir if provided, otherwise falls back to data_root/plugins.
+        """
+        if self.plugins_dir:
+            # Expand environment variables e.g. $SCRATCH
+            expanded = os.path.expandvars(str(self.plugins_dir))
+            return Path(expanded).expanduser().resolve()
+        return self.data_root / "plugins"
+
+    @property
+    def active_workflows_dir(self) -> Path:
+        """
+        Dynamically resolves the active workflows directory.
+        Uses the explicit workflows_dir if provided, otherwise falls back to data_root/workflows.
+        """
+        if self.workflows_dir:
+            # Expand environment variables e.g. $SCRATCH
+            expanded = os.path.expandvars(str(self.workflows_dir))
+            return Path(expanded).expanduser().resolve()
+        return self.data_root / "workflows"
+
     # --- UI ---
     explore_display_limit: int = Field(
         default=1000,
@@ -43,11 +141,17 @@ class Settings(BaseModel):
         description=(
             "Max number of rows to display in the Explore view. This only "
             "affects the display; all data is still accessible for queries and "
-            "sorting. Increase to see more, but may impact load times."
+            "sorting. Increase to see more, but with longer load times."
         ),
-        json_schema_extra={"widget": "int"},
+        json_schema_extra={
+            "widget": "slider",
+            "min": 100,
+            "max": 10000,
+            "step": 100,
+        },
         examples=["1000"],
     )
+
     # --- Engine ---
     verbose: bool = False
     cache_ram_mb: int = Field(
@@ -61,21 +165,37 @@ class Settings(BaseModel):
     cache_disk_gb: float = Field(
         default=4.0,
         ge=0.5,
-        description="Maximum disk space in GB to use for in-memory Task caching.",
+        description="Maximum disk space in GB to use for .pkl file Task caching.",
         json_schema_extra={"widget": "float"},
         examples=["4.0"],
     )
     io_max_file_size_mb: int = Field(
         default=100,
         ge=1,
-        description="Max file size in MB before forcing stream-only materialization.",
+        description="Max file size in MB before forcing stream-only materialization (skip full RAM loads).",
         json_schema_extra={"widget": "float"},
         examples=["100"],
     )
 
-    # Network/remote (FUTURE: for HPC deployments)
+    # --- Network/remote --- (FUTURE: for HPC deployments)
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+
+    # --- Plugin configs (junk drawer for now) ---
+    plugins: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Raw JSON configuration dictionaries for registered plugins.",
+    )
+
+    def get_plugin_config(self, plugin_key: str) -> BaseModel | None:
+        """Retrieve a plugin's configuration model instance from the registry."""
+        if plugin_key not in config_registry.all:
+            return None
+        schema = config_registry.all[plugin_key]
+
+        # Get config dict if it has been saved. Then, coerce and set defaults with Pydantic.
+        raw_data = self.plugins.get(plugin_key, {})
+        return schema.model_validate(raw_data)
 
     @field_validator("cache_root", mode="before")
     @classmethod
@@ -103,22 +223,6 @@ class Settings(BaseModel):
         return v
 
 
-class Secrets(BaseModel):
-    """Sensitive configuration for LoRe Genome."""
-    ncbi_api_key: str = Field(
-        default="",
-        description="NCBI API key to increase rate limits.",
-        json_schema_extra={"widget": "text"},
-        examples=["<a 36-digit hexadecimal string>"],
-    )
-
-    @field_validator('ncbi_api_key')
-    @classmethod
-    def no_spaces(cls, v: str) -> str:
-        if " " in v:
-            raise ValueError("NCBI API key cannot contain spaces.")
-        return v
-
 # --- Persistence functions ---
 
 def load_settings(settings_dir: Path, filename: str = DEFAULT_SETTINGS_FILE) -> Settings:
@@ -140,30 +244,4 @@ def save_settings(settings_dir: Path, settings: Settings, filename: str = DEFAUL
     path = settings_dir / filename
     data = settings.model_dump_json(indent=2)
     path.write_text(data, encoding="utf-8")
-    return path
-
-
-def load_secrets(secrets_dir: Path, filename: str = DEFAULT_SECRETS_FILE) -> Secrets:
-    """Load secrets from a JSON file in the settings directory."""
-    path = secrets_dir / filename
-    if not path.exists():
-        return Secrets()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return Secrets.model_validate(data)
-    except (json.JSONDecodeError, TypeError):
-        # If file is corrupted or invalid, return default secrets (failsafe)
-        return Secrets()
-
-
-def save_secrets(secrets_dir: Path, secrets: Secrets, filename: str = DEFAULT_SECRETS_FILE) -> Path:
-    """Save secrets to a JSON file in the settings directory."""
-    secrets_dir.mkdir(parents=True, exist_ok=True)
-    path = secrets_dir / filename
-    data = secrets.model_dump_json(indent=2)
-    path.write_text(data, encoding="utf-8")
-    try:
-        path.chmod(0o600)  # Owner read/write only
-    except OSError:  # Windows may not support chmod
-        pass
     return path

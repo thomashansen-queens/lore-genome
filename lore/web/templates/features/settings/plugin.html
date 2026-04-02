@@ -1,0 +1,31 @@
+{% extends "features/settings/layout.html" %}
+{% import "/macros/ui.html" as ui %}
+{% import "/macros/forms.html" as forms %}
+
+{% block workspace %}
+<div style="max-width: 800px;">
+    <h4>{{ active_plugin.title }}</h4>
+    
+    {% if active_plugin.description %}
+        <p class="muted">{{ active_plugin.description }}</p>
+    {% endif %}
+
+    <form action="/settings/plugins/{{ active_plugin.key }}" method="POST" class="column gapped">
+        
+        <div class="card column gapped">
+            {% for field_name, field_meta in active_plugin.fields.items() %}
+                
+                    {# Fetch the current saved value #}
+                    {% set current_val = active_plugin.instance | attr(field_name) %}
+                    
+                    {{ forms.render_field(field_name, field_meta, current_val) }}
+            {% endfor %}
+        </div>
+
+        <div class="row" style="margin-top: var(--spacing-md);">
+            <button type="submit" class="btn primary">Save {{ active_plugin.title }} Settings</button>
+        </div>
+        
+    </form>
+</div>
+{% endblock %}

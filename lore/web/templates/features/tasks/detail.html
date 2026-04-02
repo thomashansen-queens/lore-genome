@@ -3,7 +3,7 @@
 
 {% block workspace %}
 <div id="task-detail-container"
-    data-current-status="{{ task.status }}"
+    data-current-status="{{ task.status.value }}"
     class="column fill gapped">
 
     {# === Header === #}
@@ -29,14 +29,14 @@
         {# === Task actions === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
 
-            {% if task.status in ['PENDING', 'DRAFT', 'FAILED'] %}
+            {% if task.status in ['ready', 'draft', 'failed'] %}
                 <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
                     class="btn secondary">
                     ✎ Edit
                 </a>
                 <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
                     <button type="submit" class="btn primary">
-                        ▶ {{ 'Retry' if task.status == 'FAILED' else 'Run' }}
+                        ▶ {{ 'Retry' if task.status == 'failed' else 'Run' }}
                     </button>
                 </form>
             {% endif %}
@@ -53,7 +53,7 @@
     {# === Task Log === #}
     <div class="card" style="flex-shrink: 0;">
         <header>Task Log</header>
-        <div class="scroll-area" id="task-log" style="max-height: 40vh;">
+        <div class="scroll-area" id="task-log" style="max-height: 25vh;">
             {% if task_log %}
                 <pre class="small" style="white-space: pre-wrap;">{{ task_log }}</pre>
             {% else %}
@@ -62,9 +62,9 @@
         </div>
     </div>
     {% if task.error %}
-    <div class="card" style="background: var(--danger-bg);" style="flex-shrink: 0;">
+    <div class="card" style="background: var(--danger-bg); flex-shrink: 0;">
         <header style="color: var(--danger);">Error</header>
-        <div class="scroll-area" id="task-log" style="max-height: 40vh;">
+        <div class="scroll-area" id="task-error" style="max-height: 25vh;">
             <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
         </div>
     </div>
@@ -162,7 +162,7 @@
                     </div>
                 {% endfor %}
 
-                {% if not outputs and task.status == 'COMPLETED' %}
+                {% if not outputs and task.status == 'completed' %}
                     <div class="card warning">No outputs produced!</div>
                 {% elif not outputs %}
                     <div class="card muted">Outputs will appear here when the task completes.</div>
@@ -183,15 +183,23 @@
         if (!container) return false;
         
         const status = container.dataset.currentStatus;
-        return ['RUNNING', 'PENDING'].includes(status);
+        return ['running', 'ready'].includes(status);
     }
 
     function pollTaskStatus() {
         if (!hasActiveTasks()) {
             return;
         }
-        // Re-fetch current window
-        fetch(window.location.href)
+
+        const oldContainer = document.getElementById('task-detail-container');
+
+        // Check if user is typing in the editable header to avoid clobbering input
+        if (oldContainer && oldContainer.contains(document.activeElement)) {
+            return;
+        }
+
+        // Re-fetch current window (skip cache to ensure we get latest status)
+        fetch(window.location.href, { cache: 'no-store' } )
             .then(response => response.text())
             .then(html => {
                 // Parse the response into a virtual DOM
@@ -200,7 +208,6 @@
                 
                 // Pluck out the updated container
                 const newContainer = doc.getElementById('task-detail-container');
-                const oldContainer = document.getElementById('task-detail-container');
                 
                 if (newContainer && oldContainer) {
                     // Surgical DOM swap

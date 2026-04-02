@@ -4,7 +4,7 @@ Tests for ExecutionContext
 from types import GeneratorType
 import pytest
 
-from lore.core.execution.resolver import _materialize_single_artifact
+from lore.core.execution.materializer import _materialize_single_artifact
 from lore.core.tasks import Materialization
 
 

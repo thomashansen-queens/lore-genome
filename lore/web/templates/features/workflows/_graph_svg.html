@@ -1,0 +1,71 @@
+<svg width="{{ d.canvas_width }}" height="{{ d.canvas_height }}"
+    style="display: block; min-width: {{ d.canvas_width }}px; min-height: {{ d.canvas_height }}px;"
+    xmlns="http://www.w3.org/2000/svg">
+
+    {# 2. Definitions (Arrowheads) #}
+    <defs>
+        <marker id="{{ marker_id }}"
+                markerWidth="{{ arrow_width }}"
+                markerHeight="{{ arrow_height }}"
+                refX="{{ arrow_width / 2 }}" refY="{{ arrow_height / 2 }}"
+                orient="auto">
+            <polygon points="0 0, {{ arrow_width }} {{ arrow_height / 2 }}, 0 {{ arrow_height }}"
+                        fill="var(--primary)" />
+        </marker>
+    </defs>
+
+    {# 3. Draw Edges (Underneath the nodes) #}
+    {% for edge in d.edges %}
+        <path d="{{ edge.path_d }}" 
+            fill="none" 
+            stroke="var(--primary)" 
+            stroke-width="2.5" 
+            marker-end="url(#{{ marker_id }})"/>
+    {% endfor %}
+
+    {# 4. Draw Nodes (On top of edges) #}
+    {% for node in d.nodes %}
+        {# A. Only wrap real tasks in the clickable anchor tag #}
+        
+        {% if not node.is_virtual %}
+        <a href="/workflows/{{ workflow.id }}/steps/{{ node.id }}" style="cursor: pointer;">
+        {% endif %}
+        
+            <g class="node-group" transform="translate({{ node.x }}, {{ node.y }})">
+
+                {# B. User input virtual nodes #}
+                {% if node.is_virtual %}
+                    <rect width="{{ node.width }}" height="{{ node.height }}"
+                          rx="{{ node.height / 2 }}" ry="{{ node.height / 2 }}"
+                          fill="var(--info-bg)"/>
+                    <text x="{{ node.width / 2 }}" y="{{ (node.height / 2) + 4 }}"
+                          text-anchor="middle" font-family="sans-serif" font-size="12"
+                          fill="var(--info)"
+                          style="pointer-events: none;">
+                        {{ node.label | truncate(15) }}
+                    </text>
+                
+                {# C. Task nodes #}
+                {% else %}
+                    <rect class="node-rect" width="{{ node.width }}" height="{{ node.height }}" 
+                    rx="var(--radius-sm)" ry="var(--radius-sm)" 
+                    fill="white" 
+                    stroke="var(--border)" stroke-width="1" 
+                    style="filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)); transition: fill 0.2s ease, stroke 0.2s ease;"/>
+                    <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
+                        {{ node.label | truncate(25) }}
+                    </text>
+                    
+                    <text x="12" y="44" font-family="sans-serif" font-size="11" fill="var(--text-muted)">
+                        {{ node.payload.task_key | replace('_', ' ') | title }}
+                    </text>
+                {% endif %}
+            </g>
+            
+
+        {% if not node.is_virtual %}
+        </a>
+        {% endif %}
+    {% endfor %}
+
+</svg>

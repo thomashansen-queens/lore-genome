@@ -10,6 +10,7 @@ import csv
 import hashlib
 import itertools
 import json
+import logging
 from typing import Any, Callable, ClassVar, Iterator
 from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
@@ -18,6 +19,8 @@ from lore.core.artifacts import Artifact
 
 if TYPE_CHECKING:
     import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class AdapterPreview(BaseModel):
@@ -161,7 +164,8 @@ class TableAdapter(BaseAdapter):
     """
     The bridge between a raw file on disk and a usable tabular Python object.
     Native support for JSON, JSONL, CSV, and TSV.
-    # TODO: Refactor TableAdapter to separate parse() from adapt(); eliminate Refused Bequest smell seen in e.g. FastaAdapter
+    TODO: Refactor TableAdapter to separate parse() from adapt(); eliminate Refused Bequest
+    smell seen in e.g. FastaAdapter
     """
     accepted_formats: ClassVar[set[str]] = {"json", "ndjson", "jsonl", "csv", "tsv"}
     accepted_types: ClassVar[set[str]] = {"*"}  # e.g. {"ncbi_genome_report", "protein_sequence"}
@@ -329,8 +333,11 @@ class TableAdapter(BaseAdapter):
 
         if sort_by and isinstance(result.data, list):
             sort_asc = view_state.get("sort_asc", True)
+            # Sort: Pushes None to end, strinigifies values to prevent type errors
             result.data.sort(
-                key=lambda r: (r.get(sort_by) is None, r.get(sort_by)),  # push None to end
+                key=lambda r: (
+                    1 if r.get(sort_by) is None else 0,
+                    str(r.get(sort_by)).lower() if r.get(sort_by) is not None else ""),
                 reverse=not sort_asc,
             )
 
@@ -439,12 +446,36 @@ class AdapterRegistry:
             raise KeyError(f"Adapter with key '{key}' not found.")
         return self._adapters[key]
 
+    def __call__[C: type[BaseAdapter]](self, cls: None = None) -> Callable[[C], C]:
+        """
+        Class decorator for registering Adapters.
+        Usage:
+            @adapter_registry
+            class MyAdapter(BaseAdapter):
+                ...
+        """
+        def wrapper(adapter_cls: C) -> C:
+            if not issubclass(adapter_cls, BaseAdapter):
+                raise TypeError(
+                    f"Cannot register {adapter_cls.__name__}. "
+                    f"Adapters must inherit from BaseAdapter."
+                )
+            # Instantiate the adapter and register the instance
+            self.register(adapter_cls())
+            return adapter_cls
+
+        # If used as a naked decorator (@adapter_registry) without arguments (@adapter_registry())
+        if cls is None:
+            return wrapper
+        return wrapper(cls)
+
     def register(self, adapter: BaseAdapter) -> None:
         """Should be called at app startup to register new Adapters"""
-        if not any(adapter.accepted_types or adapter.accepted_formats):
+        if not (adapter.accepted_types or adapter.accepted_formats):
             raise ValueError(f"Adapter {adapter} accepts no types nor formats")
         if adapter.__class__.__name__ in self._adapters:
-            raise ValueError(f"Adapter with key '{adapter.__class__.__name__}' is already registered.")
+            logging.debug(f"Overwriting existing adapter with key '{adapter.__class__.__name__}'")
+            # raise ValueError(f"Adapter with key '{adapter.__class__.__name__}' is already registered.")
         self._adapters[adapter.__class__.__name__] = adapter
 
     def get(self, key: str) -> BaseAdapter | None:
@@ -491,6 +522,8 @@ class AdapterRegistry:
         matches.sort(key=sort_score, reverse=True)
         return matches
 
+
+# Instantiate the global registry and register base adapters.
 adapter_registry = AdapterRegistry()
 
 adapter_registry.register(RawAdapter())

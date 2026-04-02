@@ -10,14 +10,14 @@
         <h4>
             {{ artifact.name or artifact.path.split('/')[-1] }} (Explore)
         </h4>
-        <div class="muted small mono">
-            Adapter: <span class="badge small muted">{{ adapter.name }}</span> &bull; Type: {{ artifact.data_type }}
+        <div class="muted small mono" style="margin-bottom: var(--spacing-sm);">
+            Adapter: {{ adapter.name }} &bull; Type: {{ artifact.data_type }} &bull; Size: {{ artifact.display_size }}
         </div>
 
         {# === Action bar === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
-            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}" class="btn secondary">
-                ⬅ Back to Overview
+            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/details" class="btn secondary">
+                🛈 View details
             </a>
             <button popovertarget="export-menu" class="btn primary">
                 ⬇ Export ▾
@@ -57,7 +57,7 @@
 
     {# === Viewer Card === #}
     <div class="card column" id="explore-card"
-         style="margin-top: var(--spacing-md); overflow: auto; position: relative;"
+         style="margin-top: var(--spacing-sm); overflow: auto; position: relative;"
          data-session-id="{{ session.id }}"
          data-artifact-id="{{ artifact.id }}">
 
@@ -67,10 +67,15 @@
 
         {% if view_mode == 'table' %}
         {# === Data Controls (table only) === #}
-        <div class="row">
+        <div class="row gapped">
             <input type="text" id="query-input"
                    placeholder="pandas query e.g. symbol == 'ctxA' and name.str.contains('toxin')"
                    style="flex: 1; font-family: var(--font-mono); font-size: 0.85rem;" />
+            
+            <label class="checkbox" style="white-space: nowrap; margin: 0;">
+                <input type="checkbox" id="regex-toggle"> Regex
+            </label>
+            
             <div id="row-counter" class="badge small muted">
                 {{ metadata.get('total_rows', data | length) }} rows
             </div>
@@ -109,8 +114,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const card         = document.getElementById('explore-card');
     const sessionId    = card.dataset.sessionId;
     const artifactId   = card.dataset.artifactId;
+
     const viewerTarget = document.getElementById('viewer-target');
     const queryInput   = document.getElementById('query-input');
+    const regexToggle  = document.getElementById('regex-toggle');
     const rowCounter   = document.getElementById('row-counter');
     const loader       = document.getElementById('preview-loader');
 
@@ -121,11 +128,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let viewState = { sort_asc: true };
     let debounceTimer;
     let abortController = null;
+    let lastPayloadStr = null;
 
     // --- Payload Generator ---
     function getPayload() {
         return {
             query: queryInput.value,
+            regex: regexToggle.checked,
             adapter_key: currentAdapter,
             adapter_config: {
                 view_state: viewState,
@@ -148,14 +157,22 @@ document.addEventListener('DOMContentLoaded', function() {
         fetchData();
     });
 
-    // --- Filter: query input (debounced) ---
+    // --- Auto-fetch (debounced) ---
     queryInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(fetchData, 500);
+    });
+    regexToggle.addEventListener('change', function() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(fetchData, 500);
     });
 
     // --- Fetch Data Preview ---
     async function fetchData() {
+        const payloadStr = JSON.stringify(getPayload());
+        if (payloadStr === lastPayloadStr) return;
+        lastPayloadStr = payloadStr;
+
         if (abortController) abortController.abort();
         abortController = new AbortController();
 
@@ -206,7 +223,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify(getPayload())
             });
 
-            if (!response.ok) throw new Error("Export failed");
+            if (!response.ok) {
+                let errorMsg = "Export failed";
+                try {
+                    const errData = await response.json();
+                    errorMsg = errData.detail || errData.message || errorMsg;
+                } catch (parseErr) {
+                    // Ignore JSON parse errors and use generic message
+                }
+                throw new Error(errorMsg);
+            }
 
             // Convert response to a blob and trigger a hidden download link
             const blob = await response.blob();

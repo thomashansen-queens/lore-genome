@@ -5,10 +5,12 @@ Core task management, data models, and the global registry.
 from .models import (
     Task, 
     TaskDefinition, 
-    ExecConfig, 
+    TaskConfig, 
     AdapterConfig, 
     ExecutionConfig,
     TaskResults,
+    TaskStatus,
+    TaskIntegrity,
 )
 
 # 2. Registry
@@ -18,7 +20,7 @@ from .registry import (
 )
 
 # 3. DSL Primitives (Assuming these live in your internal dsl.py)
-from .dsl import (
+from .parameters import (
     TaskInput,
     ValueInput,
     ArtifactInput,
@@ -33,10 +35,12 @@ __all__ = [
     # Models
     "Task",
     "TaskDefinition",
-    "ExecConfig",
+    "TaskConfig",
     "AdapterConfig",
     "ExecutionConfig",
     "TaskResults",
+    "TaskStatus",
+    "TaskIntegrity",
 
     # Registry
     "TaskRegistry",

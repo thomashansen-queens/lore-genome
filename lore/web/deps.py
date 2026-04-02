@@ -10,7 +10,7 @@ def my_route(rt: RT):
     # 'rt' is automatically provided and typed as a Runtime instance
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Generator
@@ -21,7 +21,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from lore.core.runtime import Runtime
-from lore.core.session import Session
+from lore.core.sessions import Session
 from lore.core.tasks import task_registry
 from lore.core.adapters import adapter_registry
 
@@ -33,16 +33,19 @@ templates.env.globals["task_registry"] = task_registry.all
 templates.env.globals["adapter_registry"] = adapter_registry
 templates.env.globals["version"] = version("lore-genome")
 
+
 # --- Runtime Dependency injection ---
 def get_runtime(request: Request) -> Runtime:
     """Dependency to retrieve the Runtime from the FastAPI request state."""
     return request.app.state.rt
 
+
 # type alias for dependency injection
 RT = Annotated[Runtime, Depends(get_runtime)]
 
+
 # --- Session Dependency injection ---
-def get_active_session(session_id: str, rt: RT) -> Generator['Session', None, None]:
+def get_active_session(session_id: str, rt: RT) -> Generator["Session", None, None]:
     """
     Dependency that finds a session, opens it (Context Manager), yields it,
     and handles 404s if it doesn't exist.
@@ -54,8 +57,10 @@ def get_active_session(session_id: str, rt: RT) -> Generator['Session', None, No
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
 
+
 # Type alias
-ActiveSession = Annotated['Session', Depends(get_active_session)]
+ActiveSession = Annotated["Session", Depends(get_active_session)]
+
 
 def get_read_only_session(session_id: str, rt: RT) -> Generator["Session", None, None]:
     """
@@ -68,12 +73,14 @@ def get_read_only_session(session_id: str, rt: RT) -> Generator["Session", None,
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
 
+
 # Type alias
 ReadOnlySession = Annotated["Session", Depends(get_read_only_session)]
 
 # --- Page context collector ---
 
 Crumb = tuple[str, str | None]
+
 
 @dataclass
 class PageContext:
@@ -82,9 +89,12 @@ class PageContext:
     every HTML page.
     FastAPI will automatically populates these from the Request/Query Params.
     """
+
     request: Request
     message: str | None = None  # query param: ?message=...
     message_type: str = "info"  # query param: ?message_type=...
+    messages: list[tuple[str, str]] = field(init=False)
+    breadcrumbs: list[Crumb] = field(init=False)
 
     def __post_init__(self):
         """
@@ -97,7 +107,7 @@ class PageContext:
             self.messages.append((self.message_type, self.message))
 
         # Start with a blank trail of crumbs
-        self.breadcrumbs: list[Crumb] = [("Home", "/")]
+        self.breadcrumbs = [("Home", "/")]
 
     def generate_breadcrumbs(self, label_map: dict[str, str | None] | None = None) -> list[Crumb]:
         """
@@ -115,7 +125,7 @@ class PageContext:
 
         for i, segment in enumerate(path_segments):
             current_url += f"/{segment}"
-            is_last = (i == len(path_segments) - 1)
+            is_last = i == len(path_segments) - 1
 
             # Apply label map; default to capitalized segment
             if segment in label_map:

@@ -11,9 +11,19 @@
         
         <hr />
         
+        <label class="strong">Execute</label>
+        <form action ="/sessions/{{ session.id }}/execute" method="POST"
+            style="display: flex; flex-direction: column; min-height: 0;">
+            <button type="submit" class="btn primary fullwidth center" {% if not tasks %}disabled{% endif %}>
+                ➡ Run all Tasks in order
+            </button>
+        </form>
+
+        <hr />
+        
         <label class="strong">Tasks</label>
 
-        <a href="/sessions/{{ session.id }}/tasks/new" class="btn primary fullwidth center">
+        <a href="/sessions/{{ session.id }}/tasks/new" class="btn secondary fullwidth center">
             🛠 New Task
         </a>
 
@@ -21,10 +31,24 @@
 
         <label class="strong">Artifacts</label>
 
-        <a href="/sessions/{{ session.id }}/artifacts/" class="btn primary fullwidth center">
+        <a href="/sessions/{{ session.id }}/artifacts/" class="btn secondary fullwidth center">
             🠩 Manage Artifacts
         </a>
 
+        <hr />
+
+        <label class="strong">Workflows</label>
+        <form action ="/sessions/{{ session.id }}/extract-workflow" method="POST"
+            onsubmit="let n = prompt('Name this Workflow template:', '{{ session.name }} Pipeline'); if(n){ this.workflow_name.value = n; return true; } return false;"
+            style="display: flex; flex-direction: column; min-height: 0;">
+            <input type="hidden" name="workflow_name" value="">
+            <button type="submit" class="btn secondary fullwidth center" {% if not tasks %}disabled{% endif %}>
+                🖫 Extract to Workflow
+            </button>
+        </form>
+
+        <hr />
+    
     </aside>
     
     {% block workspace %}{% endblock %}

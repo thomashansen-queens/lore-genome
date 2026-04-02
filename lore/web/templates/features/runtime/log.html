@@ -1,0 +1,47 @@
+{% extends "/features/runtime/layout.html" %}
+
+{% block workspace %}
+<div class="card" style="flex: 1;">
+    <h4>Runtime Log</h4>
+    <div class="scroll-area" id="task-log">
+        {% if log %}
+            <pre class="small" style="white-space: pre;">{{ log }}</pre>
+        {% else %}
+            <span class="muted small">No log output yet.</span>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-scroll to the bottom of the log
+    const logContainer = document.getElementById('task-log');
+    const logContent = document.getElementById('log-content');
+
+    if (logContainer) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function pollLog() {
+        if (!logContainer || !logContent) return;
+
+        // Check if user is near the bottom (newest lines) of the log
+        const isNearBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 50;
+
+        fetch(`/runtime/log/poll`, { cache: 'no-store' })
+            .then(response => response.text())
+            .then(text => {
+                // Text swap is safer/faster than innerHTML
+                logContent.textContent = text;
+                if (isNearBottom) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            })
+            .catch(err => console.error("Error polling log:", err));
+    }
+
+    // Poll log every 2 seconds
+    setInterval(pollLog, 2000);
+</script>
+{% endblock %}

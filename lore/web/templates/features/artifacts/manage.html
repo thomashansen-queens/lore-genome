@@ -13,9 +13,10 @@
         <div class="card" style="flex: 1;">
             <h4>Add Artifacts</h4>
             <p class="muted">Drag files here, or add a remote reference.</p>
-            <div id="dropzone" style="border: 2px dashed var(--border); padding: var(--spacing-lg);">
+            <div id="dropzone"
+                 style="display: flex; flex-direction: column; border: 2px dashed var(--border); padding: var(--spacing-lg);">
                 <input type="file" id="file-input" multiple style="display: none;" />
-                <button class="btn primary" onclick="document.getElementById('file-input').click();">
+                <button class="btn primary fullwidth center" onclick="document.getElementById('file-input').click();">
                     🖿 Select Files
                 </button>
                 <div class="muted small" style="margin-top: var(--spacing-sm);">

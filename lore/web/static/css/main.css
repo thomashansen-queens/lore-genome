@@ -57,6 +57,12 @@ body, html {
     overflow: hidden; /* no global scrolling! flexbox with scrolling containers */
 }
 
+code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    white-space: pre-wrap;
+}
+
 main {
     display: flex;
     flex: 1;
@@ -156,6 +162,7 @@ button:disabled {
       box-shadow: var(--shadow-lg);
       min-width: 180px;
       padding: var(--spacing-xs) 0;
+      z-index: 100;
 
       & a, & button, & .btn {
           color: var(--text-main);
@@ -268,7 +275,7 @@ button:disabled {
             border-color: var(--primary);
         }
     }
-    header {
+    h4 {
         font-weight: 600;
         margin-bottom: var(--spacing-sm);
     }
@@ -297,7 +304,7 @@ button:disabled {
     line-height: 1;
     white-space: nowrap;
     gap: 0.5rem;
-    transition: background-color border-color box-shadow 0.2s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     font-family: inherit;
     font-size: 1rem;
 }
@@ -509,3 +516,9 @@ table {
 
 .push-right { margin-left: auto; }
 .push-left  { margin-right: auto; }
+
+/* Scrollbars styling (WebKit, not universally supported) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-sm); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

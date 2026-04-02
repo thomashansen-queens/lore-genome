@@ -8,10 +8,10 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 
-from lore.core.utils import clean
+from lore.core.utils import auto_increment, clean, slugify
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -27,15 +27,10 @@ def _build_push_task_targets(artifacts: list) -> dict[str, list[tuple[str, objec
 # --- Dashboards ---
 
 @router.get("/", response_class=HTMLResponse)
-def list_sessions(rt: RT, ctx: PageContext = Depends()):
-    """Render the Sessions dashboard."""
-    sessions = rt.list_sessions()  # List of sessions as dictionaries
+def list_sessions(ctx: PageContext = Depends()):
+    """Redirect to the dashboard page for now."""
+    return ctx.redirect("/dashboard")
 
-    ctx.generate_breadcrumbs()
-    return templates.TemplateResponse(
-        "features/sessions/sessions.html",
-        ctx.render(runtime=rt, sessions=sessions),
-    )
 
 @router.post("/new", response_class=RedirectResponse)
 def create_session_action(rt: RT, ctx: PageContext = Depends()):
@@ -44,8 +39,52 @@ def create_session_action(rt: RT, ctx: PageContext = Depends()):
     return ctx.redirect(f"/sessions/{session_obj.id}")
 
 
+@router.post("/import")
+async def api_import_session(
+    rt: RT,
+    ctx: PageContext = Depends(),
+    file: UploadFile = File(...)
+):
+    """Uploads and ingests a zipped session archive."""
+    if not file.filename:
+        return ctx.redirect_back(
+            fallback_url="/sessions",
+            message="No file provided.",
+            message_type="error",
+        )
+    if not file.filename.endswith('.zip'):
+        return ctx.redirect_back(
+            fallback_url="/sessions",
+            message="File must be a .zip archive.",
+            message_type="error",
+        )
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = Path(tmp.name)
+
+        try:
+            new_session_id = rt.import_session(tmp_path)
+            return ctx.redirect(
+                url=f"/sessions/{new_session_id}",
+                message="Session imported successfully!",
+                message_type="success",
+            )
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    except Exception as e:
+        return ctx.redirect_back(
+            fallback_url="/sessions",
+            message=f"Error importing session: {str(e)}",
+            message_type="error",
+        )
+
+
 @router.get("/{session_id}", response_class=HTMLResponse)
-def show_session(s: ActiveSession, ctx: PageContext = Depends()):
+def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
     """Session dashboard."""
     tasks = s.list_tasks(reverse=True)
     artifacts = s.list_artifacts(reverse=True)
@@ -61,6 +100,7 @@ def show_session(s: ActiveSession, ctx: PageContext = Depends()):
             push_task_targets=push_task_targets,
         )
     )
+
 
 @router.post("/{session_id}/clone", response_class=RedirectResponse)
 def clone_session_action(rt: RT, session_id: str, ctx: PageContext = Depends()):
@@ -96,9 +136,28 @@ def delete_session(rt: RT, session_id: str, ctx: PageContext = Depends()):
         return ctx.redirect("/sessions", message=msg, message_type=msg_type)
 
     except FileNotFoundError:
-        return ctx.redirect_back(fallback_url="/sessions", message="Session not found", message_type="warning")
+        return ctx.redirect_back(
+            fallback_url="/sessions",
+            message="Session not found",
+            message_type="warning",
+        )
     except RuntimeError as e:  # Locked/Running a background task
         return ctx.redirect_back(fallback_url="/sessions", message=str(e), message_type="error")
+
+
+@router.post("/{session_id}/execute", response_class=RedirectResponse)
+def execute_session_action(
+    session_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Trigger the execution of all Tasks sequentially in a Session."""
+    rt.execute_session(session_id)
+    ctx.add_msg(
+        "Execution Cascade started in background. Monitor progress on the Session page.",
+        "success",
+    )
+    return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
 
 
 @router.get("/{session_id}/export")
@@ -112,6 +171,7 @@ async def api_export_session(
     Downloads the session as a zip file.
     TODO: This is rough. Add better logic, take file handling out of the router
     """
+    tmp_dir = None
     try:
         # Temp dir to hold the zip file
         temp_dir = Path(tempfile.mkdtemp())
@@ -128,35 +188,14 @@ async def api_export_session(
             media_type="application/zip",
         )
     except Exception as e:
-        return ctx.redirect_back("/sessions", message=f"Error exporting session: {str(e)}", message_type="error")
+        if temp_dir and temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-
-@router.post("/import")
-async def api_import_session(
-    rt: RT,
-    ctx: PageContext = Depends(),
-    file: UploadFile = File(...)
-):
-    """Uploads and ingests a zipped session archive."""
-    if not file.filename:
-        return ctx.redirect_back("/sessions", message="No file provided.", message_type="error")
-    if not file.filename.endswith('.zip'):
-        return ctx.redirect_back("/sessions", message="File must be a .zip archive.", message_type="error")
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = Path(tmp.name)
-
-        try:
-            new_session_id = rt.import_session(tmp_path)
-            return ctx.redirect(f"/sessions/{new_session_id}", message="Session imported successfully!", message_type="success")
-        finally:
-            if tmp_path.exists():
-                tmp_path.unlink()
-
-    except Exception as e:
-        return ctx.redirect_back("/sessions", message=f"Error importing session: {str(e)}", message_type="error")
+        return ctx.redirect_back(
+            "/sessions",
+            message=f"Error exporting session: {str(e)}",
+            message_type="error",
+        )
 
 # --- AJAX for live updates ---
 
@@ -194,3 +233,25 @@ def poll_artifacts(s: ReadOnlySession, ctx: PageContext = Depends()):
             push_task_targets=push_task_targets,
         )
     )
+
+# --- Session-Workflow endpoints ---
+
+@router.post("/{session_id}/extract-workflow", response_class=RedirectResponse)
+def extract_workflow_action(
+    s: ReadOnlySession,
+    rt: RT,
+    workflow_name: str = Form(...),
+    ctx: PageContext = Depends(),
+):
+    """
+    Action to extract a Session to a reusable Workflow template.
+    Redirects to the new Workflow's detail page.
+    """
+    workflows = [w["id"] for w in rt.workflows.list_workflows()]
+    new_workflow_id = auto_increment(slugify(workflow_name), existing=workflows)
+
+    workflow = rt.workflows.extract_from_session(s, new_workflow_id)
+    rt.workflows.save_workflow(workflow)
+
+    ctx.add_msg(f"Session '{s.name}' saved as workflow '{workflow.name}'.", "success")
+    return ctx.redirect(f"/workflows/{workflow.id}")

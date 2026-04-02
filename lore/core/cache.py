@@ -59,7 +59,10 @@ class TieredCache:
         if isinstance(obj, (list, tuple, set)):
             return sys.getsizeof(obj) + sum(sys.getsizeof(i) for i in obj)
         if isinstance(obj, dict):
-            return sys.getsizeof(obj) + sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in obj.items())
+            return (
+                sys.getsizeof(obj) +
+                sum(sys.getsizeof(k) + sys.getsizeof(v) for k, v in obj.items())
+            )
 
         # 3. Fallback for primitives
         return sys.getsizeof(obj)
@@ -71,7 +74,16 @@ class TieredCache:
             # produces same regardless of dict key order
             serialized = json.dumps(kwargs, sort_keys=True)
         except TypeError as e:
-            self.logger.warning("String-serializing uncacheable kwargs for %s: %s", prefix, e)
+            self.logger.warning(
+                "Cache key generation warning for '%s': Kwargs are not JSON-serializable. "
+                "Use the `ignore` parameter in @memoize to exclude unhashable objects. Falling "
+                "back to str().\nExplanation: If you are passing an object that has no __str__ or "
+                "__repr__, this will turn it into e.g. <__main__.MyClass object at 0x1a2b3c4d>, "
+                "where the memory address will change each time, negating the cache."
+                "\nError details: %s",
+                prefix,
+                e,
+            )
             serialized = str(kwargs)
 
         key_raw = f"{session_id}_{prefix}_{serialized}"
@@ -91,8 +103,6 @@ class TieredCache:
             self._current_bytes -= evicted_size
             self.logger.debug("L1 cache evicted '%s' freeing %d bytes",
                               evicted_key, evicted_size)
-
-        return result
 
     def get_or_compute(
         self,
@@ -287,8 +297,10 @@ def memoize(prefix: str | None = None, ignore: str | list[str] | None = None):
     The decorated function MUST accept `ctx` as its first argument.
 
     Args:
-        prefix: A string prefix to namespace this cache entry. If None, the function name will be used.
-        ignore: A list of kwarg names to exclude from hashing. Useful for hashable args (e.g. file handles, DataFrames).
+        `prefix`: A string prefix to namespace this cache entry. If None, the function
+        name will be used.
+        `ignore`: A list of kwarg names to exclude from hashing. Useful for hashable 
+        args (e.g. file handles, DataFrames).
 
     Usage:
         @memoize(prefix="my_helper", ignore="arg2")
