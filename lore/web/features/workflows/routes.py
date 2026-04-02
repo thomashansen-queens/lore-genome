@@ -63,13 +63,14 @@ def view_workflow(workflow_id: str, rt: RT, ctx: PageContext = Depends()):
     
     ctx.generate_breadcrumbs({workflow_id: workflow.name})
     return templates.TemplateResponse(
-        "features/workflows/detail.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/workflows/detail.html",
+        context=ctx.render(
             workflow=workflow,
             task_registry=task_registry,
             diagram_tb=diagram_tb,
             diagram_lr=diagram_lr,
-        )
+        ),
     )
 
 
@@ -272,14 +273,15 @@ def view_workflow_step(workflow_id: str, step_id: str, rt: RT, ctx: PageContext 
         f"{workflow_id}/steps/{step_id}": task_def.name,
     })
     return templates.TemplateResponse(
-        "features/workflows/step.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/workflows/step.html",
+        context=ctx.render(
             workflow=workflow,
             step=step,
             task_def=task_def,
             ui_config=ui_config,
             ui_schemas=ui_schemas,
-        )
+        ),
     )
 
 

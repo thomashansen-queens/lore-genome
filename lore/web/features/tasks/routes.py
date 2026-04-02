@@ -39,8 +39,9 @@ async def list_available_tasks(
 
     ctx.generate_breadcrumbs({s.id: s.name, "catalogue": "Task Catalogue"})
     return templates.TemplateResponse(
-        "features/tasks/catalogue.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/tasks/catalogue.html",
+        context=ctx.render(
             session=s,
             tasks=available_tasks,
         )
@@ -94,8 +95,9 @@ async def configure_new_task(
 
     ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
     return templates.TemplateResponse(
-        "features/tasks/configure.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/tasks/configure.html",
+        context=ctx.render(
             session=s,
             task_def=task_def,
             prefill_name=prefill_name,
@@ -131,8 +133,9 @@ def view_task(
 
     ctx.generate_breadcrumbs({s.id: s.name, task_id: task.name or "Task Details"})
     return templates.TemplateResponse(
-        "/features/tasks/detail.html",
-        ctx.render(
+        request=ctx.request,
+        name="/features/tasks/detail.html",
+        context=ctx.render(
             session=s,
             task_def=task_def,
             task=task,

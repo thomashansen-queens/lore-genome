@@ -45,10 +45,9 @@ def view_log(rt: RT, ctx: PageContext = Depends()):
 
     ctx.generate_breadcrumbs({"runtime": "Runtime", "log": "Log"})
     return templates.TemplateResponse(
-        "features/runtime/log.html",
-        ctx.render(
-            log=runtime_log,
-        ),
+        request=ctx.request,
+        name="features/runtime/log.html",
+        context=ctx.render(log=runtime_log),
     )
 
 
@@ -82,8 +81,9 @@ def view_task_registry(rt: RT, ctx: PageContext = Depends()):
     )
     ctx.generate_breadcrumbs({"runtime": "Runtime", "tasks": "Task registry"})
     return templates.TemplateResponse(
-        "features/runtime/task_registry.html",
-        ctx.render(task_definitions=sorted_tasks),
+        request=ctx.request,
+        name="features/runtime/task_registry.html",
+        context=ctx.render(task_definitions=sorted_tasks),
     )
 
 
@@ -98,8 +98,9 @@ def view_adapter_registry(rt: RT, ctx: PageContext = Depends()):
     )
     ctx.generate_breadcrumbs({"runtime": "Runtime", "adapters": "Adapter registry"})
     return templates.TemplateResponse(
-        "features/runtime/adapter_registry.html",
-        ctx.render(adapters=sorted_adapters),
+        request=ctx.request,
+        name="features/runtime/adapter_registry.html",
+        context=ctx.render(adapters=sorted_adapters),
     )
 
 
@@ -170,8 +171,9 @@ def view_cache_overview(rt: RT, ctx: PageContext = Depends()):
         item["modified"] = datetime.fromtimestamp(item["last_modified"]).strftime("%Y-%m-%d %H:%M:%S")
 
     return templates.TemplateResponse(
-        "features/runtime/cache.html",
-        ctx.render(stats=stats, items=items),
+        request=ctx.request,
+        name="features/runtime/cache.html",
+        context=ctx.render(stats=stats, items=items),
     )
 
 
@@ -199,8 +201,13 @@ def view_cache_item(key: str, rt: RT, ctx: PageContext = Depends(), inspect: boo
     pickle_fields = _build_pickle_fields(pickle_info) if pickle_info and not pickle_info.get("error") else None
 
     return templates.TemplateResponse(
-        "features/runtime/cache_detail.html",
-        ctx.render(item=item, pickle_info=pickle_info, pickle_fields=pickle_fields),
+        request=ctx.request,
+        name="features/runtime/cache_detail.html",
+        context=ctx.render(
+            item=item,
+            pickle_info=pickle_info,
+            pickle_fields=pickle_fields,
+        ),
     )
 
 

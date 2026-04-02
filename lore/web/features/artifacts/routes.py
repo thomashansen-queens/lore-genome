@@ -31,8 +31,9 @@ async def view_artifact_manager(
     """
     ctx.generate_breadcrumbs({s.id: s.name, "artifacts": "Artifacts"})
     return templates.TemplateResponse(
-        "features/artifacts/manage.html",
-        ctx.render(session=s, artifacts=s.artifacts)
+        request=ctx.request,
+        name="features/artifacts/manage.html",
+        context=ctx.render(session=s, artifacts=s.artifacts),
     )
 
 
@@ -142,8 +143,9 @@ def view_artifact_details(
 
     ctx.generate_breadcrumbs({s.id: s.name, artifact_id: artifact.ui_name})
     return templates.TemplateResponse(
-        "features/artifacts/detail.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/artifacts/detail.html",
+        context=ctx.render(
             session=s,
             artifact=artifact,
             parent_task=parent_task,
@@ -195,8 +197,9 @@ async def view_artifact_explore(
         artifact_id: artifact.ui_name
     })
     return templates.TemplateResponse(
-        "features/artifacts/explore.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/artifacts/explore.html",
+        context=ctx.render(
             session=s,
             artifact=artifact,
             adapter=adapter,

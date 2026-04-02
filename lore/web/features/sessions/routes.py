@@ -92,13 +92,14 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
 
     ctx.generate_breadcrumbs({s.id: s.name})
     return templates.TemplateResponse(
-        "/features/sessions/detail.html",
-        ctx.render(
+        request=ctx.request,
+        name="/features/sessions/detail.html",
+        context=ctx.render(
             session=s,
             tasks=tasks,
             artifacts=artifacts,
             push_task_targets=push_task_targets,
-        )
+        ),
     )
 
 
@@ -165,7 +166,7 @@ async def api_export_session(
     session_id: str, 
     background_tasks: BackgroundTasks,
     rt: RT,
-    ctx: PageContext = Depends()
+    ctx: PageContext = Depends(),
 ):
     """
     Downloads the session as a zip file.
@@ -208,8 +209,9 @@ def poll_tasks(s: ReadOnlySession, ctx: PageContext = Depends()):
     tasks = s.list_tasks(reverse=True)
 
     return templates.TemplateResponse(
-        "/partials/task_list.html",
-        ctx.render(
+        request=ctx.request,
+        name="/partials/task_list.html",
+        context=ctx.render(
             session=s,
             tasks=tasks,
         )
@@ -226,8 +228,9 @@ def poll_artifacts(s: ReadOnlySession, ctx: PageContext = Depends()):
     push_task_targets = _build_push_task_targets(artifacts)
 
     return templates.TemplateResponse(
-        "/partials/artifact_list.html",
-        ctx.render(
+        request=ctx.request,
+        name="/partials/artifact_list.html",
+        context=ctx.render(
             session=s,
             artifacts=artifacts,
             push_task_targets=push_task_targets,

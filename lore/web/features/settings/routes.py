@@ -40,8 +40,9 @@ def view_core_settings(
 
     ctx.generate_breadcrumbs({"settings": "Settings", "core": "Core"})
     return templates.TemplateResponse(
-        "features/settings/core.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/settings/core.html",
+        context=ctx.render(
             settings=rt.settings,
             registered_plugins=plugins_list,
             core_fields=core_fields,
@@ -117,8 +118,9 @@ def view_plugin_settings(
     }
 
     return templates.TemplateResponse(
-        "features/settings/plugin.html",
-        ctx.render(
+        request=ctx.request,
+        name="features/settings/plugin.html",
+        context=ctx.render(
             registered_plugins=plugins_list,
             active_plugin=active_plugin,
         )
