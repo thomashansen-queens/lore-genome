@@ -47,7 +47,11 @@ lore ui
 * **Workflows**: Once you have a set of tasks in a session, you can export it to a Workflow template for re-use. You can set independent variables in Workflows to speed up customization of subsequent runs.
 
 ## External tools
-- Some analysis tasks may require local third-party tools (currently only [MMSeqs2](https://github.com/soedinglab/MMseqs2))
+Some analysis tasks may require local third-party tools (currently only [MMseqs2](https://github.com/soedinglab/MMseqs2)).
+
+Paths to external tools can be set in the Settings page. You can add them to your system `PATH` or copy-and-paste the direct path to the tool's binary/executable, e.g.:
+* Mac/Linux: `/Users/My Name/mmseqs/bin/mmseqs`
+* Windows: `C:\Users\My Name\mmseqs\bin\mmseqs.exe`
 
 ## How to cite
 If you use LoRē in research, cite:

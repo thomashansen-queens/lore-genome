@@ -41,7 +41,7 @@ class ConfigRegistry:
                     fields[attr_name] = (field_type, field_info)
 
             # 3. Create dynamic Pydantic model
-            safe_name = f"{key.replace(".", "_")}_ConfigModel"
+            safe_name = f"{key.replace('.', '_')}_ConfigModel"
             pydantic_model = create_model(safe_name, **fields)
 
             # 4. Attach UI metadata to the new model
@@ -95,6 +95,7 @@ class Settings(BaseModel):
         title="Workflows Directory",
         description="Path for custom user workflows. Defaults to {Data Root}/workflows if left blank.",
         json_schema_extra={"widget": "text"},
+        examples=["leave blank for {data_root}/workflows or specify custom path i.e. $SCRATCH/lore_workflows"],
     )
 
     @property

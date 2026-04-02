@@ -147,7 +147,10 @@ def _sliced_fasta(
     tmp_out = sandbox_dir / "sliced.fasta"
     adapter = FastaAdapter()
 
-    with open(source_path, "r", encoding="utf-8") as f_in, open(tmp_out, "w", encoding="utf-8") as f_out:
+    with (
+        open(source_path, "r", encoding="utf-8") as f_in,
+        open(tmp_out, "w", encoding="utf-8", newline="\n") as f_out
+    ):
         kept_count = 0
         dropped_count = 0
         for record in adapter.adapt_stream(f_in):
@@ -205,10 +208,12 @@ def mmseqs2_handler(
     # 1. Validate
     mmseqs_config = ctx.get_config("mmseqs2")
     source_path = Path(source_fasta)
-    mmseqs_bin = shutil.which(mmseqs_config.binary_path)
+    raw_path = str(mmseqs_config.binary_path).strip("\"'")
+
+    mmseqs_bin = shutil.which(raw_path)
     if mmseqs_bin is None:
         raise RuntimeError(
-            f"MMseqs2 binary not found at '{mmseqs_bin}'. Either add it to PATH "
+            f"MMseqs2 binary not found at '{raw_path}'. Either add it to PATH "
             f"or set mmseqs_path to the full binary location in Settings."
         )
 
@@ -223,16 +228,17 @@ def mmseqs2_handler(
     if cluster_window and cluster_window.strip():
         target_fasta = _sliced_fasta(ctx, source_path, cluster_window, strict_window, sandbox)
     else:
-        target_fasta = source_path
+        target_fasta = sandbox / "input.fasta"
+        shutil.copy(source_path, target_fasta)
 
     # 4. Build CLI command
     if threads is None:
         threads = mmseqs_config.default_threads
     cmd = [
         mmseqs_bin, "easy-cluster",
-        str(target_fasta),
-        str(out_prefix),
-        str(tmp_dir),
+        target_fasta.name,
+        "cluster_res",  # automatic prefix in sandbox
+        "tmp",          # automatic prefix in sandbox
         "--min-seq-id", str(min_seq_id),
         "-c", str(coverage),
         "-s", str(sensitivity),
@@ -244,6 +250,7 @@ def mmseqs2_handler(
     try:
         subprocess.run(
             cmd,
+            cwd=sandbox,
             check=True,
             capture_output=True,
             text=True,

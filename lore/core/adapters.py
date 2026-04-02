@@ -11,7 +11,7 @@ import hashlib
 import itertools
 import json
 import logging
-from typing import Any, Callable, ClassVar, Iterator
+from typing import Any, Callable, ClassVar, Iterator, TypeVar
 from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
@@ -432,6 +432,9 @@ class ImageAdapter(BaseAdapter):
         return raw_data
 
 
+C = TypeVar("C", bound=type["BaseAdapter"])
+
+
 class AdapterRegistry:
     """
     Global registry for Adapters. Tasks can query this to find an Adapter for
@@ -446,7 +449,7 @@ class AdapterRegistry:
             raise KeyError(f"Adapter with key '{key}' not found.")
         return self._adapters[key]
 
-    def __call__[C: type[BaseAdapter]](self, cls: None = None) -> Callable[[C], C]:
+    def __call__(self, cls: None = None) -> Callable[[C], C]:
         """
         Class decorator for registering Adapters.
         Usage:

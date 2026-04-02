@@ -5,8 +5,8 @@ LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 from datetime import datetime
 from enum import Enum
 import types
-from typing import Any, get_args, get_origin, Type, Union
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Annotated, Any, get_args, get_origin, Type, Union
+from pydantic import BaseModel, BeforeValidator, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
@@ -244,7 +244,14 @@ class ValueInput(TaskInput):
         self.options = options
         self.widget_override = widget
 
-    def get_type_annotation(self) -> Type:
+    def get_type_annotation(self) -> Any:
+        origin = get_origin(self.annotated_type)
+        is_list = origin in (list, tuple, set)
+        if not is_list and origin in (Union, types.UnionType):
+            args = get_args(self.annotated_type)
+            is_list = any(get_origin(a) in (list, tuple, set) for a in args)
+        if is_list:
+            return Annotated[self.annotated_type, BeforeValidator(_clean_list_input)]
         return self.annotated_type
 
     def _enrich_schema_extra(self, extra: dict[str, Any]):
@@ -319,7 +326,7 @@ class ValueInput(TaskInput):
                 extra["widget"] = Widget.SELECT
 
         # 7. Manual widget override (e.g. for Enums to radio instead of dropdown)
-        if self.widget_override and self.widget_override in Widget:
+        if self.widget_override and self.widget_override in [w.value for w in Widget]:
             extra["widget"] = self.widget_override
 
 
@@ -348,6 +355,22 @@ def _normalize_options(options: str | list[Any]) -> list[dict[str, Any]]:
             )
 
     return normalized_options
+
+
+def _clean_list_input(v: Any) -> Any:
+    """Framework-level coercion for list inputs from HTML/JS forms."""
+    # 1. Handle comma-separated text boxes
+    if isinstance(v, str):
+        if not v.strip():
+            return None
+        return [s.strip() for s in v.split(",") if s.strip()]
+    
+    # 2. Handle dirty HTML arrays (e.g. [null], [""])
+    if isinstance(v, list):
+        cleaned = [x for x in v if x not in (None, "")]
+        return cleaned if cleaned else None
+        
+    return v
 
 
 # --- Task output ---

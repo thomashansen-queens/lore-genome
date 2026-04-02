@@ -163,6 +163,6 @@ async def save_plugin_settings(
 
     return ctx.redirect_back(
         fallback_url=f"/settings/plugins/{plugin_key}", 
-        message=f"{schema_cls.model_config.get("title", schema_cls.__name__)} settings saved.", 
+        message=f"{schema_cls.model_config.get('title', schema_cls.__name__)} settings saved.", 
         message_type="success",
     )

@@ -41,7 +41,7 @@ def ncbi_client(api_key: str | None = None, timeout: float = 60.0):
     """
     headers = {
         "Accept": "application/json",
-        "User-Agent": f"lore-genome/{version("lore-genome")}",
+        "User-Agent": f"lore-genome/{version('lore-genome')}",
     }
     if api_key:
         headers["api-key"] = api_key
@@ -58,7 +58,7 @@ def ncbi_client(api_key: str | None = None, timeout: float = 60.0):
         yield client
 
 
-def retry(exceptions=(httpx.RequestError, httpx.Timeout), tries=4, delay=2, default_logger=None):
+def retry(exceptions=(httpx.RequestError, httpx.TimeoutException), tries=4, delay=2, default_logger=None):
     """
     A decorator that allows API calls to retry a set number of times before failing.
 

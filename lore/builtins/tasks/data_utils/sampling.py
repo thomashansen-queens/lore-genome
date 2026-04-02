@@ -4,7 +4,7 @@ Sampling Tasks for LoRe Genome.
 
 from enum import Enum
 import json
-from typing import Union, List, Optional
+from typing import List
 import random
 import pandas as pd
 
@@ -33,14 +33,14 @@ class SampleInputs:
         load_as=lore.RAW,
     )
     sample_by = lore.ValueInput(
-        list[str],
+        str | None,
         default=None,
         label="Sample by",
         description="Columns or keys to use for sampling (i.e. for stratification). Comma-separated if multiple.",
         examples=["collection_country, collection_year"],
     )
     sample_size = lore.ValueInput(
-        int,
+        int | None,
         default=None,
         label="Sample size",
         description="Number of samples to draw. Leave empty (None) for greedy sampling, maximizing the number of pulls.",
@@ -154,9 +154,9 @@ def _serialize_records(records: list, extension: str) -> str:
 def sample_handler(
     ctx: lore.ExecutionContext,
     source: list[dict],
-    strategy: str = SamplingStrategy.STRATIFIED_STRICT.value,  # use strings from enum
-    sample_by: Optional[Union[str, List[str]]] = None,
-    sample_size: Optional[int] = None,
+    strategy: SamplingStrategy | str = SamplingStrategy.STRATIFIED_STRICT,  # use strings from enum
+    sample_by: str | None = None,
+    sample_size: int | None = None,
     seed: int = 42,
     partition: bool = False,
 ):
@@ -166,6 +166,8 @@ def sample_handler(
     By using an Adapter, we are doing "high-dimensional indexing", but the final
     output is untouched records from the original source in their original format.
     """
+    strategy = SamplingStrategy(strategy)
+
     # 1. Get adapter and input artifact metadata
     adapter = ctx.get_input_adapter("source")
     if adapter is None:
@@ -206,8 +208,8 @@ def sample_handler(
     sampled_df = pd.DataFrame()
     pulled_indices = []
 
-    if strategy == SamplingStrategy.RANDOM.value:
-        if sample_size is None:
+    if strategy == SamplingStrategy.RANDOM:
+        if sample_size is None or sample_size <= 0:
             ctx.logger.warning("No sample_size provided for random sampling. Defaulting to 100.")
             sample_size = 100
 
@@ -219,7 +221,7 @@ def sample_handler(
         sampled_df = df.sample(n=actual_n, random_state=seed)  # that was easy
         pulled_indices = sampled_df.index.tolist()
 
-    elif strategy in [SamplingStrategy.STRATIFIED_STRICT.value, SamplingStrategy.STRATIFIED_RELAXED.value]:
+    elif strategy in [SamplingStrategy.STRATIFIED_STRICT, SamplingStrategy.STRATIFIED_RELAXED]:
         if not sample_cols:
             raise ValueError(
                 f"Stratified sampling strategy requires 'sample_by' keys/columns. Valid options: "
@@ -231,7 +233,7 @@ def sample_handler(
             by=sample_cols,
             size=sample_size,
             seed=seed,
-            strict=(strategy == SamplingStrategy.STRATIFIED_STRICT.value),
+            strict=(strategy == SamplingStrategy.STRATIFIED_STRICT),
         )
         sampled_df = df.loc[pulled_indices]
 
@@ -245,6 +247,9 @@ def sample_handler(
     # 6. De-adapt: Map back to original structure
     pulled_set = set(pulled_indices)  # in case of sample with replacement
     final_records = [source[i] for i in pulled_indices]
+
+    if not final_records and not partition:
+        raise ValueError("Sampling resulted in 0 records. Check your sampling strategy.")
 
     if partition:
         remainder_records = [rec for i, rec in enumerate(source) if i not in pulled_set]

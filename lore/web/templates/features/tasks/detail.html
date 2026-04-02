@@ -50,25 +50,28 @@
         {% endcall %}
     </div>
 
-    {# === Task Log === #}
-    <div class="card" style="flex-shrink: 0;">
-        <header>Task Log</header>
-        <div class="scroll-area" id="task-log" style="max-height: 25vh;">
-            {% if task_log %}
-                <pre class="small" style="white-space: pre-wrap;">{{ task_log }}</pre>
-            {% else %}
-                <span class="muted small">No log output yet.</span>
-            {% endif %}
+    <div class="column gapped" style="max-height: 50vh;">
+        {# === Task Log === #}
+        <div class="card" style="flex: 1;">
+            <header>Task Log</header>
+            <div class="scroll-area" id="task-log" style="flex: 1; min-height: 0;">
+                {% if task_log %}
+                    <pre class="small" style="white-space: pre-wrap;">{{ task_log }}</pre>
+                {% else %}
+                    <span class="muted small">No log output yet.</span>
+                {% endif %}
+            </div>
         </div>
-    </div>
-    {% if task.error %}
-    <div class="card" style="background: var(--danger-bg); flex-shrink: 0;">
-        <header style="color: var(--danger);">Error</header>
-        <div class="scroll-area" id="task-error" style="max-height: 25vh;">
-            <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
+        {# === Error === #}
+        {% if task.error %}
+        <div class="card" style="background: var(--danger-bg); flex: 1;">
+            <header style="color: var(--danger);">Error</header>
+            <div class="scroll-area" id="task-error" style="flex: 1; min-height: 0;">
+                <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
+            </div>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 
     {# === Configuration + Outputs === #}
     <div class="row stretch fill gapped">
