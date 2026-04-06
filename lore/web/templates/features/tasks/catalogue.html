@@ -3,15 +3,15 @@
 
 {% block workspace %}
 <div class="column fill stretch">
-    <h2>
-        🛠 New Task
-    </h2>
+    <h4>
+        🛠 Task Catalogue
+    </h4>
     <p class="muted">Select a tool to configure and preview in real-time before saving.</p>
 
     <div class="column">
         <div class="scroll-area" style="padding-right: var(--spacing-md);">
             {% for task in tasks %}
-                <a href="/sessions/{{ session.id }}/tasks/new/{{ task.key }}" 
+                <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}" 
                 class="card clickable"
                 style="margin-top: var(--spacing-sm);">
                     <div>
@@ -20,7 +20,6 @@
                             {{ task.name }}
                         </h3>
                         <p class="muted">
-                            {# {{ task.description | truncate(120) }} #}
                             {{ task.description }}
                         </p>
                     </div>

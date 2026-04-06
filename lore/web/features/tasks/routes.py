@@ -25,7 +25,7 @@ def redirect_to_session(session_id: str, ctx: PageContext = Depends()):
     return ctx.redirect(f"/sessions/{session_id}")
 
 
-@router.get("/new", response_class=HTMLResponse)
+@router.get("/catalogue", response_class=HTMLResponse)
 async def list_available_tasks(
     s: ReadOnlySession,
     ctx: PageContext = Depends(),
@@ -48,7 +48,13 @@ async def list_available_tasks(
     )
 
 
-@router.get("/new/{task_key}", response_class=HTMLResponse)
+@router.get("/configure", response_class=RedirectResponse)
+def redirect_configure(session_id: str, ctx: PageContext = Depends()):
+    """Redirect bare /configure to the Task Catalogue."""
+    return ctx.redirect(f"/sessions/{session_id}/tasks/catalogue")
+
+
+@router.get("/configure/{task_key}", response_class=HTMLResponse)
 async def configure_new_task(
     task_key: str,
     s: ReadOnlySession,
@@ -104,8 +110,8 @@ async def configure_new_task(
             prefilled_inputs=prefilled_inputs,
             artifact_candidates=artifact_candidates,
             edit_task_id=task_id,
-            preview_api_url=f"/sessions/{s.id}/tasks/new/{task_key}/preview",
-            commit_api_url=f"/sessions/{s.id}/tasks/new/{task_key}",
+            preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/preview",
+            commit_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}",
         )
     )
 
@@ -134,7 +140,7 @@ def view_task(
     ctx.generate_breadcrumbs({s.id: s.name, task_id: task.name or "Task Details"})
     return templates.TemplateResponse(
         request=ctx.request,
-        name="/features/tasks/detail.html",
+        name="features/tasks/detail.html",
         context=ctx.render(
             session=s,
             task_def=task_def,
@@ -160,7 +166,7 @@ def edit_task(
     if task is None:
         raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-    target_url = f"/sessions/{s.id}/tasks/new/{task.registry_key}?load_task={task.id}"
+    target_url = f"/sessions/{s.id}/tasks/configure/{task.registry_key}?load_task={task.id}"
 
     # Forward any source artifacts if they exist
     if source_artifact_ids:
@@ -174,6 +180,8 @@ def edit_task(
 
 class TaskPayload(BaseModel):
     """Contract for the AJAX payload when previewing or committing a Task"""
+    name: str | None = None
+    task_id: str | None = None  # for edits; ignored on new Tasks
     inputs: dict
     exec_config: TaskConfig = Field(default_factory=TaskConfig)
 
@@ -219,7 +227,6 @@ def run_task_action(
         task.error = None
         s.mark_dirty()
 
-    # background_tasks.add_task(rt.execute_task, session_id, task_id)
     rt.execute_task(session_id=session_id, task_id=task_id)
 
     return ctx.redirect_back(
@@ -251,11 +258,12 @@ def delete_task_action(task_id: str, s: ActiveSession, ctx: PageContext = Depend
 
 # --- AJAX routes ---
 
-@router.post("/new/{task_key}", response_class=JSONResponse)
-async def api_task_commit(
+@router.post("/configure/{task_key}", response_class=JSONResponse)
+def api_task_commit(
     task_key: str,
     payload: TaskPayload,
-    s: ActiveSession,
+    session_id: str,
+    rt: RT,
 ):
     """
     Commits the current configuration to a Task in the Manifest
@@ -265,18 +273,18 @@ async def api_task_commit(
         if not task_def:
             raise ValueError(f"Task '{task_key}' not found in registry.")
 
-        # 1. Extract Metadata BEFORE form_to_dict strips it out!
-        existing_task_id = payload.inputs.get("task_id")
-        task_name = payload.inputs.get("name") or task_def.name
+        # 1. Extract Metadata
+        existing_task_id = payload.task_id
+        task_name = payload.name or task_def.name
 
-        s.runtime.logger.debug(
+        rt.logger.debug(
             "api_task_commit [%s]: payload keys=%s", task_key, list(payload.inputs.keys())
         )
 
         # 2. Parse JSON payload
         raw_inputs = form_json_to_dict(payload.inputs, task_def.input_model)
 
-        s.runtime.logger.debug(
+        rt.logger.debug(
             "api_task_commit [%s]: raw_inputs=%r", task_key, raw_inputs
         )
 
@@ -285,7 +293,7 @@ async def api_task_commit(
         for field_name in task_def.input_model.model_fields.keys():
             _, extra = task_def.field_meta(field_name)
             # Check if this field is an ArtifactInput
-            if extra.get("accepts_artifact", extra.get("is_artifact", False)):
+            if extra.get("is_artifact", False):
                 val = raw_inputs.get(field_name)
                 if isinstance(val, list):
                     parent_ids.extend(val)  # Handle multi-file inputs
@@ -293,43 +301,48 @@ async def api_task_commit(
                     parent_ids.append(val)  # Handle single-file inputs
 
         # 4. Upsert logic for Task (allows editing existing tasks)
+        task_id = None
         task = None
-        if existing_task_id:
-            try:
+        msg = ""
+
+        with rt.open_session(session_id) as s:  # Re-open session to ensure we have a lock for writing
+            if existing_task_id:
                 task = s.get_task(existing_task_id)
                 if task is None:
                     raise ValueError(f"Task with ID '{existing_task_id}' not found in Session '{s.id}'.")
-                if task.status in ["RUNNING", "COMPLETED"]:
+                if task.status in {TaskStatus.RUNNING, TaskStatus.COMPLETED}:
                     task = None  # Cannot edit, save as new
-            except ValueError:
-                pass  # Task ID from form doesn't exist, fallback to new
+                    msg = "Task is running or completed. Saving as new task."
 
-        if task:
-            task = s.update_task(
-                task.id,
-                inputs=raw_inputs,
-                exec_config=payload.exec_config.model_dump(mode="json"),
-                name=task_name,
-                parent_artifact_ids=list(set(parent_ids)),
-            )
-        else:
-            task = s.add_task(
-                registry_key=task_key,
-                inputs=raw_inputs,
-                name=task_name,
-                parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
-                exec_config=payload.exec_config.model_dump(mode="json"),
-            )
+            if task:
+                task = s.update_task(
+                    task.id,
+                    inputs=raw_inputs,
+                    exec_config=payload.exec_config.model_dump(mode="json"),
+                    name=task_name,
+                    parent_artifact_ids=list(set(parent_ids)),
+                )
+            else:
+                task = s.add_task(
+                    registry_key=task_key,
+                    inputs=raw_inputs,
+                    name=task_name,
+                    parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
+                    exec_config=payload.exec_config.model_dump(mode="json"),
+                )
+            task_id = task.id
 
-        s.runtime.logger.debug(
-            "api_task_commit [%s]: task.id=%s  status=%s  error=%r  inputs=%r",
-            task_key, task.id, task.status, task.error, task.inputs,
-        )
+            rt.logger.debug(
+                "api_task_commit [%s]: task.id=%s  status=%s  error=%r  inputs=%r",
+                task_key, task.id, task.status, task.error, task.inputs,
+            )
 
         # 5. Return success and the redirect URL
         return JSONResponse(content={
             "status": "success",
-            "redirect_url": f"/sessions/{s.id}/tasks/{task.id}",
+            "message": msg or "Task saved successfully.",
+            "message_type": "success",
+            "redirect_url": f"/sessions/{session_id}/tasks/{task_id}",
         })
 
     except Exception as e:
@@ -340,7 +353,7 @@ async def api_task_commit(
 
 
 # Because this is `def` and not `async def`, FastAPI runs it in a background thread!
-@router.post("/new/{task_key}/preview", response_class=JSONResponse)
+@router.post("/configure/{task_key}/preview", response_class=JSONResponse)
 def api_task_preview(
     session_id: str,
     task_key: str,
@@ -398,7 +411,7 @@ def api_task_preview(
         )
         html_content = bytes(response.body).decode("utf-8")
 
-        # 5. Send the compiled HTML to frontend for display
+        # 4. Send the compiled HTML to frontend for display
         return JSONResponse(content={
             "status": "success",
             "html": html_content,

@@ -88,8 +88,8 @@ def materialize_task_inputs(
             if processed_artifacts and isinstance(processed_artifacts[0], types.GeneratorType):
                 resolved[key] = itertools.chain(*processed_artifacts)
             else:
-                flattened = resolved_list.copy()  # start with non-input artifacts
-                for item in processed_artifacts:
+                flattened = []
+                for item in resolved_list + processed_artifacts:
                     if isinstance(item, list):
                         flattened.extend(item)
                     else:

@@ -1,10 +1,10 @@
-{% extends "features/sessions/layout.html" %}
-{% import "macros/ui.html" as ui %}
+{% extends "/features/sessions/layout.html" %}
+{% import "/macros/ui.html" as ui %}
 
 {% block workspace %}
 <div id="task-detail-container"
     data-current-status="{{ task.status.value }}"
-    class="column fill gapped">
+    class="column fill">
 
     {# === Header === #}
     <div>
@@ -29,14 +29,17 @@
         {# === Task actions === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
 
-            {% if task.status in ['ready', 'draft', 'failed'] %}
+            {% if task.status.value not in ['running', 'completed'] %}
                 <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
                     class="btn secondary">
                     ✎ Edit
                 </a>
+            {% endif %}
+            
+            {% if task.status.is_runnable %}
                 <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
                     <button type="submit" class="btn primary">
-                        ▶ {{ 'Retry' if task.status == 'failed' else 'Run' }}
+                        ▶ {{ 'Retry' if task.status.value in ['failed', 'cancelled'] else 'Run' }}
                     </button>
                 </form>
             {% endif %}
@@ -74,7 +77,7 @@
     </div>
 
     {# === Configuration + Outputs === #}
-    <div class="row stretch fill gapped">
+    <div class="row stretch fill gapped" style="margin-top: var(--spacing-md);">
 
         {# === Configuration (left) === #}
         <div class="card" style="flex: 1;">
@@ -96,7 +99,7 @@
                         <tr>
                             <td class="small">{{ key }}</td>
                             <td>
-                                {% if value is iterable and value is not string %}
+                                {% if value is sequence and value is not string and value is not mapping %}
                                     {% set list_len = value | length %}
                                     {% if list_len > 3 %}
                                         <code class="small">{{ value[:3] | join(', ') }}</code>
@@ -165,7 +168,7 @@
                     </div>
                 {% endfor %}
 
-                {% if not outputs and task.status == 'completed' %}
+                {% if not outputs and task.status.value == 'completed' %}
                     <div class="card warning">No outputs produced!</div>
                 {% elif not outputs %}
                     <div class="card muted">Outputs will appear here when the task completes.</div>
@@ -186,7 +189,8 @@
         if (!container) return false;
         
         const status = container.dataset.currentStatus;
-        return ['running', 'ready'].includes(status);
+        // Only poll if tab is active (TODO: Is this the best way to check for this?)
+        return status === 'running' && !document.hidden;
     }
 
     function pollTaskStatus() {

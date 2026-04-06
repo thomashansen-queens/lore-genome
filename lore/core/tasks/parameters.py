@@ -5,10 +5,12 @@ LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 from datetime import datetime
 from enum import Enum
 import types
-from typing import Annotated, Any, get_args, get_origin, Type, Union
-from pydantic import BaseModel, BeforeValidator, Field
+from typing import Any, get_args, get_origin, Type, Union
+from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
+
+from lore.core.utils import is_collection_type, is_optional_type
 
 # --- Data handling ---
 
@@ -33,12 +35,13 @@ class Widget(str, Enum):
     TEXT = "text"
     TEXTAREA = "textarea"
     SLIDER = "slider"
-    NUMBER = "number"
     FLOAT = "float"
     INTEGER = "integer"
     CHECKBOX = "checkbox"  # Boolean toggle, different from CHECKBOX_GROUP
     DATE = "date"
     DATETIME = "datetime"
+
+_WIDGET_VALUES = {w.value for w in Widget}
 
 
 class Cardinality(str, Enum):
@@ -97,7 +100,8 @@ class Materialization(str, Enum):
 class TaskInput:
     """
     The Base DSL Class.
-    Use this to define the inputs for a Task in a clear, self-documenting way.
+    This is not a Pydantic model itself, but is a factory for generating Pydantic FieldInfo with 
+    with LoRe metadata at task registration time.
     """
 
     def __init__(
@@ -245,39 +249,25 @@ class ValueInput(TaskInput):
         self.widget_override = widget
 
     def get_type_annotation(self) -> Any:
-        origin = get_origin(self.annotated_type)
-        is_list = origin in (list, tuple, set)
-        if not is_list and origin in (Union, types.UnionType):
-            args = get_args(self.annotated_type)
-            is_list = any(get_origin(a) in (list, tuple, set) for a in args)
-        if is_list:
-            return Annotated[self.annotated_type, BeforeValidator(_clean_list_input)]
         return self.annotated_type
 
     def _enrich_schema_extra(self, extra: dict[str, Any]):
         """If options provided, add to schema extra for UI dropdown rendering."""
-        target_type = self.annotated_type
-        is_optional = False
-
-        origin = get_origin(self.annotated_type)
-
         # 1. Unwrap Union types to get the core type (int | None -> int)
-        if origin is Union or origin is types.UnionType:
-            args = get_args(target_type)
-            is_optional = type(None) in args
-
-            non_none_args = [a for a in args if a is not type(None)]
-            if len(non_none_args) == 1:
-                target_type = non_none_args[0]
-                origin = get_origin(target_type)
+        is_optional = is_optional_type(self.annotated_type)
 
         # 2. Unwrap collections (e.g. list[str] -> str) to get item type for Enums
-        is_list = origin in (list, tuple, set)
-        if is_list:
-            args = get_args(target_type)
-            target_type = args[0] if args else target_type
+        is_list = is_collection_type(self.annotated_type)
 
-        # 3. Interpret Pydantic kwargs
+        # 3. If it's a list, get the item type for Enum handling
+        target_type = self.annotated_type
+        origin = get_origin(self.annotated_type)
+        if origin is Union or origin is types.UnionType:
+            non_none_args = [a for a in get_args(self.annotated_type) if a is not type(None)]
+            if len(non_none_args) == 1:
+                target_type = non_none_args[0]
+
+        # 4. Interpret Pydantic kwargs
         if "ge" in self.pydantic_kwargs:
             extra["min"] = self.pydantic_kwargs["ge"]
         if "le" in self.pydantic_kwargs:
@@ -285,7 +275,7 @@ class ValueInput(TaskInput):
         if "multiple_of" in self.pydantic_kwargs:
             extra["step"] = self.pydantic_kwargs["multiple_of"]
 
-        # 4. Inject None to optional Enums
+        # 5. Inject None to optional Enums
         enums = None
         if isinstance(target_type, type) and issubclass(target_type, Enum):
             enums = [
@@ -295,7 +285,7 @@ class ValueInput(TaskInput):
             if is_optional and "None" not in [e["value"] for e in enums]:
                 enums.insert(0, {"label": "None (default)", "value": ""})
 
-        # 5. Assign widget types
+        # 6. Assign widget types
         if isinstance(target_type, type) and issubclass(target_type, Enum):
             extra["options"] = enums
             extra["widget"] = Widget.CHECKBOX_GROUP if is_list else Widget.SELECT
@@ -316,7 +306,7 @@ class ValueInput(TaskInput):
             # Base class sets Widget.TEXT.value by default, but explicit is better than implicit
             extra["widget"] = Widget.TEXT
 
-        # 6. Handle manual overrides for fixed options and widget type
+        # 7. Handle manual overrides for fixed options and widget type
         if self.options:
             normalized_options = _normalize_options(self.options)
 
@@ -325,8 +315,8 @@ class ValueInput(TaskInput):
             if extra.get("widget") in (Widget.TEXT, Widget.INTEGER, Widget.FLOAT):
                 extra["widget"] = Widget.SELECT
 
-        # 7. Manual widget override (e.g. for Enums to radio instead of dropdown)
-        if self.widget_override and self.widget_override in [w.value for w in Widget]:
+        # 8. Manual widget override (e.g. for Enums to radio instead of dropdown)
+        if self.widget_override and self.widget_override in _WIDGET_VALUES:
             extra["widget"] = self.widget_override
 
 
@@ -355,23 +345,6 @@ def _normalize_options(options: str | list[Any]) -> list[dict[str, Any]]:
             )
 
     return normalized_options
-
-
-def _clean_list_input(v: Any) -> Any:
-    """Framework-level coercion for list inputs from HTML/JS forms."""
-    # 1. Handle comma-separated text boxes
-    if isinstance(v, str):
-        if not v.strip():
-            return None
-        return [s.strip() for s in v.split(",") if s.strip()]
-    
-    # 2. Handle dirty HTML arrays (e.g. [null], [""])
-    if isinstance(v, list):
-        cleaned = [x for x in v if x not in (None, "")]
-        return cleaned if cleaned else None
-        
-    return v
-
 
 # --- Task output ---
 

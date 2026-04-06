@@ -1,14 +1,16 @@
 # LoRē Genome
 
-LoRē is an extensible workflow orchestrator for bioinformatics. It is designed with accessibility to scientists in mind, poriving a browser-based GUI to manage scripts, data, and workflows entirely locally.
+LoRē is an extensible workflow orchestrator for bioinformatics. It is designed with accessibility to scientists in mind, providing a browser-based GUI to manage scripts, data, and workflows entirely locally.
 
 **Status**: Under active development!
 
-## Prerequisites
+## Installation
+
+### Prerequisites
 * Python 3.10 or higher
 * Note: The installer automatically handles all necessary Python packages. Because data is stored locally on your machine, we recommend having a few gigabytes of free storage space.
 
-## Quick start
+### Quick start
 1. Open a terminal (Mac: ⌘ + Spacebar -> Terminal, Windows: Start menu -> PowerShell)
 2. To use the "bootstrap helper", copy and paste the following lines one at a time, pressing Enter after each
 
@@ -20,10 +22,10 @@ python run.py
 
 3. This will generate a `run.bat` (Windows) or `run.sh` (Mac/Linux). Double-click it to launch LoRē.
 
-## Bootstrap helper
+### Bootstrap helper
 The bootstrap helper automates the setup process for non-experts. It creates an isolated `.venv` virtual environment, installs LoRē and its dependencies, and starts the web UI.
 
-## Manual setup
+### Manual setup
 If you are familiar with virtual environments and/or prefer to handle things 
 yourself:
 ```bash
@@ -37,6 +39,21 @@ pip install .
 
 # Launch the UI from terminal
 lore ui
+```
+
+### Updating
+If you have already cloned the repository, pull the latest changes and re-install:
+```bash
+cd lore-genome
+git pull
+python run.py
+```
+For manual setups, activate your virtual environment first, then pull and re-install:
+```bash
+cd lore-genome
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+git pull
+pip install .
 ```
 
 ## Key features

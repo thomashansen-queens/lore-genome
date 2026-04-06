@@ -12,9 +12,11 @@
         <hr />
         
         <label class="strong">Execute</label>
+        {% set ready_tasks = session.manifest.tasks.values() | selectattr('status', 'equalto', 'ready') | list %}
         <form action ="/sessions/{{ session.id }}/execute" method="POST"
             style="display: flex; flex-direction: column; min-height: 0;">
-            <button type="submit" class="btn primary fullwidth center" {% if not tasks %}disabled{% endif %}>
+            <button type="submit" class="btn primary fullwidth center"
+                {% if not ready_tasks %}disabled{% endif %}>
                 ➡ Run all Tasks in order
             </button>
         </form>
@@ -23,8 +25,8 @@
         
         <label class="strong">Tasks</label>
 
-        <a href="/sessions/{{ session.id }}/tasks/new" class="btn secondary fullwidth center">
-            🛠 New Task
+        <a href="/sessions/{{ session.id }}/tasks/catalogue" class="btn secondary fullwidth center">
+            🛠 Task Catalogue
         </a>
 
         <hr />

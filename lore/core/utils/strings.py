@@ -1,10 +1,9 @@
 """
-Simple utility functions for use across the codebase.
+String utility functions.
 """
 
 import re
-import types
-from typing import Any, Collection, get_args, get_origin, Union
+from typing import Collection, Any
 try:
     from fastapi import UploadFile
     _HAS_FASTAPI = True
@@ -12,7 +11,19 @@ except ImportError:
     _HAS_FASTAPI = False
     UploadFile = type("UploadFile", (), {}) # Dummy type for isinstance checks
 
-# --- String cleaning and normalization ---
+# --- LoRe domain specific ---
+# TODO: A little awkward, maybe just remove
+
+ARTIFACT_ID_HEURISTIC = re.compile(r"^[0-9a-f]{12}$")
+
+def is_artifact_id(val: Any) -> bool:
+    """Heuristic check to see if a string looks like a LoRe Artifact ID."""
+    if not isinstance(val, str):
+        return False
+    return bool(ARTIFACT_ID_HEURISTIC.match(val))
+
+
+# --- Cleaning and formatting ---
 
 # [^\w\-.]: Anything that isn't a word character [a-zA-Z0-9_] or - .
 # [\\/?@]: No slashes, question marks, at signs (more permissive)
@@ -60,25 +71,6 @@ def clean(
     return s
 
 
-def normalize_query(query_string: str) -> str:
-    """
-    Translates user-friendly or SQL-style syntax into valid Pandas query syntax.
-    Useful for Explore Artifact view.
-    """
-    if not query_string:
-        return ""
-
-    # 1. SQL-style Logical Operators -> Python style
-    # We use regex word boundaries (\b) to ensure we don't replace 'AND' inside a country name
-    query_string = re.sub(r'\bAND\b', 'and', query_string, flags=re.IGNORECASE)
-    query_string = re.sub(r'\bOR\b', 'or', query_string, flags=re.IGNORECASE)
-
-    # 2. Cleanup whitespace
-    query_string = " ".join(query_string.split())
-
-    return query_string
-
-
 def fmt_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     for unit in ("B", "kB", "MB", "GB"):
@@ -86,38 +78,6 @@ def fmt_bytes(n: float) -> str:
             return f"{n:.1f} {unit}"
         n = n / 1024.0
     return f"{n:.1f} TB"
-
-
-# --- Type checking ---
-
-ARTIFACT_ID_HEURISTIC = re.compile(r"^[0-9a-f]{12}$")
-
-def is_artifact_id(val: Any) -> bool:
-    """Heuristic check to see if a string looks like a LoRe Artifact ID."""
-    if not isinstance(val, str):
-        return False
-    return bool(ARTIFACT_ID_HEURISTIC.match(val))
-
-
-COLLECTION_TYPES = {list, set, tuple}
-
-def is_collection_type(annotation: Any) -> bool:
-    """
-    Recursive check if a Pydantic type hint represents a collection (list, set, 
-    dict, etc.) even if buried in Optional or Union.
-    """
-    origin = get_origin(annotation)
-
-    # 1. Base case: Is a collection type
-    if annotation in COLLECTION_TYPES or origin in COLLECTION_TYPES:
-        return True
-
-    # 2. Recursive case: Optional or Union
-    is_union = origin is Union or (hasattr(types, "UnionType") and origin is types.UnionType)
-    if is_union:
-        return any(is_collection_type(arg) for arg in get_args(annotation))
-
-    return False
 
 
 # --- Object naming ---
@@ -134,6 +94,7 @@ def slugify(value: str, max_length: int = 32) -> str:
     value = re.sub(r'[^\w\-.]', '', value)  # Remove non-word chars except - and .
     return value[:max_length]
 
+
 _BAD_DISPLAY_CHARS = re.compile(r"[\x00-\x1f\x7f\n\r]")
 
 def normalize_display_name(name: str | None, default: str = "unnamed") -> str:
@@ -142,6 +103,7 @@ def normalize_display_name(name: str | None, default: str = "unnamed") -> str:
     cleaned = clean(name, bad_chars=_BAD_DISPLAY_CHARS, replace_with="", empty_to_none=False)
     assert cleaned is not None
     return cleaned
+
 
 _INCREMENT_RE = re.compile(r"^(?P<base>.*?)(?: \((?P<num>\d+)\))?$")
 

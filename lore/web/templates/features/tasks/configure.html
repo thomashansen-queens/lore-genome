@@ -19,6 +19,7 @@
         </div>
 
         <form id="workbench-form">
+            {# Hidden input for metadata #}
             <input type="hidden" name="task_id" value="{{ edit_task_id | default('') }}">
             <input type="text"
                     name="name"
@@ -83,7 +84,7 @@ document.addEventListener("DOMContentLoaded", function() {
     const target = document.getElementById('preview-target');
     const loader = document.getElementById('preview-loader');
     const previewBtn = document.getElementById('preview-button');
-    const livePreviewEnabled = document.getElementById('task-def').dataset.livePreview === 'True';
+    const livePreviewEnabled = document.getElementById('task-def').dataset.livePreview.toLowerCase() === 'true';
     const commitBtn = document.getElementById('commit-button');
 
     // --- Helper to gather form inputs into a dict ---   
@@ -142,7 +143,7 @@ document.addEventListener("DOMContentLoaded", function() {
             fetchPreview();
         }
 
-        // FUTURE: Add more UI triggers here (e.g. pagination buttons, filter toggles, etc.)
+        // TODO: Add more UI triggers here (e.g. pagination buttons, filter toggles, etc.)
     })
 
     // --- PREVIEW ENGINE ---
@@ -163,13 +164,16 @@ document.addEventListener("DOMContentLoaded", function() {
         abortController = new AbortController();
 
         const inputs = gatherInputs(form);
+        const { name, task_id, ...taskInputs } = inputs;  // Separate metadata
 
         try {
             const response = await fetch(`{{ preview_api_url }}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    inputs: inputs,
+                    name: name || null,
+                    task_id: task_id || null,
+                    inputs: taskInputs,
                     exec_config: {
                         adapter: {
                             view_state: currentViewState
@@ -210,13 +214,16 @@ document.addEventListener("DOMContentLoaded", function() {
 
         // 1. Gather inputs
         const inputs = gatherInputs(form);
+        const { name, task_id, ...taskInputs } = inputs;  // Separate metadata
 
         try {
             const response = await fetch(`{{ commit_api_url }}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    inputs: inputs,
+                    name: name || null,
+                    task_id: task_id || null,
+                    inputs: taskInputs,
                     exec_config: { adapter: { view_state: currentViewState } }
                 })
             });

@@ -1,8 +1,6 @@
 """
 Analyzes syntenic neighbourhood of a given gene across a set of genome.
 """
-from logging import config
-
 import pandas as pd
 from typing import Literal
 
@@ -55,7 +53,7 @@ class GenomicNeighbourhoodTaskInputs:
     save_report = lore.ValueInput(
         bool,
         description="Whether to write the genomic neighbourhood to a new report file.",
-        default=True,
+        default=False,
         label="Write report",
     )
 
@@ -365,10 +363,9 @@ def genomic_neighbourhood_analysis(
             out_path,
             name="neighbourhood_report",
             output_key="neighbourhood_report",
-            data_type="genome_annotations",
         )
 
-    svg_str = _render_neighbourhood_svg(ctx, neighbourhoods, clamp_gap)
+    svg_str = _render_neighbourhood_svg(neighbourhoods, clamp_gap)
     ctx.materialize_content(
         svg_str,
         name="neighbourhood_view",
@@ -380,7 +377,6 @@ def genomic_neighbourhood_analysis(
 
 
 def _render_neighbourhood_svg(
-    ctx: lore.ExecutionContext,
     df: pd.DataFrame,
     clamp_gap: int | None = None,
     collapse_duplicates: bool = False,

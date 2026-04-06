@@ -30,7 +30,7 @@
                         {# Section 1: Pipeline ("push") #}
                         {% if push_task_targets %}<div class="ui-label">NEW TASK</div>{% endif %}
                         {% for task in push_task_targets.get(a.id, []) %}
-                            <a href="/sessions/{{ session.id }}/tasks/new/{{ task.key }}?source_artifact_ids={{ a.id }}">
+                            <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}?source_artifact_ids={{ a.id }}">
                                 {{ task.icon }} {{ task.name }}
                             </a>
                         {% endfor %}

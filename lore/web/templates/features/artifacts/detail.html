@@ -52,7 +52,7 @@
             <div id="task-menu-{{ artifact.id }}" class="dropdown-menu left" popover>
                 <div class="ui-label" style="padding: 0.5rem 1rem;">NEW DRAFT</div>
                 {% for task in push_tasks %}
-                    <a href="/sessions/{{ session.id }}/workbench/tasks/{{ task.registry_key }}?source_artifact_ids={{ artifact.id }}">
+                    <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.registry_key }}?source_artifact_ids={{ artifact.id }}">
                         {{ task.icon }} {{ task.name }}
                     </a>
                 {% endfor %}

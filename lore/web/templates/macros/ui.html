@@ -56,7 +56,7 @@
 {# === Universal action bar === #}
 {# Usage: call with caller() to inject the buttons. It handles the container and the delete button. #}
 {% macro action_bar(delete_url=None) %}
-<div class="row gapped">
+<div class="row gapped" style="margin-top: var(--spacing-sm); margin-bottom: var(--spacing-sm);">
     
     {# The specific buttons (Download, New Task, etc) go here #}
     {{ caller() }}

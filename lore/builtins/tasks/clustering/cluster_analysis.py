@@ -5,7 +5,7 @@ import pandas as pd
 
 # from lore.core.adapters import adapter_registry, TableAdapter
 import lore.dsl as lore
-from lore.utils.parse import fasta_lookup
+from lore.core.utils.parse import fasta_lookup
 
 # --- Helpers ----
 
@@ -203,7 +203,7 @@ class InspectClusterInputs(BaseClusterInputs):
     save_fasta = lore.ValueInput(
         bool,
         description="Whether to write the sequences of the cluster members to a new FASTA file. This is not very useful for LoRē thanks to the semantic typing system, but maybe you want to download the FASTA for use elsewhere?",
-        default=True,
+        default=False,
         label="Write cluster FASTA",
     )
 
@@ -237,7 +237,7 @@ def inspect_cluster(
     protein_accession: list[str],
     cluster_map: list[dict],
     genome_annotations: list[dict],
-    save_fasta: bool = True,
+    save_fasta: bool = False,
     protein_fasta: str | None = None,
 ):
     """

@@ -3,7 +3,6 @@ Routes for managing individual artifacts within a Session.
 """
 
 import json
-import re
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
@@ -11,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 
 from lore.core.tasks import AdapterConfig
 from lore.core.io import get_reader_for
+from lore.core.utils import filter_and_sort
 from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.forms import get_form_str
 
@@ -70,8 +70,8 @@ async def api_ingest_artifacts(
             file_idx += 1
 
             # materialize the file to a temp file for ingestion
-            original_ext = Path(upload.filename).suffix if upload.filename else "bin"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{original_ext}") as tmp_out:
+            original_ext = Path(upload.filename).suffix if upload.filename else ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"{original_ext}") as tmp_out:
                 shutil.copyfileobj(upload.file, tmp_out)
                 tmp_path = Path(tmp_out.name)
             
@@ -220,15 +220,6 @@ class ExploreDataRequest(BaseModel):
     adapter_config: AdapterConfig = Field(default_factory=AdapterConfig)
 
 
-def _make_query_pattern(query_string: str) -> str:
-    """Convert a simple query string into a case-insensitive substring search pattern."""
-    new_query = query_string.strip().replace('"', '').replace("'", "")
-    if "," in new_query:
-        parts = [re.escape(p.strip()) for p in new_query.split(",") if p.strip()]
-        return "|".join(parts)
-    return re.escape(new_query)
-
-
 @router.post("/{artifact_id}/explore/data", response_class=JSONResponse)
 def api_explore_data(
     artifact_id: str,
@@ -275,52 +266,28 @@ def api_explore_data(
             cache_kwargs={
                 "artifact_id": artifact_id,
                 "adapter": adapter.name,
-                "modified_time": path.stat().st_mtime,  # final boss of cache invalidation
+                "created_at": artifact.created_at.isoformat(),  # for cache invalidation
             }
         )
 
         total_rows = len(master_df)
-        df = master_df  # work on a copy to avoid modifying in-memory cache
+        df = master_df  # alias to avoid modifying in-memory cache
 
         # 3. 3-tier filtering
-        if payload.query.strip() and not df.empty:
-            # i. Regex search (by row)
-            if payload.regex:
-                try:
-                    mask = df.astype(str).apply(
-                        lambda col: col.str.contains(
-                            payload.query, case=False, na=False, regex=True,
-                        )
-                    ).any(axis=1)
-                    df = df[mask]
-                except Exception as e:
-                    return JSONResponse({"status": "error", "message": f"Invalid regex pattern: {str(e)}"}, status_code=400)
-            else:
-                # ii. Pandas query string
-                try:
-                    df = df.query(payload.query)
-                except Exception:
-                    # iii. Case-insensitive substring search
-                    try:
-                        search_pattern = _make_query_pattern(payload.query)
-                        mask = df.astype(str).apply(
-                            lambda col: col.str.contains(
-                                search_pattern, case=False, na=False, regex=True,
-                            )
-                        ).any(axis=1)
-                        df = df[mask]
-                    except Exception as e:
-                        return JSONResponse(
-                            {"status": "error", "message": f"Invalid query: {str(e)}"},
-                            status_code=400,
-                        )
-
         view_state = payload.adapter_config.view_state
-        sort_by = view_state.get("sort_by")
-
-        if sort_by and sort_by in df.columns:
-            sort_asc = view_state.get("sort_asc", True)
-            df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
+        try:
+            df = filter_and_sort(
+                df,
+                query=payload.query,
+                regex=payload.regex,
+                sort_by=view_state.get("sort_by"),
+                sort_asc=view_state.get("sort_asc", True),
+            )
+        except ValueError as e:
+            return JSONResponse(
+                content={"status": "error", "message": f"Invalid filter query: {str(e)}"},
+                status_code=400,
+            )
 
         # 4. Data enhancements
         # UI data bars: calculate maximums
@@ -356,7 +323,7 @@ def api_explore_data(
                 "keys": columns,
                 "metadata": metadata,
                 "adapter_name": adapter.name,
-                "view_state": view_state,
+                "view_state": payload.adapter_config.view_state,
             },
         )
         html = bytes(response.body).decode("utf-8")
@@ -405,41 +372,24 @@ def api_explore_export(
 
     df = s.runtime.cache.get_or_compute(
         session_id=s.id, prefix="explore_df", compute_fn=_compute_dataframe,
-        cache_kwargs={"artifact_id": artifact_id, "adapter": adapter.name, "modified_time": path.stat().st_mtime}
+        cache_kwargs={
+            "artifact_id": artifact_id,
+            "adapter": adapter.name,
+            "created_at": artifact.created_at.isoformat(),
+        }
     )
 
-    # 2. Apply Filters & Sort
-    if payload.query.strip() and not df.empty:
-        if payload.regex:
-            # i. Regex search (by row)
-            try:
-                mask = df.astype(str).apply(
-                    lambda col: col.str.contains(payload.query, case=False, na=False, regex=True)
-                ).any(axis=1)
-                df = df[mask]
-            except Exception as e:
-                raise HTTPException(400, f"Invalid regex pattern: {str(e)}") from e
-        else:
-            # ii. Pandas query string
-            try:
-                df = df.query(payload.query)
-            except Exception:
-                # iii. Case-insensitive substring search
-                try:
-                    search_pattern = _make_query_pattern(payload.query)
-                    mask = df.astype(str).apply(
-                        lambda col: col.str.contains(
-                            search_pattern, case=False, na=False, regex=True,
-                        )
-                    ).any(axis=1)
-                    df = df[mask]
-                except Exception as e:
-                    raise HTTPException(400, f"Invalid query: {str(e)}") from e
-    
-    sort_by = view_state.get("sort_by")
-    if sort_by and sort_by in df.columns:
-        sort_asc = view_state.get("sort_asc", True)
-        df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
+    # 2. Filter and sort
+    try:
+        df = filter_and_sort(
+            df,
+            query=payload.query,
+            regex=payload.regex,
+            sort_by=view_state.get("sort_by"),
+            sort_asc=view_state.get("sort_asc", True),
+        )
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid filter query: {str(e)}") from e
 
     # 3. Return CSV Response
     csv_data = df.to_csv(index=False)

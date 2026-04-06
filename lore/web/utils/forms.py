@@ -4,15 +4,14 @@ Helpers for dealing with HTML forms
 import enum
 import logging
 import re
-import types
-from typing import Any, Type, Union
-from typing_extensions import get_args, get_origin
+from typing import Any, Type
+from typing_extensions import get_args
 from pydantic_core import PydanticUndefined
 from pydantic import BaseModel
 
 from fastapi.datastructures import FormData
 
-from lore.core.utils import clean
+from lore.core.utils import clean, is_collection_type, is_optional_type
 from lore.core.tasks import TaskDefinition
 
 logger = logging.getLogger(__name__)
@@ -64,6 +63,15 @@ def format_inputs_for_ui(task_def: TaskDefinition, raw_inputs: dict) -> dict:
                 ui_ready[key] = [v.value if isinstance(v, enum.Enum) else str(v) for v in val if v is not None]
             else:
                 ui_ready[key] = [val.value if isinstance(val, enum.Enum) else str(val)]
+
+        elif widget == "checkbox":
+            # Normalize to Python bool — handles string 'true'/'false' from deserialized manifests
+            if isinstance(val, bool):
+                ui_ready[key] = val
+            elif isinstance(val, str):
+                ui_ready[key] = val.lower() in ("true", "1", "on", "yes")
+            else:
+                ui_ready[key] = bool(val) if val is not None else False
 
         else:
             # Primitive types: Standard inputs
@@ -172,20 +180,14 @@ def form_html_to_dict(
         annotation = field.annotation
 
         # 2. Determine type (List? Bool?)
-        origin = get_origin(annotation)
-        is_optional = False
+        is_optional = is_optional_type(annotation)
+        is_list = is_collection_type(annotation)
 
-        # Handle Union types (Optional[...] or | None)
-        args = get_args(annotation)
-        if args and type(None) in args:
-            is_optional = True
-            non_none_args = tuple(a for a in args if a is not type(None))
+        # Unwrap Optional to get the inner type for int/float casting below
+        if is_optional:
+            non_none_args = tuple(a for a in get_args(annotation) if a is not type(None))
             if len(non_none_args) == 1:
                 annotation = non_none_args[0]
-                origin = get_origin(annotation)
-
-        # Check if it's a list-like type
-        is_list = annotation in (list, set, tuple) or origin in (list, set, tuple)
 
         # 3. Extract raw value(s) from FormData and Normalize
         main_vals, manual_vals = _extract_raw_values(form_data, form_key, is_list)
@@ -272,9 +274,12 @@ def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, 
         val = raw_dict.get(field_name)
         manual_val = raw_dict.get(f"{field_name}__manual")
 
-        annotation_str = str(field_info.annotation).lower()
-        is_list_expected = "list[" in annotation_str or "typing.list" in annotation_str
-        is_bool_expected = "bool" in annotation_str
+        annotation = field_info.annotation
+        is_list_expected = is_collection_type(annotation)
+
+        # Unwrap Optional to check the inner type for bool
+        inner = next((a for a in get_args(annotation) if a is not type(None)), annotation)
+        is_bool_expected = inner is bool
 
         # Bool: handle hidden-input trick (always sends "false"; checked also sends "true")
         if is_bool_expected:
