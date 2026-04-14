@@ -255,7 +255,7 @@ def api_explore_data(
             import pandas as pd
             df = pd.DataFrame(records)
             if not df.empty:
-                df = df.apply(pd.to_numeric, errors="ignore")
+                df = df.convert_dtypes()
             return df
 
         # 2. Caching layer to speed up repeated queries on large data
@@ -368,7 +368,7 @@ def api_explore_export(
         records = adapter.adapt(reader.read_full())
         import pandas as pd
         df = pd.DataFrame(records)
-        return df.apply(pd.to_numeric, errors="ignore") if not df.empty else df
+        return df.convert_dtypes() if not df.empty else df
 
     df = s.runtime.cache.get_or_compute(
         session_id=s.id, prefix="explore_df", compute_fn=_compute_dataframe,

@@ -343,7 +343,6 @@ class TableAdapter(BaseAdapter):
 
         return result
 
-
     def to_dataframe(self, raw_data: Any, config: dict | None = None) -> "pd.DataFrame":
         """
         Converts adapted data directly into a Pandas DataFrame.
@@ -352,7 +351,7 @@ class TableAdapter(BaseAdapter):
         import pandas as pd
         records = self.adapt(raw_data, config=config)
         df = pd.DataFrame(records)
-        df = df.apply(pd.to_numeric, errors='ignore')
+        df = df.convert_dtypes()
         return df
 
     def serialize(self, records: list[dict], extension: str = "json") -> str:
