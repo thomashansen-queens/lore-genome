@@ -33,11 +33,18 @@
             <p class="muted small">{{ task_def.description }}</p>
             <hr />
 
-            {# Loop through your task inputs and render your custom ValueInput widgets here! #}
+            {# Loop through your task inputs and render custom ValueInput widgets #}
             {% for field_name, field_info in task_def.input_model.model_fields.items() %}
+                
+                {# Set up variables needed for the input widget #}
                 {% set prefilled_val = prefilled_inputs.get(field_name) %}
-                {% set field_candidates = artifact_candidates.get(field_name, []) %}
-                {{ forms.render_field(field_name, field_info, prefilled_val, candidates=field_candidates) }}
+                {% set mode = resolved.binding_type if resolved else 'literal' %}
+                {% set literal_val = resolved.value if resolved and mode == 'literal' else prefilled_inputs.get(field_name) %}
+                {% set available_upstream_tasks = upstream_options_by_field.get(field_name, []) %}
+                
+                {# Call the HTMX component to dynamically render input controls #}
+                {% include "components/task_input.html" %}
+            
             {% endfor %}
 
             <div class="column gapped">

@@ -17,7 +17,7 @@ models:
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, cast, Callable, get_origin, Type
+from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.fields import FieldInfo
 
@@ -62,13 +62,18 @@ class TaskDefinition:
     icon: str = "⚡"
     live_preview: bool = False
 
-    def field_meta(self, key: str) -> tuple[FieldInfo, dict[str, Any]]:
+    def field_meta(self, key: str, is_output: bool = False) -> tuple[FieldInfo, dict[str, Any]]:
         """
         Validates and extracts metadata for a given input field in a TaskDefinition.
         :returns: tuple[FieldInfo, json_schema_extra_dict]
         """
-        model_fields = self.input_model.model_fields
-        field_info = model_fields.get(key)
+        model = self.output_model if is_output else self.input_model
+
+        # No output model (e.g. it's an exporter)
+        if not model:
+            return FieldInfo(annotation=None), {}
+
+        field_info = model.model_fields.get(key)
 
         # 1. Graceful fallback (e.g. missing TaskDefinition)
         if field_info is None:

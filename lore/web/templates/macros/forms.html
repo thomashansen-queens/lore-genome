@@ -7,9 +7,10 @@
     {% set candidate_ids = candidates | map(attribute='id') | list %}
 
     <div style="margin-bottom: 1rem;">
-        <label>
+        {# Label temporarily disabled to decide whether it should belong to the Macro or the Component #}
+        {# <label>
             {{ label }}{% if field_info.is_required() %}<span class="required"> *</span>{% endif %}
-        </label>
+        </label> #}
 
         {# Single Artifact dropdown #}
         {% if widget == 'artifact_single_select' %}
