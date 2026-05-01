@@ -222,8 +222,12 @@ class WorkflowManager:
                 
                 bindings = task.inputs.get(input_key, [])
                 for b in bindings:
-                    # A. Already a Reference or UserInput. Keep, but ensure source ID
-                    if isinstance(b, ReferenceBinding):
+                    # A. Already a UserInputBinding
+                    if isinstance(b, UserInputBinding):
+                        dehydrated_list.append(b)
+
+                    # B. Already a Reference or UserInput. Keep, but ensure source ID
+                    elif isinstance(b, ReferenceBinding):
                         ref_sig = (b.source_id, b.output_key)
                         if ref_sig not in seen_refs:
                             seen_refs.add(ref_sig)
@@ -232,8 +236,9 @@ class WorkflowManager:
                                 output_key=b.output_key,
                             ))
 
+                    # C. LiteralBinding may be to a concrete Artifact; convert to Reference
                     elif isinstance(b, LiteralBinding):
-                        # B. LiteralBinding may be to a concrete Artifact; convert to Reference
+                        # c1. Upgrade an Artifact to a DAG edge binding
                         if accepts_artifact and b.value in artifact_to_creator:
                             creator_task_id, out_key = artifact_to_creator[b.value]
                             ref_sig = (creator_task_id, out_key)
@@ -245,15 +250,16 @@ class WorkflowManager:
                                     output_key=out_key,
                                 ))
 
+                        # c2. Upgrade an input to a DAG start node
                         elif accepts_artifact:
-                            # C. Artifact external to Session; user must replace
+                            # Artifact must be provided by user at runtime
                             if session.get_artifact(b.value):
                                 dehydrated_list.append(UserInputBinding(input_key=input_key))
-                            # D. Manual input
+                            # Value must be provided by user at runtime
                             else:
                                 dehydrated_list.append(LiteralBinding(value=b.value))
 
-                        # E. ValueInput (primitive literal)
+                        # D. ValueInput (primitive literal)
                         else:
                             dehydrated_list.append(b)
 
