@@ -37,9 +37,9 @@
                 
                 {% set ns = namespace(requires_input=false) %}
                 
-                {% for step in workflow.steps %}
-                    {% set task_def = task_registry.get(step.task_key) %}
-                    {% for key, bindings in step.inputs.items() %}
+                {% for task in workflow.tasks %}
+                    {% set task_def = task_registry.get_safe(task.registry_key) %}
+                    {% for key, bindings in task.inputs.items() %}
                         {% for b in bindings %}
                             {% if b.type == "user_input" %}
                                 {% set field_info, extra = task_def.field_meta(key) if task_def else (None, {}) %}
@@ -50,18 +50,19 @@
                                     {{ extra.label or (key | replace('_', ' ') | title) }} <span class="required">*</span>
                                 </label>
                                 
-                                {% if b.description %}
+                                {% if extra.description %}
                                     <div class="muted small" style="margin-bottom: 0.5rem;">
                                         {{ extra.description }}
                                     </div>
                                 {% endif %}
 
-                                {% set input_name = "input__" ~ step.id ~ "__" ~ key ~ "__" ~ loop.index0 %}
+                                {# Needs to match the Workflow manager's hydrate_workflow logic #}
+                                {% set input_name = task.id ~ "__" ~ key ~ "__" ~ loop.index0 %}
 
                                 {{ forms.render_user_input(input_name, extra) }}
 
                                 <div class="muted small">
-                                    Step: {{ task_def.name if task_def else step.task_key }}
+                                    Task: {{ task_def.name if task_def else task.registry_key }}
                                 </div>
                                 
                             {% endif %}
@@ -82,7 +83,7 @@
     </aside>
     
     {% block workspace %}
-        {% include "features/workflows/graph.html" %}
+        {% include "/components/task_graph.html" %}
     {% endblock %}
 
 </div>

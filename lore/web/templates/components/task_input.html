@@ -9,72 +9,80 @@
     
     {# --- Header & Toggle Bar --- #}
     <div class="row" style="justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
-        <label>
+        <label style="font-weight: 600;">
             {{ label }}{% if is_required %}<span class="required"> *</span>{% endif %}
         </label>
         
-        {# HTMX Toggle Button: Calls the backend to swap modes #}
-        {% if available_upstream_tasks %}
-            <a href="#" 
-            class="badge small" 
-            hx-get="/sessions/{{ session.id }}/tasks/configure/{{ task_def.key }}/input-widget?field_name={{ field_name }}&current_mode={{ mode }}"
-            hx-target="#field-container-{{ field_name }}"
-            hx-swap="outerHTML">
-                {% if mode == 'literal' %}
-                    (Use Task Output)
-                {% else %}
-                    (Use Literal Value)
+        <select name="__mode__{{ field_name }}" 
+            class="form-control small" 
+            style="width: auto;" 
+            hx-trigger="change" 
+            hx-target="#field-container-{{ field_name }}" 
+            hx-swap="outerHTML" 
+            hx-get="{{ ui_state.widget_url }}">
+
+                <option value="literal" {% if ui_state.binding_mode == 'literal' %}selected{% endif %}>
+                    Literal Value
+                </option>
+
+                {% if ui_state.avail_tasks|length > 0 %}
+                    <option value="reference" {% if ui_state.binding_mode == 'reference' %}selected{% endif %}>
+                        Task Output
+                    </option>
                 {% endif %}
-            </a>
-        {% endif %}
+
+                <option value="user_input" {% if ui_state.binding_mode == 'user_input' %}selected{% endif %}>
+                    Set each time
+                </option>
+
+        </select>
     </div>
 
     {# --- Input Widget --- #}
     <div class="input-body">
         
-        {% if mode == 'literal' %}
+        {% if ui_state.binding_mode == 'literal' or ui_state.binding_mode == 'user_input' %}
+            
+            {% if ui_state.binding_mode == 'user_input' %}
+            <div class="small warning fullwidth">
+                User will provide or confirm this value at runtime.
+            </div>
+            {% endif %}
+
             {{ forms.render_field(
                 name=field_name, 
                 field_info=field_info, 
-                prefill_val=literal_val, 
-                candidates=artifact_candidates.get(field_name, [])
+                prefill_val=ui_state.literal_val, 
+                candidates=ui_state.candidates,
             ) }}
             
-        {% elif mode == 'reference' %}
+        {% elif ui_state.binding_mode == 'reference' %}
             {# DAG Reference Dropdown #}
             <select name="{{ field_name }}" class="form-control fullwidth">
-                <option value="" disabled {% if not resolved or resolved.binding_type != 'reference' %}selected{% endif %}>
+                <option value="" disabled {% if not ui_state.ref_val %}selected{% endif %}>
                     Select an upstream output...
                 </option>
                 
-                {% for upstream_task in available_upstream_tasks %}
+                {% for upstream_task in ui_state.avail_tasks %}
                     {# Only show tasks that actually have outputs #}
-                        <optgroup label="{{ upstream_task.task.name }} ({{ upstream_task.task.status }})">
+                    <optgroup label="{{ upstream_task.task.name }} ({{ upstream_task.task.status }})">
+                        
+                        {% for out_key in upstream_task.valid_outputs %}
+                            {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
                             
-                            {% for out_key in upstream_task.valid_outputs %}
-                                {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
-                                
-                                <option value="{{ ref_string }}" 
-                                    {% if resolved and resolved.binding_type == 'reference' and resolved.value == ref_string %}selected{% endif %}>
-                                    Output: {{ out_key }}
-                                </option>
-                            {% endfor %}
-                            
-                        </optgroup>
+                            <option value="{{ ref_string }}" 
+                                {% if ui_state.ref_val == ref_string %}selected{% endif %}>
+                                Output: {{ out_key }}
+                            </option>
+                        {% endfor %}
+                        
+                    </optgroup>
                 {% endfor %}
             </select>
             
-            <small class="muted" style="display: block; margin-top: 0.25rem;">
+            <small class="muted">
                 This input will wait for the selected task to generate its data.
             </small>
-
-        {% elif mode == 'user_input' %}
-            {# For the Workflow editor (might be merged later?) #}
-            <div class="badge warning fullwidth">
-                <input type="hidden" name="{{ field_name }}" value="user_input:true">
-                User will be prompted to provide this value at runtime.
-            </div>
         {% endif %}
-
     </div>
 </div>

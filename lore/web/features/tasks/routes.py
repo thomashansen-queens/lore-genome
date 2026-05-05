@@ -9,9 +9,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
 from lore.core.sessions import resolve_task_inputs
-from lore.core.sessions import find_valid_upstream_outputs, find_artifact_candidates, map_artifacts_to_task_inputs, resolve_task_outputs
+from lore.core.sessions import find_artifact_candidates, map_artifacts_to_task_inputs, resolve_task_outputs
 from lore.core.tasks.models import TaskConfig
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, format_inputs_for_ui, form_json_to_dict
 from lore.core.tasks import task_registry, TaskStatus
 
@@ -71,35 +72,12 @@ async def configure_task(
     if not task_def:
         raise HTTPException(status_code=404, detail=f"Task '{task_key}' not found in registry.")
 
-    # 2. Edit mode if needed
-    prefill_name = task_def.name
-    task_id = None
-    resolved_inputs = {}
-
-    if load_task:
-        task = s.get_task(load_task)
-        if task:
-            prefill_name = task.name
-            task_id = task.id
-            resolved_inputs = resolve_task_inputs(s, task.id)
-
-    # 3. Pushed Artifacts
-    raw_inputs = {}
-    if source_artifact_ids:
-        raw_inputs.update(map_artifacts_to_task_inputs(s, task_def, source_artifact_ids))
-
-    # 4. Format for UI
-    prefilled_inputs = format_inputs_for_ui(task_def, raw_inputs)
-    artifact_candidates = find_artifact_candidates(s, task_def)
-
-    # 5. Collect referenceable Tasks for ReferenceInput fields (self-exclude)
-    available_tasks = [t for t in s.list_tasks() if t.id != task_id]
-
-    # 6. Pre-compute options to pipe Artifacts into ReferenceInput fields
-    upstream_options_by_field = {}
-    for field_name, field_info in task_def.input_model.model_fields.items():
-        _, field_extra = task_def.field_meta(field_name)
-        upstream_options_by_field[field_name] = find_valid_upstream_outputs(s, task_id, field_extra)
+    ui_context = build_task_configure_context(
+        container=s,
+        task_key=task_key,
+        task_id=load_task,
+        source_artifact_ids=source_artifact_ids,    
+    )
 
     ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
     return templates.TemplateResponse(
@@ -107,16 +85,10 @@ async def configure_task(
         name="features/tasks/configure.html",
         context=ctx.render(
             session=s,
-            task_def=task_def,
-            prefill_name=prefill_name,
-            prefilled_inputs=prefilled_inputs,
-            resolved_inputs=resolved_inputs,
-            artifact_candidates=artifact_candidates,
-            available_tasks=available_tasks,
-            upstream_options_by_field=upstream_options_by_field,
-            edit_task_id=task_id,
+            context_type="session",
             preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/preview",
             commit_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}",
+            **ui_context,  # Unpacks into expected vars for Jinja
         )
     )
 
@@ -188,43 +160,26 @@ def get_input_widget(
     task_key: str,
     s: ReadOnlySession,
     field_name: str = Query(...),
-    current_mode: str = Query(...),
     task_id: str | None = Query(None),
     ctx: PageContext = Depends(),
 ):
     """
     HTMX endpoint: Hot-swaps Task input slots
     """
-    new_mode = "reference" if current_mode == "literal" else "literal"
-
-    task_def = task_registry.get(task_key)
-    if not task_def:
-        raise HTTPException(status_code=404, detail=f"Task '{task_key}' not found in registry.")
-
-    field_info, field_extra = task_def.field_meta(field_name)
-
-    # Gather requried context to render desired widget in new mode
-    available_upstream_tasks = find_valid_upstream_outputs(s, task_id, field_extra)
-    artifact_candidates = {}
-
-    if new_mode == "literal":
-        artifact_candidates = find_artifact_candidates(s, task_def)
+    new_mode = ctx.request.query_params.get(f"__mode__{field_name}", "literal")
+    widget_context = build_widget_context(s, task_key, field_name, new_mode, task_id)
+    f_name = widget_context.pop("field_name")
+    f_info = widget_context.pop("field_info")
 
     return templates.TemplateResponse(
         request=ctx.request,
         name="components/task_input.html",
         context=ctx.render(
-            request=ctx.request,
-            session=s,
-            field_name=field_name,
-            field_info=field_info,
-            mode=new_mode,
-            task_def=task_def,
-            # Form context
-            available_upstream_tasks=available_upstream_tasks,
-            artifact_candidates=artifact_candidates,
-            resolved=None,
-            literal_val=None,
+            context_type="session",
+            edit_task_id=task_id,
+            field_name=f_name,
+            field_info=f_info,
+            ui_state=widget_context,
         )
     )
 

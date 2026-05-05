@@ -8,9 +8,12 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 
+from lore.core.topology.diagram import generate_dag_diagram
+from lore.core.topology.traversal import DAGValidationError, sort_tasks_topologically
+from lore.core.tasks import task_registry
 from lore.core.utils import auto_increment, clean, slugify
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 
@@ -90,6 +93,9 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
     artifacts = s.list_artifacts(reverse=True)
     push_task_targets = _build_push_task_targets(artifacts)
 
+    chronological_tasks = s.list_tasks()
+    diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, "LR")
+
     ctx.generate_breadcrumbs({s.id: s.name})
     return templates.TemplateResponse(
         request=ctx.request,
@@ -99,8 +105,67 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
             tasks=tasks,
             artifacts=artifacts,
             push_task_targets=push_task_targets,
+            diagram_lr=diagram_lr,
         ),
     )
+
+
+@router.get("/{session_id}/view", response_class=HTMLResponse)
+def view_session(
+    s: ReadOnlySession,
+    view_type: str = Query("graph", alias="type"),
+    sort_by: str = Query("topo", alias="sort"), 
+    order: str = Query("asc"), 
+    ctx: PageContext = Depends(),
+):
+    """HTMX endpoint to swap between Graph and Table views."""
+    tasks = s.list_tasks()
+
+    if view_type == "table":
+        # 1. Calculate topological order for the "#" column
+        topo_map = {}
+        try:
+            topo_sorted = sort_tasks_topologically(tasks)
+            topo_map = {t.id: i+1 for i, t in enumerate(topo_sorted)}
+        except DAGValidationError:
+            topo_map = {t.id: "?" for t in tasks}
+
+        # 2. Apply the requested sorting
+        sort_strategies = {
+            "name": lambda t: t.name or "",
+            "type": lambda t: t.registry_key,
+            "status": lambda t: t.status.value,  # Extract string from Enum
+            "modified": lambda t: t.modified_at,
+            "topo": lambda t: topo_map.get(t.id, 999) if isinstance(topo_map.get(t.id), int) else 999,
+        }
+
+        reverse = (order == "desc")
+        if sort_by:
+            sort_fn = sort_strategies.get(sort_by, sort_strategies["topo"])
+            tasks.sort(key=sort_fn, reverse=reverse)
+
+        return templates.TemplateResponse(
+            request=ctx.request,
+            name="partials/task_list.html",
+            context=ctx.render(
+                session=s, 
+                tasks=tasks,
+                topo_map=topo_map,
+                sort_by=sort_by,
+                order=order,
+            ),
+        )
+    else:
+        chronological_tasks = s.list_tasks()
+        diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, "LR")
+        return templates.TemplateResponse(
+            request=ctx.request,
+            name="components/task_graph.html",
+            context=ctx.render(
+                session=s,
+                diagram_lr=diagram_lr,
+            ),
+        )
 
 
 @router.post("/{session_id}/clone", response_class=RedirectResponse)

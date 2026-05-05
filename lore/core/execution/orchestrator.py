@@ -6,7 +6,7 @@ import logging
 
 from lore.core.runtime import Runtime
 from lore.core.execution.executors import LocalSubprocessExecutor
-from lore.core.workflows.dag import solve_dag
+from lore.core.topology.traversal import _dfs_sort_dag
 from lore.core.bindings import ReferenceBinding
 from lore.core.tasks.models import TaskStatus
 
@@ -41,7 +41,7 @@ class SequentialOrchestrator:
                             upstream_ids.add(b.source_id)
 
                 dependency_map[task.id] = list(upstream_ids)
-        return solve_dag(dependency_map)
+        return _dfs_sort_dag(dependency_map)
 
     def run_cascade(self, session_id: str) -> None:
         """

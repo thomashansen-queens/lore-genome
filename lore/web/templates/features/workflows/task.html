@@ -1,0 +1,48 @@
+{% extends "features/workflows/detail.html" %}
+
+{% block workspace %}
+<div class="column">
+    <div class="ui-label">Workflow Task</div>
+    {{ ui.editable_header(task.name, "/workflows/" ~ workflow.id ~ "/tasks/" ~ task.id ~ "/rename") }}
+    <div class="muted mono small">
+        ID: {{ task.id }} | Type: {{ task.registry_key }}
+    </div>
+    {# === Action bar === #}
+    <div class="row" style="flex-shrink: 0; margin-top: 1rem;">
+        <a href="/workflows/{{ workflow.id }}/" class="btn secondary">
+            ⬅ Back to Workflow
+        </a>
+    </div>
+
+    {# === Task configuration === #}
+    <div class="card" style="margin-top: 1rem;">
+        <div class="ui-label">Configuration</div>
+        <label style="font-weight: 600;">Description</label>
+        
+        <form action="/workflows/{{ workflow.id }}/tasks/{{ task.id }}/update" method="POST" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+            <textarea name="description" rows="3" class="fullwidth" placeholder="Document the role of this task in the workflow...">{{ task.description }}</textarea>
+
+            <div class="ui-label" style="margin-top: var(--spacing-md);">Inputs</div>
+            <div class="scroll-area">
+                {# Loop through the Task inputs using our reusable component #}
+                {% for field_name, field_info in task_def.input_model.model_fields.items() %}
+                    
+                    {% set resolved = resolved_inputs.get(field_name) %}
+                    {% set mode = resolved.type if resolved else 'literal' %}
+                    {% set literal_val = resolved.value if resolved and mode == 'literal' else prefilled_inputs.get(field_name) %}
+                    
+                    {% set available_upstream_tasks = upstream_options_by_field.get(field_name, []) %}
+                    {% set context_type = "workflow" %}
+                    
+                    {% include "components/task_input.html" %}
+                    
+                {% endfor %}
+            </div>
+            <div style="margin-top: 1rem;">
+                <button type="submit" class="btn primary">Save Configuration</button>
+            </div>
+        </form>
+
+    </div>
+</div>
+{% endblock %}

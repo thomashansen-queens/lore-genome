@@ -1,11 +1,9 @@
 """
-Matcher functions for finding Artifacts to satisfy Task input requirements.
-Bridges TaskDefinition schemas to the available Artifacts in a Session
+Concrete matching functions for finding Artifacts to satisfy Task 
+input requirements.
 """
 
 from typing import Any, TYPE_CHECKING
-
-from lore.core.tasks import task_registry
 
 if TYPE_CHECKING:
     from lore.core.artifacts import Artifact
@@ -47,7 +45,7 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
 
             # B. Static schema: Adapter-provided
             for adapter in table_adapters:
-                schema = getattr(adapter, 'schema', {})
+                schema = getattr(adapter, "schema", {})
                 available_cols.update(schema.keys())
 
             # Is either schema capable of satisfying the accepted data requirements?
@@ -105,48 +103,3 @@ def map_artifacts_to_task_inputs(session: "Session", task_def: "TaskDefinition",
                     break
 
     return mapping
-
-def find_valid_upstream_outputs(
-    session: "Session",
-    current_task_id: str | None,
-    field_extra: dict,
-) -> list[dict[str, Any]]:
-    """
-    Looks at other Tasks in the Session and checks their output schemas
-    to see if they can satisft the current field's data requirements.
-    TODO: Actually check upstream. Currently checks all other Tasks.
-
-    Returns: list[dict]: [{"task": Task, "valid_outputs": list[str]}]
-    """
-    if not field_extra.get("is_artifact"):
-        return []
-
-    accepted_data = set(field_extra.get("accepted_data", ["*"]))
-    valid_upstream = []
-
-    for task in session.list_tasks():
-        # Prevent self-binding
-        if current_task_id and task.id == current_task_id:
-            continue
-
-        upstream_def = task_registry.get(task.registry_key)
-        if not upstream_def or not upstream_def.output_model:
-            continue
-
-        valid_outputs = []
-
-        for out_key in upstream_def.output_model.model_fields.keys():
-            _, out_extra = upstream_def.field_meta(out_key, is_output=True)
-
-            produced_type = out_extra.get("data_type", "unknown")
-
-            if "*" in accepted_data or produced_type in accepted_data:
-                valid_outputs.append(out_key)
-
-        if valid_outputs:
-            valid_upstream.append({
-                "task": task,
-                "valid_outputs": valid_outputs
-            })
-
-    return valid_upstream

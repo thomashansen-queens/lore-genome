@@ -8,7 +8,8 @@ from typing import Any, List, Dict
 
 from lore.core.bindings import Binding, ReferenceBinding, LiteralBinding, UserInputBinding
 from lore.core.sessions import Session
-from lore.core.workflows.models import Workflow, WorkflowStep
+from lore.core.tasks.models import Task, TaskStatus
+from lore.core.workflows.models import Workflow
 from lore.core.utils import auto_increment, slugify
 
 
@@ -63,7 +64,7 @@ class WorkflowManager:
                             "id": wf_id,
                             "name": data.get("name", file.stem),
                             "description": data.get("description", ""),
-                            "step_count": len(data.get("steps", [])),
+                            "task_count": len(data.get("tasks", [])),
                             "created_at": data.get("created_at", "unknown"),
                             "is_builtin": is_builtin,
                         })
@@ -194,14 +195,13 @@ class WorkflowManager:
         # 1. First pass: Map Artifacts to the Task that created them
         # This converts hardcoded LiteralBindings (Artifact IDs) into ReferenceBindings
         artifact_to_creator = {}
-
         for task in session.list_tasks():
             for output_key, artifact_list in task.outputs.items():
                 for art_id in (artifact_list or []):
                     artifact_to_creator[art_id] = (task.id, output_key)
 
-        # 2. Second pass: build the Workflow Steps
-        steps = []
+        # 2. Second pass: build the Workflow Tasks
+        workflow_tasks = []
         for task in session.list_tasks():
             task_def = task_registry.get(task.registry_key)
             if task_def is None:
@@ -219,14 +219,14 @@ class WorkflowManager:
 
                 dehydrated_list = []
                 seen_refs = set()  # Avoid duplicate bindings between input_slot and output_slot
-                
+
                 bindings = task.inputs.get(input_key, [])
                 for b in bindings:
                     # A. Already a UserInputBinding
                     if isinstance(b, UserInputBinding):
                         dehydrated_list.append(b)
 
-                    # B. Already a Reference or UserInput. Keep, but ensure source ID
+                    # B. Already a Reference. Keep, but ensure source ID
                     elif isinstance(b, ReferenceBinding):
                         ref_sig = (b.source_id, b.output_key)
                         if ref_sig not in seen_refs:
@@ -265,18 +265,26 @@ class WorkflowManager:
 
                 dehydrated_inputs[input_key] = dehydrated_list
 
-            steps.append(WorkflowStep(
+            workflow_tasks.append(Task(
                 id=task.id,
-                task_key=task.registry_key,
+                registry_key=task.registry_key,
                 inputs=dehydrated_inputs,
                 name=task.name,
-                description=task_def.description or "",
+                description=task.description or "",
+                status=TaskStatus.TEMPLATE,
             ))
+
+        # 4. Check integrity of new Workflow
+        from lore.core.topology.traversal import sort_tasks_topologically, DAGValidationError
+        try:
+            sort_tasks_topologically(workflow_tasks)
+        except DAGValidationError as e:
+            raise ValueError(f"Cannot extract Workflow. The Session's topology is invalid: {e}")
 
         if name is None:
             name = f"Workflow from {session.name}"
 
-        return Workflow(id=new_workflow_id, name=name, steps=steps)
+        return Workflow(id=new_workflow_id, name=name, tasks=workflow_tasks)
 
     def hydrate_workflow(
         self,
@@ -288,38 +296,38 @@ class WorkflowManager:
         Injects a Workflow template into a live Session.
         If provided, further injects UserInputBindings to Tasks.
         """
-        from lore.core.workflows.dag import validate_and_sort_workflow
+        from lore.core.topology.traversal import sort_tasks_topologically
         if runtime_inputs is None:
             runtime_inputs = {}
 
         # 1. Validate the DAG and get the execution order
-        sorted_steps = validate_and_sort_workflow(workflow)
+        sorted_tasks = sort_tasks_topologically(workflow.tasks)
 
-        # 2. Map of Workflow Step IDs to Session Task IDs
-        step_to_task_map = {}
+        # 2. Map of template Task IDs (Workflow) to live Task IDs (Session)
+        template_to_live_map = {}
 
         # 3. Create the Tasks in topological order
-        for step in sorted_steps:
-            task = session.add_task(
-                registry_key=step.task_key,
-                name=step.name or f"{workflow.name} - {step.task_key}",
+        for template_task in sorted_tasks:
+            live_task = session.add_task(
+                registry_key=template_task.registry_key,
+                name=template_task.name or f"{workflow.name} - {template_task.registry_key}",
             )
-            step_to_task_map[step.id] = task.id
+            template_to_live_map[template_task.id] = live_task.id
 
             # 4. Translate the Bindings into the Task's inputs
             task_inputs = {}
-            for input_key, bindings in step.inputs.items():
+            for input_key, bindings in template_task.inputs.items():
                 translated_bindings = []
 
                 for idx, binding in enumerate(bindings):
                     if isinstance(binding, ReferenceBinding):
                         translated_bindings.append(ReferenceBinding(
-                            source_id=step_to_task_map[binding.source_id],
+                            source_id=template_to_live_map[binding.source_id],
                             output_key=binding.output_key,
                         ))
                     elif isinstance(binding, UserInputBinding):
                         # Magic UI assignment format
-                        lookup_key = f"{step.id}__{input_key}__{idx}"
+                        lookup_key = f"{template_task.id}__{input_key}__{idx}"
                         if lookup_key in runtime_inputs:
                             # Inject user value; Task.update() will coerce to correct Binding type
                             translated_bindings.append(runtime_inputs[lookup_key])
@@ -333,60 +341,66 @@ class WorkflowManager:
                 task_inputs[input_key] = translated_bindings
 
             # 5. Push the translated inputs to the Task and set its state
-            task.update(inputs=task_inputs)
+            live_task.update(inputs=task_inputs)
             session.mark_dirty()
 
-    # --- Step management ---
+    # --- Task management ---
 
-    def get_step(self, workflow_id: str, step_id: str) -> WorkflowStep | None:
-        """Retrieve a specific step from a workflow."""
+    def get_task(self, workflow_id: str, task_id: str) -> Task | None:
+        """Retrieve a specific task from a workflow."""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
-        return next((s for s in workflow.steps if s.id == step_id), None)
 
-    def rename_step(self, workflow_id: str, step_id: str, new_name: str) -> WorkflowStep:
-        """Update the name of a specific step within a workflow."""
+        return workflow.get_task(task_id)
+
+    def rename_task(self, workflow_id: str, task_id: str, new_name: str) -> Task:
+        """Update the name of a specific task within a workflow."""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
-        step = next((s for s in workflow.steps if s.id == step_id), None)
-        if not step:
-            raise ValueError(f"Step not found in workflow: {step_id}")
 
-        step.name = new_name
+        task = workflow.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task not found in workflow: {task_id}")
+
+        task.update(name=new_name)
+
         self.save_workflow(workflow)
-        return step
+        return task
 
-    def update_step(
+    def update_task(
         self,
         workflow_id: str,
-        step_id: str,
+        task_id: str,
         description: str,
         new_inputs: dict[str, list[Binding]],
-    ) -> WorkflowStep:
-        """Updates a Workflow Step's inputs."""
+    ) -> Task:
+        """Updates a Workflow Task's inputs and description."""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
-        step = next((s for s in workflow.steps if s.id == step_id), None)
-        if not step:
-            raise ValueError(f"Step not found in workflow: {step_id}")
 
-        step.description = description
-        step.inputs = new_inputs
+        task = workflow.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task not found in workflow: {task_id}")
+
+        task.description = description
+        task.update(inputs=new_inputs)
+
         self.save_workflow(workflow)
-        return step
+        return task
 
-    def delete_step(self, workflow_id: str, step_id: str) -> Workflow:
-        """Removes a step from the Workflow."""
+    def delete_task(self, workflow_id: str, task_id: str) -> Workflow:
+        """Removes a task from the Workflow."""
         workflow = self.get_workflow(workflow_id)
         if not workflow:
             raise ValueError(f"Workflow not found: {workflow_id}")
-        step = next((s for s in workflow.steps if s.id == step_id), None)
-        if not step:
-            raise ValueError(f"Step not found in workflow: {step_id}")
 
-        workflow.steps.remove(step)
+        task = workflow.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task not found in workflow: {task_id}")
+
+        workflow.tasks.remove(task)
         self.save_workflow(workflow)
         return workflow

@@ -2,14 +2,16 @@
 Translates Workflow objects into Graph structures for visualization
 """
 
-from typing import Literal
+from typing import Any, Iterable, Literal
 
+from lore.core.bindings import ReferenceBinding, UserInputBinding
+from lore.core.tasks.models import Task
 from lore.core.tasks.registry import TaskRegistry
-from lore.core.workflows.models import Workflow
 from lore.viz.graph import DiagramResult, Graph, DagLayout
 
-def generate_workflow_diagram(
-    workflow: Workflow,
+
+def generate_dag_diagram(
+    tasks: Iterable[Task],
     task_registry: TaskRegistry,
     direction: Literal["TB", "LR"] = "LR",
 ) -> DiagramResult:
@@ -18,40 +20,45 @@ def generate_workflow_diagram(
     """
     graph = Graph()
 
-    # 1. Add all steps as nodes
-    for step in workflow.steps:
-        task_def = task_registry.get_safe(step.task_key)
+    # 1. Add all Tasks as nodes
+    for task in tasks:
+        task_def = task_registry.get_safe(task.registry_key)
 
-        default_name = task_def.name
-        label = step.name if step.name else default_name
+        default_name = task_def.name if task_def else "Unknown Task"
+        label = task.name if task.name else default_name
         graph.add_node(
-            node_id=step.id,
+            node_id=task.id,
             label=label,
-            payload=step,  # include the full step config
+            payload=task,  # include the full task config
         )
 
     # 2. Add ReferenceBindings as edges
     #    also adds virtual nodes for UserInputBindings
-    for step in workflow.steps:
-        task_def = task_registry.get_safe(step.task_key)
+    for task in tasks:
+        task_def = task_registry.get_safe(task.registry_key)
 
-        for key, bindings in step.inputs.items():
-            default_label = key.replace("_", " ").title()
+        for key, bindings in task.inputs.items():
+            input_label = key.replace("_", " ").title()
 
-            _, extra = task_def.field_meta(key)
-            input_label = extra.get("label") or default_label
+            if task_def:
+                try:
+                    _, extra = task_def.field_meta(key)
+                    input_label = extra.get("label") or input_label
+                except (KeyError, ValueError):
+                    # fallback to default label if metadata is missing or malformed
+                    pass
 
             for b in bindings:
-                if b.type == "reference":
+                if isinstance(b, ReferenceBinding):
                     graph.add_edge(
                         source_id=b.source_id,
-                        target_id=step.id,
+                        target_id=task.id,
                         label=b.output_key,
                     )
 
-                elif b.type == "user_input":
+                elif isinstance(b, UserInputBinding):
                     # 1. Invent a unique ID for this virtual node
-                    virtual_id = f"input_{step.id}_{key}"
+                    virtual_id = f"input_{task.id}_{key}"
 
                     # 2. Add the virtual node with a special label
                     graph.add_node(
@@ -62,10 +69,10 @@ def generate_workflow_diagram(
                         is_virtual=True,
                     )
 
-                    # 3. Draw the edge from the virtual node to the step
+                    # 3. Draw the edge from the virtual node to the task
                     graph.add_edge(
                         source_id=virtual_id,
-                        target_id=step.id,
+                        target_id=task.id,
                         label=key,
                     )
 

@@ -1,15 +1,43 @@
 {# Live-updated list of Tasks #}
 {% import "macros/ui.html" as ui %}
 
+{# Component polls and replaces itself with a fresh graph on intervals #}
+<div hx-get="/sessions/{{ session.id }}/view?type=table&sort={{ sort_by }}&order={{ order}}" 
+    hx-trigger="every 2s [shouldPoll()]" 
+    hx-swap="outerHTML">
+
+    {# Helper macro for clickable sort headers #}
+    {% macro sortable_th(label, key) %}
+        {% set next_order = 'desc' if sort_by == key and order == 'asc' else 'asc' %}
+        <th>
+            <a href="#" 
+               hx-get="/sessions/{{ session.id }}/view?type=table&sort={{ key }}&order={{ next_order }}" 
+               hx-target="closest div"
+               style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 4px;">
+                {{ label }}
+                {% if sort_by == key %}
+                    <span class="muted">{{ '↓' if order == 'desc' else '↑' }}</span>
+                {% endif %}
+            </a>
+        </th>
+    {% endmacro %}
+
     <table>
         <thead>
-            <tr><th> </th><th>Name</th><th>Type</th><th>Status</th><th>Modified</th><th>Actions</th></tr>
+            <tr>
+                {{ sortable_th("#", "id") }}
+                {{ sortable_th("Name", "name") }}
+                {{ sortable_th("Type", "registry_key") }}
+                {{ sortable_th("Status", "status") }}
+                {{ sortable_th("Modified", "modified_at") }}
+                <th>Actions</th>
+            </tr>
         </thead>
         <tbody>
             {% for t in tasks %}
             <tr data-status="{{ t.status.value if t.status.value else t.status | string | lower }}">
                 <td>
-                    <small class="muted">{{ loop.index }}</small>
+                    <small class="muted">{{ topo_map[t.id] }}</small>
                 </td>
                 <td>
                     <a href="/sessions/{{ session.id }}/tasks/{{ t.id }}" class="code">
@@ -50,3 +78,4 @@
             {% endfor %}
         </tbody>
     </table>
+</div>

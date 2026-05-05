@@ -28,7 +28,7 @@
         {# A. Only wrap real tasks in the clickable anchor tag #}
         
         {% if not node.is_virtual %}
-        <a href="/workflows/{{ workflow.id }}/steps/{{ node.id }}" style="cursor: pointer;">
+            <a href="{{ base_url }}/{{ node.id }}" style="cursor: pointer;">
         {% endif %}
         
             <g class="node-group" transform="translate({{ node.x }}, {{ node.y }})">
@@ -47,17 +47,20 @@
                 
                 {# C. Task nodes #}
                 {% else %}
-                    <rect class="node-rect" width="{{ node.width }}" height="{{ node.height }}" 
-                    rx="var(--radius-sm)" ry="var(--radius-sm)" 
-                    fill="white" 
-                    stroke="var(--border)" stroke-width="1" 
-                    style="filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)); transition: fill 0.2s ease, stroke 0.2s ease;"/>
+                    <rect class="node-rect" 
+                        data-status="{{ (node.payload.status.value if node.payload.status.value else node.payload.status) | string | lower }}"
+                        width="{{ node.width }}" height="{{ node.height }}" 
+                        rx="var(--radius-sm)" ry="var(--radius-sm)" 
+                        fill="white" 
+                        stroke="var(--border)" stroke-width="1" 
+                        style="filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)); transition: fill 0.2s ease, stroke 0.2s ease;"/>
+                    
                     <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
                         {{ node.label | truncate(25) }}
                     </text>
                     
                     <text x="12" y="44" font-family="sans-serif" font-size="11" fill="var(--text-muted)">
-                        {{ node.payload.task_key | replace('_', ' ') | title }}
+                        {{ node.payload.registry_key | replace('_', ' ') | title }}
                     </text>
                 {% endif %}
             </g>

@@ -21,6 +21,7 @@ from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.fields import FieldInfo
 
+from lore.core.adapters import BaseAdapter
 from lore.core.bindings import (
     Binding,
     LiteralBinding,
@@ -98,6 +99,22 @@ class TaskDefinition:
 
         return None
 
+    def get_adapters_for_output(self, output_key: str) -> list["BaseAdapter"]:
+        """
+        Convenience accessor to find valid Adapters for a specific theoretical output.
+        Mirrors the behavior of Artifact.get_adapters()
+        """
+        from lore.core.adapters import adapter_registry
+
+        field = self.output_model.model_fields.get(output_key)
+        if not field:
+            return []
+
+        _, meta = self.field_meta(output_key, is_output=True)
+        data_type = meta.get("data_type", "unknown")
+
+        return adapter_registry.get_adapters_by_type(data_type=data_type, extension="*")
+
 
 # --- Task execution ---
 
@@ -113,6 +130,7 @@ class TaskStatus(str, Enum):
     FAILED = "failed"  # Errored out (check task.error)
     CANCELLED = "cancelled"  # Stopped by user
     UNKNOWN = "unknown"  # Fallback state
+    TEMPLATE = "template"  # Workflow-only status
 
     @property
     def is_active(self) -> bool:
@@ -179,12 +197,14 @@ class Task(BaseModel):
     """
     A concrete unit of work within a Session. Inputs are validated on assignment.
     """
-
+    # Identity
     model_config = ConfigDict(validate_assignment=True)
     id: str
     registry_key: str
     name: str | None = None
+    description: str | None = None
 
+    # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)
     integrity: TaskIntegrity = Field(default=TaskIntegrity.UNKNOWN)
 
@@ -284,12 +304,15 @@ class Task(BaseModel):
         inputs: dict[str, list[Binding]] | None = None,
         exec_config: dict[str, Any] | None = None,
         name: str | None = None,
+        description: str | None = None,
     ) -> None:
         """
         Mutate the Task in place. Handles DRAFT/READY status.
         """
-        if name:
+        if name is not None:
             self.name = name
+        if description is not None:
+            self.description = description
 
         # 1. Update the raw stored dictionaries
         if inputs is not None:

@@ -3,10 +3,10 @@
   "name": "RTX Adhesin clustering pipeline",
   "description": "Fetch, filter, and cluster proteins from long-read genomes. This workflow was designed to cluster proteins based on a large C-terminal region of their sequence in order to identify RTX Adhesin isoforms and loci.",
   "created_at": "2026-04-02T03:38:34.769058Z",
-  "steps": [
+  "tasks": [
     {
       "id": "b6089fbb-42c5-4ce1-87eb-4f10c10891ba",
-      "task_key": "analysis.summarize_cluster_origins",
+      "registry_key": "analysis.summarize_cluster_origins",
       "inputs": {
         "cluster_map": [
           {
@@ -35,7 +35,7 @@
     },
     {
       "id": "9093870b-0f86-490a-8eff-c0d0c260ed40",
-      "task_key": "mmseqs.easy_cluster",
+      "registry_key": "mmseqs.easy_cluster",
       "inputs": {
         "source_fasta": [
           {
@@ -98,7 +98,7 @@
     },
     {
       "id": "2bb8e4e9-580a-4fc7-a2e3-9d5da6df5bee",
-      "task_key": "ncbi.fetch_genome_annotation_package",
+      "registry_key": "ncbi.fetch_genome_annotation_package",
       "inputs": {
         "table_fields": [],
         "include_annotation_type": [],
@@ -120,7 +120,7 @@
     },
     {
       "id": "8d32e52e-3edd-46f3-9a90-963db635202e",
-      "task_key": "merge",
+      "registry_key": "merge",
       "inputs": {
         "source": [
           {
@@ -147,7 +147,7 @@
     },
     {
       "id": "81de0f92-b4aa-46af-b68a-8b6ea2d122e4",
-      "task_key": "ncbi.fetch_assembly_package",
+      "registry_key": "ncbi.fetch_assembly_package",
       "inputs": {
         "extract_catalog": [
           {
@@ -198,7 +198,7 @@
     },
     {
       "id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
-      "task_key": "filter.sample",
+      "registry_key": "filter.sample",
       "inputs": {
         "source": [
           {
@@ -247,7 +247,7 @@
     },
     {
       "id": "5bfc6d92-52d5-4332-8bd8-14c385f9a472",
-      "task_key": "filter.query",
+      "registry_key": "filter.query",
       "inputs": {
         "source": [
           {
@@ -274,7 +274,7 @@
     },
     {
       "id": "220d2bb5-c9b4-429f-9ff1-012242c49713",
-      "task_key": "ncbi.fetch_genome_reports",
+      "registry_key": "ncbi.fetch_genome_reports",
       "inputs": {
         "filters_has_annotation": [
           {
