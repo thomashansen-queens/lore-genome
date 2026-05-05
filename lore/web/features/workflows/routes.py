@@ -2,11 +2,10 @@
 Routers for the Workflows feature.
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from lore.core.tasks import task_registry
-from lore.core.topology.traversal import find_valid_upstream_tasks, sort_tasks_topologically
 from lore.core.utils import is_collection_type
 from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
@@ -233,10 +232,9 @@ def view_workflow_task(
 
     return templates.TemplateResponse(
         request=ctx.request,
-        name="features/workflows/task.html", # Or whatever your workflow configure template is!
+        name="features/workflows/task.html",
         context=ctx.render(
             workflow=workflow,
-            task=task,
             context_type="workflow",
             preview_api_url=None,  # No preview for workflows (yet)
             commit_api_url=f"/workflows/{workflow.id}/tasks/{task_id}/update",
@@ -364,6 +362,8 @@ def get_workflow_input_widget(
     new_mode = ctx.request.query_params.get(f"__mode__{field_name}", "literal")
 
     widget_context = build_widget_context(workflow, task.registry_key, field_name, new_mode, task_id)
+    f_name = widget_context.pop("field_name")
+    f_info = widget_context.pop("field_info")
 
     return templates.TemplateResponse(
         request=ctx.request,
@@ -371,6 +371,8 @@ def get_workflow_input_widget(
         context=ctx.render(
             context_type="workflow",
             edit_task_id=task_id,
-            **widget_context,
+            field_name=f_name,
+            field_info=f_info,
+            ui_state=widget_context,
         )
     )

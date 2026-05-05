@@ -94,7 +94,7 @@ async def configure_task(
 
 
 @router.get("/{task_id}", response_class=HTMLResponse)
-def view_task(
+def view_session_task(
     task_id: str,
     s: ReadOnlySession,
     ctx: PageContext = Depends(),

@@ -25,13 +25,9 @@
             <div class="ui-label" style="margin-top: var(--spacing-md);">Inputs</div>
             <div class="scroll-area">
                 {# Loop through the Task inputs using our reusable component #}
-                {% for field_name, field_info in task_def.input_model.model_fields.items() %}
+                {% for field_name, field_info in sorted_fields.items() %}
                     
-                    {% set resolved = resolved_inputs.get(field_name) %}
-                    {% set mode = resolved.type if resolved else 'literal' %}
-                    {% set literal_val = resolved.value if resolved and mode == 'literal' else prefilled_inputs.get(field_name) %}
-                    
-                    {% set available_upstream_tasks = upstream_options_by_field.get(field_name, []) %}
+                    {% set ui_state = fields_ui[field_name] %}
                     {% set context_type = "workflow" %}
                     
                     {% include "components/task_input.html" %}
