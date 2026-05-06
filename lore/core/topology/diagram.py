@@ -16,7 +16,7 @@ def generate_dag_diagram(
     direction: Literal["TB", "LR"] = "LR",
 ) -> DiagramResult:
     """
-    Reads a Workflow's DAG and generates layout coordinates for rendering.
+    Reads a LoRe Task DAG and generates layout coordinates for rendering.
     """
     graph = Graph()
 

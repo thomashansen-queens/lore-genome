@@ -136,8 +136,8 @@ class ExecutionContext:
     def materialize_file(
         self,
         source_path: Path | str,
+        output_key: str,
         name: str | None = None,
-        output_key: str | None = None,
         data_type: str | None = None,
         metadata: dict | None = None,
         move: bool = True,
@@ -158,6 +158,7 @@ class ExecutionContext:
                 source=source_path,
                 name=name,
                 created_by_task_id=self.task.id,
+                created_by_output_key=output_key,
                 data_type=data_type,
                 metadata=metadata,
                 parent_artifact_ids=self._get_inferred_parents(),

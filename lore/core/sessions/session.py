@@ -375,6 +375,7 @@ class Session(AbstractContextManager):
         name: str | None = None,
         data_type: str = "unknown",
         created_by_task_id: str | None = None,
+        created_by_output_key: str | None = None,
         parent_artifact_ids: list[str] | None = None,
         metadata: dict | None = None,
     ) -> "Artifact":
@@ -391,6 +392,7 @@ class Session(AbstractContextManager):
             hash=disk_stats["hash"],
             data_type=data_type if data_type != "unknown" else disk_stats["extension"],
             created_by_task_id=created_by_task_id,
+            created_by_output_key=created_by_output_key,
             parent_artifact_ids=parent_artifact_ids or [],
             created_at=disk_stats["created_at"],
             metadata=metadata or {},

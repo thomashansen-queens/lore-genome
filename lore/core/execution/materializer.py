@@ -94,9 +94,15 @@ def materialize_task_inputs(
 
             elif isinstance(b, (LiteralBinding, UserInputBinding)):
                 if b.value is not None and b.value != "":
-                    manual_inputs.append(
-                        _materialize_manual_input(b.value, materialization, field_info)
-                    )
+                    artifact = s.get_artifact(str(b.value))
+                    if artifact:
+                        # Literal reference to an existing Artifact ID
+                        artifacts.append(artifact)
+                    else:
+                        # Manually inputted value that is not an Artifact ID
+                        manual_inputs.append(
+                            _materialize_manual_input(b.value, materialization, field_info)
+                        )
 
         input_artifacts_snapshot[key] = artifacts
 

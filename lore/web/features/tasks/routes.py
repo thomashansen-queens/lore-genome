@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
 from lore.core.sessions import resolve_task_outputs
+from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding
 from lore.core.tasks.models import TaskConfig
+from lore.core.topology.matcher import infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
@@ -290,28 +292,43 @@ def api_task_commit(
         # 2. Parse JSON payload
         raw_inputs = form_json_to_dict(payload.inputs, task_def.input_model)
 
+        ui_modes = {
+            k.replace("__mode__", ""): v
+            for k, v, in payload.inputs.items()
+            if k.startswith("__mode__")
+        }
+
         rt.logger.debug(
             "api_task_commit [%s]: raw_inputs=%r", task_key, raw_inputs
         )
 
-        # 3. Extract parent_artifact_ids dynamically
-        parent_ids = []
-        for field_name in task_def.input_model.model_fields.keys():
-            _, extra = task_def.field_meta(field_name)
-            # Check if this field is an ArtifactInput
-            if extra.get("is_artifact", False):
-                val = raw_inputs.get(field_name)
-                if isinstance(val, list):
-                    parent_ids.extend(val)  # Handle multi-file inputs
-                elif val:
-                    parent_ids.append(val)  # Handle single-file inputs
-
-        # 4. Upsert logic for Task (allows editing existing tasks)
-        task_id = None
-        task = None
-        msg = ""
-
         with rt.open_session(session_id) as s:  # Re-open session to ensure we have a lock for writing
+            # 3. DAG topology (reference bindings)
+            input_bindings = infer_bindings_from_raw(raw_inputs, s, ui_modes)
+
+            # 4. DAG lineage (parent_artifact_ids)
+            parent_ids = []
+            for field_name, bindings_list in input_bindings.items():
+                _, extra = task_def.field_meta(field_name)
+
+                # If this field takes an artifact, extract the artifact IDs
+                if extra.get("is_artifact", False):
+                    for b in bindings_list:
+                        if isinstance(b, ReferenceBinding) and b.artifact_id:
+                            # Pinned ReferenceBinding: concrete artifact ID
+                            parent_ids.append(b.artifact_id)
+                        elif isinstance(b, ReferenceBinding) and not b.artifact_id:
+                            # Unpinned: Expects output from another Task, so get lineage later
+                            pass
+                        elif isinstance(b, LiteralBinding):
+                            # External reference: Uploaded or linked Artifact ID
+                            parent_ids.append(b.value)
+
+            # 5. Upsert logic for Task (allows editing existing tasks)
+            task_id = None
+            task = None
+            msg = ""
+
             # New tasks will not have an id yet
             if existing_task_id:
                 task = s.get_task(existing_task_id)
@@ -324,7 +341,7 @@ def api_task_commit(
             if task:
                 task = s.update_task(
                     task.id,
-                    inputs=raw_inputs,
+                    inputs=input_bindings,
                     exec_config=payload.exec_config.model_dump(mode="json"),
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),
@@ -332,7 +349,7 @@ def api_task_commit(
             else:
                 task = s.add_task(
                     registry_key=task_key,
-                    inputs=raw_inputs,
+                    inputs=input_bindings,
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
                     exec_config=payload.exec_config.model_dump(mode="json"),
@@ -344,7 +361,7 @@ def api_task_commit(
                 task_key, task.id, task.status, task.error, task.inputs,
             )
 
-        # 5. Return success and the redirect URL
+        # 6. Return success and the redirect URL
         return JSONResponse(content={
             "status": "success",
             "message": msg or "Task saved successfully.",

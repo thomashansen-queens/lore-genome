@@ -1,5 +1,5 @@
 """
-A little DIY graph visualization utility for Workflow templates. Implements the
+A little DIY graph visualization utility for LoRe task graphs. Implements the
 Sugiyama Method for layered graph drawing. Could be useful for figures down the 
 line.
 

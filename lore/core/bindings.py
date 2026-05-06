@@ -16,8 +16,8 @@ class LiteralBinding(BaseModel):
 class ReferenceBinding(BaseModel):
     """
     A reference to an upstream step's output. This is what builds the DAG
-    edges. If artifact_id is unspecified, it will be resolved at runtime by
-    the materializer per the Task's input model.
+    edges. If artifact_id is unspecified (unpinned), it will be resolved at
+    runtime by the materializer per the Task's input model.
     """
     type: Literal["reference"] = "reference"
     source_id: str
