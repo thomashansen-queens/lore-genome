@@ -207,7 +207,6 @@ class Task(BaseModel):
     # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)
     integrity: TaskIntegrity = Field(default=TaskIntegrity.UNKNOWN)
-    is_template: bool = Field(default=False)
 
     # Execution data
     exec_config: dict[str, Any] = Field(default_factory=dict)  # Namespaced config for execution
@@ -274,16 +273,21 @@ class Task(BaseModel):
 
             unwrapped_list = []
             for b in bindings:
-                if isinstance(b, ReferenceBinding):
-                    raise UnresolvedReferenceError(
-                        f"Waiting on upstream output: {b.source_id}.{b.output_key}"
-                    )
                 if isinstance(b, UserInputBinding):
                     raise MissingUserInputError(f"Missing user input: {key}")
-                if not isinstance(b, LiteralBinding):
+                elif isinstance(b, ReferenceBinding):
+                    if b.artifact_id:
+                        # Pinned: Concrete Artifact ID provided
+                        unwrapped_list.append(b.artifact_id)
+                    else:
+                        # Unpinned: Must resolve at runtime
+                        raise UnresolvedReferenceError(
+                            f"Waiting on upstream output: {b.source_id}.{b.output_key}"
+                        )
+                elif isinstance(b, LiteralBinding):
+                    unwrapped_list.append(b.value)
+                else:
                     raise ValueError(f"Invalid binding type for input '{key}': {type(b)}")
-
-                unwrapped_list.append(b.value)
 
             # 2. Shape the data to match the schema's expectations
             if expects_collection:
@@ -327,17 +331,20 @@ class Task(BaseModel):
             clean_config = self.validate_config(self.exec_config)
 
             self.exec_config = clean_config
-            self.status = TaskStatus.READY if not self.is_template else TaskStatus.TEMPLATE
+            self.status = TaskStatus.READY
             self.error = None
         except MissingUserInputError as e:
-            self.status = TaskStatus.DRAFT if not self.is_template else TaskStatus.TEMPLATE
-            self.error = str(e) if not self.is_template else None  # Waiting on a human
-        except UnresolvedReferenceError as e:
-            self.status = TaskStatus.QUEUED if not self.is_template else TaskStatus.TEMPLATE
-            self.error = None  # Not an error per se, just waiting
-        except ValueError as e:
+            # Not an error, just waiting on a human
             self.status = TaskStatus.DRAFT
-            self.error = str(e)  # Genuine validation error
+            self.error = None
+        except UnresolvedReferenceError as e:
+            # Not an error per se, just waiting
+            self.status = TaskStatus.QUEUED
+            self.error = None
+        except ValueError as e:
+            # Genuine validation error
+            self.status = TaskStatus.DRAFT
+            self.error = str(e)
 
 
 class TaskResults:

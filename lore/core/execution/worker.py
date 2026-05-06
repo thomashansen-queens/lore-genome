@@ -65,12 +65,14 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
 
             # Materialize Task inputs
             try:
-                unwrapped_inputs = task.validate_and_serialize()
+                # Gatekeep
+                task.validate_and_serialize()
 
+                # Resolve references to concrete values (e.g. Artifact IDs to Artifacts)
                 resolved_kwargs, input_artifacts = materialize_task_inputs(
                     s=s,
                     task_def=task_def,
-                    raw_inputs=unwrapped_inputs,
+                    bindings=task.inputs,
                 )
             except Exception as e:
                 task.status = TaskStatus.FAILED
@@ -169,25 +171,29 @@ def run_preview_worker(
         rt.logger.info("Generating preview for '%s'", task_key)
 
     # 1. Auto-wrap primitives into LiteralBindings for ergonomics
-    binding_inputs = wrap_in_bindings(raw_inputs)
+    # binding_inputs = wrap_in_bindings(raw_inputs)
 
     # 2. Create ephemeral Task
     ephemeral_task = Task(
         id=f"preview_{uuid4().hex[:8]}",
         registry_key=task_key,
         status=TaskStatus.RUNNING,
-        inputs=binding_inputs,
+        inputs=raw_inputs,
     )
     ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
 
     try:
-        unwraped_inputs = ephemeral_task.validate_and_serialize()
+        ephemeral_task.validate_and_serialize()
     except Exception as e:
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
     # 3. Resolve inputs (requires a short lock on the session)
     with rt.open_session(session_id, read_only=True) as s:
-        resolved_inputs, input_artifacts = materialize_task_inputs(s, task_def, unwraped_inputs)
+        resolved_inputs, input_artifacts = materialize_task_inputs(
+            s,
+            task_def,
+            ephemeral_task.inputs,
+        )
 
     # 4. Execute handler
     ctx = None

@@ -8,24 +8,31 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 
 class LiteralBinding(BaseModel):
-    """A concrete input value or existing Artifact ID."""
+    """A concrete input value or existing Artifact ID (e.g. uploaded file)."""
     type: Literal["literal"] = "literal"
     value: Any
 
 
 class ReferenceBinding(BaseModel):
-    """A reference to an upstream step's output."""
+    """
+    A reference to an upstream step's output. This is what builds the DAG
+    edges. If artifact_id is unspecified, it will be resolved at runtime by
+    the materializer per the Task's input model.
+    """
     type: Literal["reference"] = "reference"
     source_id: str
     output_key: str
+    artifact_id: str | None = None
 
 
 class UserInputBinding(BaseModel):
     """
     An explicit placeholder for a value that must be filled in by the user.
+    value can be set to a default.
     """
     type: Literal["user_input"] = "user_input"
     input_key: str
+    value: Any | None = None
 
 
 Binding = Annotated[

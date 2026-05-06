@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, get_origin
 from pydantic.fields import FieldInfo
 
 from lore.core.adapters import TableAdapter
+from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.io import get_reader_for
 from lore.core.tasks import Materialization, Cardinality, TaskDefinition
 
@@ -22,32 +23,30 @@ if TYPE_CHECKING:
 def materialize_task_inputs(
     s: "Session",
     task_def: "TaskDefinition",
-    raw_inputs: dict,
+    bindings: dict[str, list[Binding]],
 ) -> tuple[dict, dict]:
     """
     Resolves raw input references (i.e. Artifacts) to actual data based on the
     TaskDefinition's DSL instructions (Materialization, series extraction) and
     available Adapters.
-
-    Note: Intentionally permits Duck Typing. If an Artifact ID is not found, the
-    raw string will be passed through to the handler. This allows users to paste
-    raw data (like comma-separated accessions) directly into Artifact fields.
-    Alternatively, a user could pass comma-separated Artifact IDs and they will
-    be resolved to Artifacts, then adapted/concatenated as instructed.
     """
     resolved = {}
     input_artifacts_snapshot = {}  # key: input_name, value: list[Artifact] or Artifact
 
-    for key, value in raw_inputs.items():
+    for key, binding_list in bindings.items():
         # 1. Get input field metadata from TaskDefinition
         field_info, extra = task_def.field_meta(key)
 
+        # 2. Primitives / Non-artifact fields
         if not extra.get("is_artifact"):
-            # primitive (e.g. dict, str, int), pass through
-            resolved[key] = value
+            vals = [
+                b.value for b in binding_list 
+                if isinstance(b, (LiteralBinding, UserInputBinding))
+            ]
+            resolved[key] = vals[0] if len(vals) == 1 else vals
             continue
 
-        # 2. Extract Metadata from DSL
+        # 3. Extract Metadata from DSL
         materialization = extra.get("load_as")
         cardinality = extra.get("select")
         if not materialization or not cardinality:
@@ -55,56 +54,82 @@ def materialize_task_inputs(
                 f"Task input '{key}' missing load_as (`materialization`) or select (`cardinality`)"
             )
         accepted_data = extra.get("accepted_data", [])
+        allows_multiple = Cardinality(cardinality).allows_multiple
 
-        # 3. Resolve IDs to Artifacts (bulk fetch then snapshot)
-        # Duck typing: If input is an artifact ID, treat it as one! Otherwise,
-        # allow users to manually enter input for fields that accept artifacts
-        resolved_list = []
+        # 4. Resolve IDs to Artifacts (bulk fetch then snapshot)
         artifacts = []
-        task_inputs = value if isinstance(value, list) else [value]
+        manual_inputs = []
 
-        for val in task_inputs:
-            if not val:
+        for b in binding_list:
+            if not b:
                 continue  # val is falsy (e.g. None, empty)
 
-            artifact = s.get_artifact(val)
+            if isinstance(b, ReferenceBinding):
+                if b.artifact_id:
+                    # Pinned edge: Grab the specific Artifact
+                    artifact = s.get_artifact(b.artifact_id)
+                    if artifact:
+                        artifacts.append(artifact)
+                else:
+                    # Unpinned edge: Get artifact(s) from the output
+                    task = s.get_task(b.source_id)
+                    if not task:
+                        raise ValueError(f"Upstream task ID '{b.source_id}' not found")
+                    
+                    output_artifacts = task.outputs.get(b.output_key, [])
+                    if not output_artifacts:
+                        # No artifacts produced for this output key
+                        continue
 
-            if artifact is not None:
-                artifacts.append(artifact)
-            else:
-                resolved_list.append(_materialize_manual_input(val, materialization, field_info))
+                    # For unpinned edges, do not raise on cardinality mismatch
+                    if not allows_multiple:
+                        artifact = s.get_artifact(output_artifacts[-1])
+                        if artifact:
+                            artifacts.append(artifact)
+                    else:
+                        for output_artifact_id in output_artifacts:
+                            artifact = s.get_artifact(output_artifact_id)
+                            if artifact:
+                                artifacts.append(artifact)
+
+            elif isinstance(b, (LiteralBinding, UserInputBinding)):
+                if b.value is not None and b.value != "":
+                    manual_inputs.append(
+                        _materialize_manual_input(b.value, materialization, field_info)
+                    )
 
         input_artifacts_snapshot[key] = artifacts
 
-        # 4. Process each Artifact according to the instructions
-        processed_artifacts = []  # auto-concatenate if multiple items
+        # 5. Process each Artifact according to the instructions.
+        # Prepare for auto-concatenate if multiple items are provided.
+        processed_artifacts = []
         for a in artifacts:
             item_data = _materialize_single_artifact(s, a, materialization, accepted_data)
             processed_artifacts.append(item_data)
 
-        # 5. Handle packaging & concatenation
+        # 6. Handle packaging & concatenation
         # Auto-concatenate if it's a series type and multiple items are allowed
-        if Cardinality(cardinality).allows_multiple:
+        if allows_multiple:
             if processed_artifacts and isinstance(processed_artifacts[0], types.GeneratorType):
                 resolved[key] = itertools.chain(*processed_artifacts)
             else:
                 flattened = []
-                for item in resolved_list + processed_artifacts:
+                for item in manual_inputs + processed_artifacts:
                     if isinstance(item, list):
                         flattened.extend(item)
                     else:
                         flattened.append(item)
                 resolved[key] = flattened
         else:
-            total_inputs = len(resolved_list) + len(processed_artifacts)
+            total_inputs = len(manual_inputs) + len(processed_artifacts)
             if total_inputs > 1:
                 raise ValueError(
                     f"Input '{key}' does not allow multiple items, but got "
-                    f"{total_inputs} (including {len(resolved_list)} manual inputs)"
+                    f"{total_inputs} (including {len(manual_inputs)} manual inputs)"
                 )
 
-            if resolved_list:
-                resolved[key] = resolved_list[0]  # manual input takes precedence
+            if manual_inputs:
+                resolved[key] = manual_inputs[0]  # manual input takes precedence
             else:
                 resolved[key] = processed_artifacts[0] if processed_artifacts else None
 

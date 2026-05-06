@@ -1,3 +1,6 @@
+{% set arrow_width = 5 %}
+{% set arrow_height = 5 %}
+
 <svg width="{{ d.canvas_width }}" height="{{ d.canvas_height }}"
     style="display: block; min-width: {{ d.canvas_width }}px; min-height: {{ d.canvas_height }}px;"
     xmlns="http://www.w3.org/2000/svg">
@@ -47,8 +50,14 @@
                 
                 {# C. Task nodes #}
                 {% else %}
+                    {% set visual_status = (node.payload.status.value if node.payload.status.value else node.payload.status) | string | lower %}
+                    {% if workflow is defined and workflow %}
+                        {% if not node.payload.error %}
+                            {% set visual_status = 'template' %}
+                        {% endif %}
+                    {% endif %}
                     <rect class="node-rect" 
-                        data-status="{{ (node.payload.status.value if node.payload.status.value else node.payload.status) | string | lower }}"
+                        data-status="{{ visual_status }}"
                         width="{{ node.width }}" height="{{ node.height }}" 
                         rx="var(--radius-sm)" ry="var(--radius-sm)" 
                         fill="white" 
@@ -64,7 +73,6 @@
                     </text>
                 {% endif %}
             </g>
-            
 
         {% if not node.is_virtual %}
         </a>

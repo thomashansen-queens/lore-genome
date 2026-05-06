@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from fastapi.datastructures import FormData
 
+from lore.core.bindings import LiteralBinding, ReferenceBinding
 from lore.core.utils import clean, is_collection_type, is_optional_type
 from lore.core.tasks import TaskDefinition
 
@@ -101,7 +102,7 @@ def format_binding_for_ui(val: Any) -> str:
         return ", ".join(format_binding_for_ui(v) for v in val)
     if isinstance(val, bool):
         return "true" if val else "false"
-    
+
     return str(val)
 
 # --- Form -> Python ---
@@ -262,7 +263,12 @@ def form_html_to_dict(
     return result
 
 
-def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, Any]:
+def form_json_to_dict(
+    payload: dict | Any,
+    model: type[BaseModel],
+    blank_to_default: bool = False,
+    **clean_kwargs,
+) -> dict[str, Any]:
     """
     Transforms raw frontend AJAX payload into a clean dictionary for Pydantic validation.
     Handles the __manual companion key emitted by artifact selectors and text overrides.
@@ -271,47 +277,87 @@ def form_json_to_dict(payload: dict | Any, model: type[BaseModel]) -> dict[str, 
     raw_dict = dict(payload) if not isinstance(payload, dict) else payload
 
     for field_name, field_info in model.model_fields.items():
-        val = raw_dict.get(field_name)
-        manual_val = raw_dict.get(f"{field_name}__manual")
-
+        # 1. Handle aliases and extract type info
+        form_key = field_info.alias or field_name
         annotation = field_info.annotation
-        is_list_expected = is_collection_type(annotation)
 
-        # Unwrap Optional to check the inner type for bool
-        inner = next((a for a in get_args(annotation) if a is not type(None)), annotation)
-        is_bool_expected = inner is bool
+        is_optional = is_optional_type(annotation)
+        is_list = is_collection_type(annotation)
 
-        # Bool: handle hidden-input trick (always sends "false"; checked also sends "true")
-        if is_bool_expected:
-            if val is None:
+        if is_optional:
+            non_none_args = tuple(a for a in get_args(annotation) if a is not type(None))
+            if len(non_none_args) == 1:
+                annotation = non_none_args[0]
+
+        # 2. Extract raw value(s) from payload
+        main_vals, manual_vals = _extract_raw_values(raw_dict, form_key, is_list)
+
+        field_present = form_key in raw_dict or f"{form_key}__manual" in raw_dict
+        if not field_present:
+            continue
+
+        # 3. Handle lists (regex splitting for multi-selects and textareas)
+        if is_list:
+            raw_items = [v for v in (main_vals + manual_vals) if v not in (None, "")]
+            if not raw_items:
+                if blank_to_default:
+                    result[field_name] = field_info.get_default(call_default_factory=True)
                 continue
-            if isinstance(val, list):
-                val = val[-1]  # last value wins: hidden="false" < checkbox="true"
-            if isinstance(val, str):
-                val = val.lower() in ("true", "on", "1", "yes")
-            result[field_name] = val
+
+            values = []
+            for val in raw_items:
+                pieces = re.split(r"[,\n;\r]+", val) if isinstance(val, str) else [val]
+                for piece in pieces:
+                    if isinstance(piece, str) and not piece.strip():
+                        continue
+
+                    cleaned_val = clean(piece, **clean_kwargs)
+                    if cleaned_val not in (None, ""):
+                        values.append(cleaned_val)
+
+            result[field_name] = values
             continue
 
-        # List: merge direct values (checkboxes/multi-select) with __manual (textarea).
-        # NOTE: val may be None when no checkboxes are checked but __manual has content
-        # (e.g. ArtifactInput with no session candidates renders only the __manual textarea).
-        if is_list_expected:
-            combined = []
-            if isinstance(val, list):
-                combined.extend(str(v).strip() for v in val if v is not None and str(v).strip())
-            elif isinstance(val, str) and val.strip():
-                combined.extend(x.strip() for x in re.split(r"[,\n;\r]+", val) if x.strip())
-            if isinstance(manual_val, str) and manual_val.strip():
-                combined.extend(x.strip() for x in re.split(r"[,\n;\r]+", manual_val) if x.strip())
-            if combined:
-                result[field_name] = combined
+        # 4. Handle Booleans (Checking for JS true/false or HTML on/off)
+        elif annotation is bool:
+            result[field_name] = any(
+                (isinstance(v, str) and v.lower() in {"on", "true", "1", "yes"}) or
+                (isinstance(v, bool) and v is True)
+                for v in (main_vals + manual_vals)
+            )
             continue
 
-        # Scalar: prefer __manual when non-empty (lets text override an artifact select)
-        actual_val = manual_val if (isinstance(manual_val, str) and manual_val.strip()) else val
-        if actual_val is None or actual_val == "":
-            continue
-        result[field_name] = actual_val
+        # 5. Handle scalars (prefer __manual when present)
+        raw_value = (
+            manual_vals[0]
+            if manual_vals and isinstance(manual_vals[0], str) and manual_vals[0].strip()
+            else main_vals[0] if main_vals else None
+        )
 
-    # logger.debug("form_json_to_dict: result keys=%s", list(result.keys()))
+        if raw_value is None:
+            if blank_to_default:
+                result[field_name] = field_info.get_default(call_default_factory=True)
+            continue
+
+        # 6. Clean and type-cast value
+        try:
+            if isinstance(raw_value, str) and raw_value.strip() == "None":
+                raw_value = ""
+            cleaned = clean(raw_value, **clean_kwargs)
+
+            if cleaned is None and cleaned != "":
+                if blank_to_default:
+                    result[field_name] = field_info.get_default(call_default_factory=True)
+                continue
+
+            if annotation is int:
+                result[field_name] = int(cleaned)
+            elif annotation is float:
+                result[field_name] = float(cleaned)
+            else:
+                result[field_name] = cleaned
+
+        except ValueError as e:
+            raise ValueError(f"Invalid value for field '{form_key}': {e}") from e
+
     return result
