@@ -7,76 +7,76 @@
     {% set htmx_attrs = '' %}
 {% endif %}
 
-{# Polling is only needed in Session mode #}
-<div class="column fill" 
-    {% if session is defined and session %}
-     hx-get="/sessions/{{ session.id }}/view?type=graph" 
-     hx-trigger="every 2s [shouldPoll()]"
-     hx-swap="outerHTML"
-     {% endif %}>
+<div id="session-graph"
+    style="position: relative;
+        background: var(--secondary);
+        min-width: 100%;
+        min-height: 100%;
+        width: max-content;
+        height: max-content;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.1);">
+       
+    <style>
+        .node-group:hover .node-rect { 
+            fill: var(--bg-primary); 
+            cursor: pointer;
+        }
         
-    <div class="scroll-area" id="graph-container" style="position: relative; background: var(--secondary); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.1);">    
-        
-        <style>
-            .node-group:hover .node-rect { 
-                fill: var(--bg-primary); 
-                cursor: pointer;
+        /* Dynamic Status Colors! Fallback to primary if CSS vars are missing */
+        rect[data-status="template"] { stroke: var(--border, #ccc); }
+        rect[data-status="draft"] { stroke: var(--danger-border, red); stroke-dasharray: 4; }
+        rect[data-status="queued"] { stroke: var(--info-border, blue); }
+        rect[data-status="ready"] { stroke: var(--info-border, blue); }
+        rect[data-status="running"] { stroke: var(--warning-border, orange); stroke-width: 2px; }
+        rect[data-status="completed"] { stroke: var(--success-border, green); stroke-width: 2px; }
+        rect[data-status="failed"] { stroke: var(--danger-border, red); stroke-width: 2px; }
+    </style>
+
+    {% set arrow_width = 5 %}
+    {% set arrow_height = 5 %}
+
+    {# --- 2. Conditional Rendering --- #}
+    {% if diagram_tb %}
+        {# If BOTH diagrams exist (Workflows), use responsive design #}
+        <div id="graph-lr" style="display: none;">
+            {% with d=diagram_lr, marker_id="arrowhead_lr" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+        <div id="graph-tb" style="display: none;">
+            {% with d=diagram_tb, marker_id="arrowhead_tb" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+
+        <script>
+        (function() {
+            const container = document.getElementById('session-graph');
+            const lr = document.getElementById('graph-lr');
+            const tb = document.getElementById('graph-tb');
+
+            function pick() {
+                if (!container) return;
+                const wide = container.clientWidth >= container.clientHeight;
+                lr.style.display = wide ? 'block' : 'none';
+                tb.style.display = wide ? 'none' : 'block';
             }
-            
-            /* Dynamic Status Colors! Fallback to primary if CSS vars are missing */
-            rect[data-status="template"] { stroke: var(--border, #ccc); }
-            rect[data-status="draft"] { stroke: var(--border, #ccc); stroke-dasharray: 4; }
-            rect[data-status="queued"] { stroke: var(--info-border, blue); }
-            rect[data-status="ready"] { stroke: var(--info-border, blue); }
-            rect[data-status="running"] { stroke: var(--warning-border, orange); stroke-width: 2px; }
-            rect[data-status="completed"] { stroke: var(--success-border, green); stroke-width: 2px; }
-            rect[data-status="failed"] { stroke: var(--danger-border, red); stroke-width: 2px; }
-        </style>
 
-        {% set arrow_width = 5 %}
-        {% set arrow_height = 5 %}
-
-        {# --- 2. Conditional Rendering --- #}
-        {% if diagram_tb %}
-            {# If BOTH diagrams exist (Workflows), use responsive design #}
-            <div id="graph-lr" style="display: none;">
-                {% with d=diagram_lr, marker_id="arrowhead_lr" %}
-                    {% include "components/_graph_svg.html" %}
-                {% endwith %}
-            </div>
-            <div id="graph-tb" style="display: none;">
-                {% with d=diagram_tb, marker_id="arrowhead_tb" %}
-                    {% include "components/_graph_svg.html" %}
-                {% endwith %}
-            </div>
-
-            <script>
-            (function() {
-                const container = document.getElementById('graph-container');
-                const lr = document.getElementById('graph-lr');
-                const tb = document.getElementById('graph-tb');
-
-                function pick() {
-                    if (!container) return;
-                    const wide = container.clientWidth >= container.clientHeight;
-                    lr.style.display = wide ? 'block' : 'none';
-                    tb.style.display = wide ? 'none' : 'block';
-                }
-
-                pick();
-                new ResizeObserver(pick).observe(container);
-            })();
-            </script>
-            
-        {% else %}
-            {# If ONLY diagram_lr exists (Sessions), just render it directly! #}
-            <div id="graph-lr">
-                {% with d=diagram_lr, marker_id="arrowhead_lr" %}
-                    {% include "components/_graph_svg.html" %}
-                {% endwith %}
-            </div>
-        {% endif %}
-
-    </div>
+            pick();
+            new ResizeObserver(pick).observe(container);
+        })();
+        </script>
+        
+    {% else %}
+        {# If ONLY diagram_lr exists (Sessions), just render it directly! #}
+        <div id="graph-lr">
+            {% with d=diagram_lr, marker_id="arrowhead_lr" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+    {% endif %}
 
 </div>

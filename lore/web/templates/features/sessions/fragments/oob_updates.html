@@ -1,0 +1,75 @@
+{# Used by SSE endpoint to make id'd HTML DOM elements that can be swapped in #}
+{% import "macros/ui.html" as ui %}
+
+{# 1. Task graph (copied wholesale from _graph_svg.html) #}
+{% for node in diagram.nodes %}
+    {# Only Task nodes, not virtual nodes (for now) #}
+    {% if not node.is_virtual %}
+        {% set task = node.payload %}
+
+        <g id="node-{{ task.id }}"
+            data-status="{{ task.status }}"
+            hx-swap-oob="true"
+            class="node-group" transform="translate({{ node.x }}, {{ node.y }})">
+
+            <rect class="node-rect" 
+                width="{{ node.width }}" height="{{ node.height }}" 
+                rx="var(--radius-sm)" ry="var(--radius-sm)" 
+                fill="white" 
+                stroke="var(--border)" stroke-width="1" 
+                style="filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)); transition: fill 0.2s ease, stroke 0.2s ease;"/>
+            
+            <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
+                {{ node.label | truncate(25) }}
+            </text>
+            
+            <text x="12" y="44" font-family="sans-serif" font-size="11" fill="var(--text-muted)">
+                {{ node.payload.registry_key | replace('_', ' ') | title }}
+            </text>
+        </g>
+    {% endif %}
+{% endfor %}
+
+
+{# 2. Task table rows #}
+{% for task in tasks %}
+    <tr id="task-row-{{ task.id }}" 
+        data-status="{{ task.status.value if task.status.value else task.status | string | lower }}" 
+        hx-swap-oob="true">
+
+        <td>
+            <small class="muted">{{ topo_map[task.id] }}</small>
+        </td>
+        <td>
+            <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}" class="code">
+                {{ task.name }}
+            </a>
+        </td>
+        <td>
+            {{ task.registry_key }}
+        </td>
+        <td>
+            {{ ui.status_badge(task.status) }}
+        </td>
+        <td>
+            {{ task.modified_at.strftime("%Y-%m-%d %H:%M:%S") }}
+        </td>
+        <td>
+            <div class="dropdown">
+                <button class="btn-kebab" popovertarget="menu-{{ task.id }}">⋮</button>
+                <div id="menu-{{ task.id }}" class="dropdown-menu right" popover>
+                    {% if task.status == 'ready' %}
+                        {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/run", "Run", "▶") }}
+                        <hr />
+                    {% endif %}
+
+                    {{ ui.rename_item("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/rename", "task_name", task.name) }}
+                    {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/clone", "Clone", "⟳") }}
+                    
+                    <hr />
+                    {{ ui.delete_item("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/delete") }}
+                </div>
+            </div>
+        </td>
+    </tr>
+{% endfor %}

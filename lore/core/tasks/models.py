@@ -207,6 +207,7 @@ class Task(BaseModel):
     # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)
     integrity: TaskIntegrity = Field(default=TaskIntegrity.UNKNOWN)
+    is_template: bool = Field(default=False)
 
     # Execution data
     exec_config: dict[str, Any] = Field(default_factory=dict)  # Namespaced config for execution
@@ -326,13 +327,13 @@ class Task(BaseModel):
             clean_config = self.validate_config(self.exec_config)
 
             self.exec_config = clean_config
-            self.status = TaskStatus.READY
+            self.status = TaskStatus.READY if not self.is_template else TaskStatus.TEMPLATE
             self.error = None
         except MissingUserInputError as e:
-            self.status = TaskStatus.DRAFT
-            self.error = str(e)  # Waiting on a human
+            self.status = TaskStatus.DRAFT if not self.is_template else TaskStatus.TEMPLATE
+            self.error = str(e) if not self.is_template else None  # Waiting on a human
         except UnresolvedReferenceError as e:
-            self.status = TaskStatus.QUEUED
+            self.status = TaskStatus.QUEUED if not self.is_template else TaskStatus.TEMPLATE
             self.error = None  # Not an error per se, just waiting
         except ValueError as e:
             self.status = TaskStatus.DRAFT

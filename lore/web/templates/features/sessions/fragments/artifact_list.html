@@ -1,9 +1,18 @@
 {# Live-updated list of Artifacts #}
 {% import "macros/ui.html" as ui %}
 
-<table>
+<table id="artifact-list" 
+    class="sortable" 
+    {% if oob %}hx-swap-oob="true"{% endif %}>
     <thead>
-        <tr><th> </th><th>Name</th><th>Data type</th><th>Size</th><th>Created at</th><th>Actions</th></tr>
+        <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Data type</th>
+            <th>Size</th>
+            <th>Created at</th>
+            <th data-sort-method="none">Actions</th>
+        </tr>
     </thead>
     <tbody>
     {% for a in artifacts %}

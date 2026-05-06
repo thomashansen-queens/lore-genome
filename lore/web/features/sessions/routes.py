@@ -4,12 +4,15 @@ LoRe API routes for managing Sessions.
 Manages top level Session routes (CRUD)
 """
 
+import asyncio
+from collections.abc import AsyncIterable
 from pathlib import Path
 import shutil
 import tempfile
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.sse import EventSourceResponse
 
 from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.topology.traversal import DAGValidationError, sort_tasks_topologically
@@ -146,7 +149,7 @@ def view_session(
 
         return templates.TemplateResponse(
             request=ctx.request,
-            name="partials/task_list.html",
+            name="features/sessions/fragments/task_list.html",
             context=ctx.render(
                 session=s, 
                 tasks=tasks,
@@ -265,42 +268,110 @@ async def api_export_session(
 
 # --- AJAX for live updates ---
 
-@router.get("/{session_id}/tasks/poll", response_class=HTMLResponse)
-def poll_tasks(s: ReadOnlySession, ctx: PageContext = Depends()):
-    """
-    Live polling endpoint to check for Task status updates
-    Returns ONLY the rendered HTML for the Task list (partial)
-    """
-    tasks = s.list_tasks(reverse=True)
+# @router.get("/{session_id}/tasks/poll", response_class=HTMLResponse)
+# def poll_tasks(s: ReadOnlySession, ctx: PageContext = Depends()):
+#     """
+#     Live polling endpoint to check for Task status updates
+#     Returns ONLY the rendered HTML for the Task list (partial)
+#     """
+#     tasks = s.list_tasks(reverse=True)
 
-    return templates.TemplateResponse(
-        request=ctx.request,
-        name="/partials/task_list.html",
-        context=ctx.render(
-            session=s,
-            tasks=tasks,
-        )
-    )
+#     return templates.TemplateResponse(
+#         request=ctx.request,
+#         name="/features/sessions/fragments/task_list.html",
+#         context=ctx.render(
+#             session=s,
+#             tasks=tasks,
+#         )
+#     )
 
 
-@router.get("/{session_id}/artifacts/poll", response_class=HTMLResponse)
-def poll_artifacts(s: ReadOnlySession, ctx: PageContext = Depends()):
+# @router.get("/{session_id}/artifacts/poll", response_class=HTMLResponse)
+# def poll_artifacts(s: ReadOnlySession, ctx: PageContext = Depends()):
+#     """
+#     Live polling endpoint to check for Artifact updates
+#     Returns ONLY the rendered HTML for the Artifact list (partial)
+#     """
+#     artifacts = s.list_artifacts(reverse=True)
+#     push_task_targets = _build_push_task_targets(artifacts)
+
+#     return templates.TemplateResponse(
+#         request=ctx.request,
+#         name="/features/sessions/fragments/artifact_list.html",
+#         context=ctx.render(
+#             session=s,
+#             artifacts=artifacts,
+#             push_task_targets=push_task_targets,
+#         )
+#     )
+
+# --- SSE for real-time updates ---
+
+@router.get("/{session_id}/stream", response_class=EventSourceResponse)
+async def stream_session(
+    s: ReadOnlySession,
+    ctx: PageContext = Depends(),
+) -> AsyncIterable[str]:
     """
-    Live polling endpoint to check for Artifact updates
-    Returns ONLY the rendered HTML for the Artifact list (partial)
+    SSE stream that pushes DOM updates for changes in Session state (e.g.
+    Task status change, new Artifact emitted, etc.).
     """
-    artifacts = s.list_artifacts(reverse=True)
-    push_task_targets = _build_push_task_targets(artifacts)
+    last_task_statuses = {}
+    last_artifact_ids = set()
 
-    return templates.TemplateResponse(
-        request=ctx.request,
-        name="/partials/artifact_list.html",
-        context=ctx.render(
-            session=s,
-            artifacts=artifacts,
-            push_task_targets=push_task_targets,
-        )
-    )
+    while True:
+        if await ctx.request.is_disconnected():
+            break
+
+        # 1. Set live state
+        current_tasks = s.list_tasks(reverse=True)
+        current_artifacts = s.list_artifacts(reverse=True)
+
+        current_task_statuses = {t.id: t.status for t in current_tasks}
+        current_artifact_ids = set(a.id for a in current_artifacts)
+
+        # 2. Check for changes
+        tasks_changed = current_task_statuses != last_task_statuses
+        artifacts_changed = current_artifact_ids != last_artifact_ids
+
+        if tasks_changed or artifacts_changed:
+            html_data = ""
+
+            # 3. Render and concatenate out-of-band (OoB) HTML fragments
+            if tasks_changed:
+                # topo_map mirrored from the /view endpoint
+                topo_map = {}
+                try:
+                    topo_sorted = sort_tasks_topologically(current_tasks)
+                    topo_map = {t.id: i+1 for i, t in enumerate(topo_sorted)}
+                except DAGValidationError:
+                    topo_map = {t.id: "?" for t in current_tasks}
+
+                diagram = generate_dag_diagram(current_tasks, task_registry, "LR")
+
+                # Graph nodes
+                html_data += templates.get_template("features/sessions/fragments/oob_updates.html").render(
+                    session=s,
+                    tasks=current_tasks,
+                    diagram=diagram,
+                    topo_map=topo_map,
+                )
+
+            if artifacts_changed:
+                push_targets = _build_push_task_targets(current_artifacts)
+                html_data += templates.get_template("features/sessions/fragments/artifact_list.html").render(
+                    session=s, artifacts=current_artifacts, push_task_targets=push_targets, oob=True,
+                )
+
+            # 4. Push a single SSE message with all the HTML data
+            yield html_data
+
+            # 5. Update state trackers
+            last_task_statuses = current_task_statuses
+            last_artifact_ids = current_artifact_ids
+
+        # Wait 1 second before checking again
+        await asyncio.sleep(1)
 
 # --- Session-Workflow endpoints ---
 

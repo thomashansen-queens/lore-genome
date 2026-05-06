@@ -57,7 +57,7 @@
                                 {% endif %}
 
                                 {# Needs to match the Workflow manager's hydrate_workflow logic #}
-                                {% set input_name = task.id ~ "__" ~ key ~ "__" ~ loop.index0 %}
+                                {% set input_name = "input__" ~ task.id ~ "__" ~ key ~ "__" ~ loop.index0 %}
 
                                 {{ forms.render_user_input(input_name, extra) }}
 
@@ -83,7 +83,9 @@
     </aside>
     
     {% block workspace %}
-        {% include "/components/task_graph.html" %}
+        <div class="scroll-area" style="flex: 1;">
+            {% include "/components/task_graph.html" %}
+        </div>
     {% endblock %}
 
 </div>

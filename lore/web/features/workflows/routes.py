@@ -88,7 +88,7 @@ def rename_workflow_action(
     except ValueError:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    return ctx.redirect_back(fallback_url=f"/workflows/{updated_workflow.id}")
+    return ctx.redirect(url=f"/workflows/{updated_workflow.id}")
 
 
 @router.post("/{workflow_id}/update_description", response_class=RedirectResponse)
@@ -149,7 +149,7 @@ async def hydrate_workflow_action(
 
     # 2. Package the Runtime Inputs
     runtime_inputs = {}
-    for field_name, value in form_data.items():
+    for field_name in form_data.keys():
         if field_name.startswith("input__"):
             # strip "input__" to pass "step_id__key__idx"
             ref_key = field_name[len("input__"):]

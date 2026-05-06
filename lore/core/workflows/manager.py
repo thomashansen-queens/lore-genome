@@ -272,6 +272,7 @@ class WorkflowManager:
                 name=task.name,
                 description=task.description or "",
                 status=TaskStatus.TEMPLATE,
+                is_template=True,
             ))
 
         # 4. Check integrity of new Workflow
@@ -311,6 +312,7 @@ class WorkflowManager:
             live_task = session.add_task(
                 registry_key=template_task.registry_key,
                 name=template_task.name or f"{workflow.name} - {template_task.registry_key}",
+                description=template_task.description or "",
             )
             template_to_live_map[template_task.id] = live_task.id
 

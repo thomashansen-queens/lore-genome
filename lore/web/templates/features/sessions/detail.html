@@ -5,7 +5,9 @@
 {% block workspace %}
 
 {# === Split Layout Container === #}
-<div class="column gapped">
+<div class="column gapped"
+     hx-ext="sse"
+     sse-connect="/sessions/{{ session.id }}/stream">
 
     {# === Manifest: Tasks === #}
     <div class="card" style="flex: 1;">
@@ -28,7 +30,7 @@
         </div>
         
         <div class="scroll-area" id="task-list-container">
-            <div id="view-container" class="fill">
+            <div id="view-container" style="display: contents;">
                 {% include "/components/task_graph.html" %}
             </div>
         </div>
@@ -37,25 +39,11 @@
     {# === Manifest: Artifacts === #}
     <div class="card" style="flex: 1;">
         <h4>Artifacts</h4>
-        <div class="scroll-area" id="artifact-list-container"
-             hx-get="/sessions/{{ session.id }}/artifacts/poll" 
-             hx-trigger="every 2s [shouldPoll()]">
-            {% include "/partials/artifact_list.html" %}
+        <div class="scroll-area" id="artifact-list-container">
+            {% include "/features/sessions/fragments/artifact_list.html" %}
         </div>
     </div>
 
 </div>
-
-{% endblock %}
-
-{% block scripts %}
-
-<script>
-function shouldPoll() {
-    const hasActiveTasks = document.querySelectorAll('[data-status="running"], [data-status="ready"]').length > 0;
-    const isPopoverOpen = document.querySelectorAll('[popover]:popover-open').length > 0;
-    return hasActiveTasks && !isPopoverOpen;
-}
-</script>
 
 {% endblock %}

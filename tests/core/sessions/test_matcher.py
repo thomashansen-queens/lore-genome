@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from lore.core.sessions.matcher import find_artifacts_for_field, find_valid_upstream_outputs
+from lore.core.sessions.matcher import find_artifacts_for_field
+from lore.core.topology.traversal import find_valid_upstream_tasks
 
 # --- Setup ---
 
@@ -106,7 +107,7 @@ def test_find_valid_upstream_outputs(monkeypatch):
     field_extra = {"is_artifact": True, "accepted_data": ["fasta"]}
     
     # Run matcher
-    result = find_valid_upstream_outputs(mock_session, current_task_id="task_B", field_extra=field_extra)
+    result = find_valid_upstream_tasks(current_task_id="task_B", tasks=[upstream_task], field_extra=field_extra)
     
     # Assertions
     assert len(result) == 1

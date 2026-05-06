@@ -226,6 +226,7 @@ class Session(AbstractContextManager):
         registry_key: str,
         inputs: dict[str, Any] | None = None,
         name: str | None = None,
+        description: str | None = None,
         parent_artifact_ids: list[str] | None = None,
         exec_config: dict[str, Any] | None = None,
     ) -> "Task":
@@ -235,6 +236,7 @@ class Session(AbstractContextManager):
         :param registry_key: The key of the Task in the TaskRegistry.
         :param inputs: The input parameters for the Task. None if no inputs, uses defaults.
         :param name: Optional human-readable name for the Task.
+        :param description: Optional longer description for the Task.
         :param parent_artifact_ids: Optional list of parent artifact IDs for lineage.
         :param exec_config: Optional execution configuration for the Task.
         :return: The created Task.
@@ -253,6 +255,7 @@ class Session(AbstractContextManager):
             id=task_id,
             registry_key=registry_key,
             name=name or registry_key,
+            description=description,
             status=TaskStatus.DRAFT,
             inputs=cast(dict[str, list["Binding"]], inputs or {}),  # pydantic will coerce
             outputs={},

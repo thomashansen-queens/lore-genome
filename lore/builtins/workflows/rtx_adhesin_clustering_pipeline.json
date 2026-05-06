@@ -31,7 +31,8 @@
         ]
       },
       "name": "Summarize cluster origins",
-      "description": "Prepare a report showing the results of the clustering pipeline."
+      "description": "Prepare a report showing the results of the clustering pipeline.",
+      "is_template": true
     },
     {
       "id": "9093870b-0f86-490a-8eff-c0d0c260ed40",
@@ -94,7 +95,8 @@
         ]
       },
       "name": "Cluster by 800 C-terminal residues",
-      "description": "Cluster protein sequences based on their 800 C-terminal residues. In cases where a protein is under 800 residues long, it is culled from the data set."
+      "description": "Cluster protein sequences based on their 800 C-terminal residues. In cases where a protein is under 800 residues long, it is culled from the data set.",
+      "is_template": true
     },
     {
       "id": "2bb8e4e9-580a-4fc7-a2e3-9d5da6df5bee",
@@ -116,7 +118,8 @@
         ]
       },
       "name": "Fetch gene annotations",
-      "description": "Task handler to fetch annotation packages from NCBI Datasets API for a list of accessions."
+      "description": "Task handler to fetch annotation packages from NCBI Datasets API for a list of accessions.",
+      "is_template": true
     },
     {
       "id": "8d32e52e-3edd-46f3-9a90-963db635202e",
@@ -143,7 +146,8 @@
         ]
       },
       "name": "Merge and deduplicate protein FASTAs",
-      "description": "Merge and deduplicate protein FASTAs to prepare them for clustering"
+      "description": "Merge and deduplicate protein FASTAs to prepare them for clustering",
+      "is_template": true
     },
     {
       "id": "81de0f92-b4aa-46af-b68a-8b6ea2d122e4",
@@ -194,7 +198,8 @@
         ]
       },
       "name": "Fetch protein fastas",
-      "description": "Fetch all protein sequences as FASTA for each sampled genome assembly"
+      "description": "Fetch all protein sequences as FASTA for each sampled genome assembly",
+      "is_template": true
     },
     {
       "id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
@@ -243,7 +248,8 @@
         ]
       },
       "name": "stratified sample",
-      "description": "Use stratified sampling to maximize diversity of genome assemblies by collection country and year."
+      "description": "Use stratified sampling to maximize diversity of genome assemblies by collection country and year.",
+      "is_template": true
     },
     {
       "id": "5bfc6d92-52d5-4332-8bd8-14c385f9a472",
@@ -270,7 +276,8 @@
         ]
       },
       "name": "NCBI Post Hoc",
-      "description": "Post-hoc NCBI API filters allows manual inspection of initial results."
+      "description": "Post-hoc NCBI API filters allows manual inspection of initial results.",
+      "is_template": true
     },
     {
       "id": "220d2bb5-c9b4-429f-9ff1-012242c49713",
@@ -426,7 +433,8 @@
         ]
       },
       "name": "Fetch long-read genomes",
-      "description": "Fetch genome assemblies from NCBI Datasets that have been sequenced using long-read technology."
+      "description": "Fetch genome assemblies from NCBI Datasets that have been sequenced using long-read technology.",
+      "is_template": true
     }
   ]
 }

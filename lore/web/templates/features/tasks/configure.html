@@ -20,7 +20,7 @@
 
         <form id="workbench-form">
             {# Hidden input for metadata #}
-            <input type="hidden" name="task_id" value="{{ edit_task_id | default('') }}">
+            <input type="hidden" name="task_id" value="{{ edit_task_id or '' }}">
             <input type="text"
                     name="name"
                     value="{{ prefill_name | default(task_def.name) }}"

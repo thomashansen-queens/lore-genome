@@ -8,12 +8,11 @@ from fastapi import Depends, Query
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
-from lore.core.sessions import resolve_task_inputs
-from lore.core.sessions import find_artifact_candidates, map_artifacts_to_task_inputs, resolve_task_outputs
+from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks.models import TaskConfig
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
-from lore.web.utils.forms import get_form_str, format_inputs_for_ui, form_json_to_dict
+from lore.web.utils.forms import get_form_str, form_json_to_dict
 from lore.core.tasks import task_registry, TaskStatus
 
 
@@ -313,6 +312,7 @@ def api_task_commit(
         msg = ""
 
         with rt.open_session(session_id) as s:  # Re-open session to ensure we have a lock for writing
+            # New tasks will not have an id yet
             if existing_task_id:
                 task = s.get_task(existing_task_id)
                 if task is None:
@@ -413,7 +413,7 @@ def api_task_preview(
         # 3. Render the HTML on the Server
         response = templates.TemplateResponse(
             request=ctx.request,
-            name=f"partials/viewers/{view_mode}.html",
+            name=f"components/viewers/{view_mode}.html",
             context=render_context,
         )
         html_content = bytes(response.body).decode("utf-8")

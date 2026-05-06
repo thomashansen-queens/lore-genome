@@ -4,6 +4,7 @@ Routes for managing individual artifacts within a Session.
 
 import json
 from pydantic import BaseModel, Field
+import pandas as pd
 
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
@@ -213,6 +214,37 @@ async def view_artifact_explore(
 
 # --- Explore AJAX ---
 
+def _get_explore_df(s: ReadOnlySession, artifact, adapter) -> pd.DataFrame:
+    """
+    Loads, adapts, and (importantly) caches the full DataFrame for an artifact.
+    Uses a private function to leverage LoRe's runtime caching system.
+    """
+    path = s.get_artifact_path(artifact.id)
+    reader = get_reader_for(path)
+
+    def _compute():
+        records = adapter.adapt(reader.read_full())
+        df = pd.DataFrame(records)
+        if not df.empty:
+            df = df.apply(lambda col: pd.to_numeric(col, errors="coerce")
+                .fillna(col)
+                .infer_objects()
+                if col.dtype == object else col)
+            df = df.convert_dtypes()
+        return df
+
+    return s.runtime.cache.get_or_compute(
+        session_id=s.id,
+        prefix="explore_df",
+        compute_fn=_compute,
+        cache_kwargs={
+            "artifact_id": artifact.id,
+            "adapter": adapter.name,
+            "created_at": artifact.created_at.isoformat(),
+        },
+    )
+
+
 class ExploreDataRequest(BaseModel):
     query: str = ""
     regex: bool = False
@@ -249,31 +281,10 @@ def api_explore_data(
         reader = get_reader_for(path)
 
         # 1. Load and adapt the full dataset
-        def _compute_dataframe():
-            """Cacheable helper to compute full DataFrame from Artifact + Adapter."""
-            records = adapter.adapt(reader.read_full())
-            import pandas as pd
-            df = pd.DataFrame(records)
-            if not df.empty:
-                df = df.convert_dtypes()
-            return df
+        df = _get_explore_df(s, artifact, adapter)
+        total_rows = len(df)
 
-        # 2. Caching layer to speed up repeated queries on large data
-        master_df = s.runtime.cache.get_or_compute(
-            session_id=s.id,
-            prefix="explore_df",
-            compute_fn=_compute_dataframe,
-            cache_kwargs={
-                "artifact_id": artifact_id,
-                "adapter": adapter.name,
-                "created_at": artifact.created_at.isoformat(),  # for cache invalidation
-            }
-        )
-
-        total_rows = len(master_df)
-        df = master_df  # alias to avoid modifying in-memory cache
-
-        # 3. 3-tier filtering
+        # 2. 3-tier filtering
         view_state = payload.adapter_config.view_state
         try:
             df = filter_and_sort(
@@ -289,7 +300,7 @@ def api_explore_data(
                 status_code=400,
             )
 
-        # 4. Data enhancements
+        # 3. Data enhancements
         # UI data bars: calculate maximums
         numeric_df = df.select_dtypes(include=["number"])
         numeric_maxes = numeric_df.max().to_dict() if not numeric_df.empty else {}
@@ -316,7 +327,7 @@ def api_explore_data(
         # 5. Render HTML fragment
         response = templates.TemplateResponse(
             request=ctx.request,
-            name="partials/viewers/table.html",
+            name="components/viewers/table.html",
             context={
                 "request": ctx.request,
                 "data": display_records,
@@ -360,24 +371,9 @@ def api_explore_export(
         raise HTTPException(404, "No adapter available for this Artifact")
 
     view_state = payload.adapter_config.view_state
-    path = s.get_artifact_path(artifact_id)
-    reader = get_reader_for(path)
 
-    # 1. Fetch from TieredCache (Instant hit!)
-    def _compute_dataframe():
-        records = adapter.adapt(reader.read_full())
-        import pandas as pd
-        df = pd.DataFrame(records)
-        return df.convert_dtypes() if not df.empty else df
-
-    df = s.runtime.cache.get_or_compute(
-        session_id=s.id, prefix="explore_df", compute_fn=_compute_dataframe,
-        cache_kwargs={
-            "artifact_id": artifact_id,
-            "adapter": adapter.name,
-            "created_at": artifact.created_at.isoformat(),
-        }
-    )
+    # 1. Fetch (probably from cache)
+    df = _get_explore_df(s, artifact, adapter)
 
     # 2. Filter and sort
     try:
