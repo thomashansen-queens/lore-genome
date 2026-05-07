@@ -153,6 +153,10 @@
     htmx.onLoad(function(content) {
         // Find any table with the 'sortable' class inside the newly swapped content
         var sortableTables = content.querySelectorAll('table.sortable');
+        if (content.matches('table.sortable')) {
+            sortableTables = Array.from(sortableTables);
+            sortableTables.push(content);
+        }
         
         sortableTables.forEach(function(table) {
             new Tablesort(table);
