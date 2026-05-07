@@ -15,7 +15,7 @@ def create_mock_artifact(id: str, types: set, columns: list | None = None):
     return mock
 
 
-def create_mock_task_def(outputs_extra: dict[str, dict]):
+def create_mock_task_def(outputs_extra: dict[str, dict]) -> MagicMock:
     """Creates a mock TaskDefinition with specific output field metadata."""
     mock_def = MagicMock()
     mock_model = MagicMock()
@@ -100,8 +100,9 @@ def test_find_valid_upstream_outputs(monkeypatch):
         "report": {"data_type": "table"},
         "sequence": {"data_type": "fasta"}
     })
-    mock_registry.get.return_value = mock_def
-    monkeypatch.setattr("lore.core.sessions.matcher.task_registry", mock_registry)
+    mock_registry.get_safe.return_value = mock_def
+    monkeypatch.setattr("lore.core.topology.traversal.task_registry", mock_registry)
+
 
     # Current field needs a fasta
     field_extra = {"is_artifact": True, "accepted_data": ["fasta"]}
