@@ -188,8 +188,11 @@ def _build_field_ui_state(
                 else:
                     val = extracted[0] if extracted else None
             else:
-                # ValueInputs need to be stiched back into a single comma-separated list
-                if len(extracted) > 1:
+                # ValueInputs might need to be stiched back into a single comma-separated list
+                expects_raw_list = meta.get("widget") in ("checkbox_group", "artifact_multi_select")
+                if expects_raw_list:
+                    val = extracted
+                elif len(extracted) > 1:
                     val = ", ".join(str(v) for v in extracted)
                 else:
                     val = extracted[0] if extracted else None

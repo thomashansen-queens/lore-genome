@@ -58,31 +58,33 @@
             
         {% elif ui_state.binding_mode == 'reference' %}
             {# DAG Reference Dropdown #}
-            <select name="{{ field_name }}" class="form-control fullwidth">
-                <option value="" disabled {% if not ui_state.ref_val %}selected{% endif %}>
-                    Select an upstream output...
-                </option>
-                
-                {% for upstream_task in ui_state.avail_tasks %}
-                    {# Only show tasks that actually have outputs #}
-                    <optgroup label="{{ upstream_task.task.name }} ({{ upstream_task.task.status }})">
-                        
-                        {% for out_key in upstream_task.valid_outputs %}
-                            {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
+            <div style="margin-bottom: 1rem;">
+                <select name="{{ field_name }}" class="form-control fullwidth">
+                    <option value="" disabled {% if not ui_state.ref_val %}selected{% endif %}>
+                        Select an upstream output...
+                    </option>
+                    
+                    {% for upstream_task in ui_state.avail_tasks %}
+                        {# Only show tasks that actually have outputs #}
+                        <optgroup label="{{ upstream_task.task.name }} ({{ upstream_task.task.status }})">
                             
-                            <option value="{{ ref_string }}" 
-                                {% if ui_state.ref_val == ref_string %}selected{% endif %}>
-                                Output: {{ out_key }}
-                            </option>
-                        {% endfor %}
-                        
-                    </optgroup>
-                {% endfor %}
-            </select>
-            
-            <small class="muted">
-                This input will wait for the selected task to generate its data.
-            </small>
+                            {% for out_key in upstream_task.valid_outputs %}
+                                {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
+                                
+                                <option value="{{ ref_string }}" 
+                                    {% if ui_state.ref_val == ref_string %}selected{% endif %}>
+                                    Output: {{ out_key }}
+                                </option>
+                            {% endfor %}
+                            
+                        </optgroup>
+                    {% endfor %}
+                </select>
+                
+                <small class="muted">
+                    This input will wait for the selected task to generate its data.
+                </small>
+            </div>
         {% endif %}
     </div>
 </div>
