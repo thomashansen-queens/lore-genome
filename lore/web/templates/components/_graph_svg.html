@@ -1,11 +1,43 @@
+{% import 'components/_graph_macros.html' as graph_ui %}
+
 {% set arrow_width = 5 %}
 {% set arrow_height = 5 %}
+{% set marker_id = "arrowhead_" + layout_dir.lower() %}
+
+<style>
+    .node-task {
+        fill: white;
+        stroke: var(--border);
+        stroke-width: 1px;
+        filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1));
+        transition: fill 0.2s ease, stroke 0.2s ease;
+    }
+    .node-input {
+        fill: var(--info-bg);
+        stroke: none;
+        filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1));
+    }
+    .node-condition {
+        fill: var(--warning-bg);
+        stroke: var(--warning-border);
+        stroke-width: 2px;
+    }
+    
+    /* Dynamic Status Colors! Fallback to primary if CSS vars are missing */
+    rect[data-status="template"] { stroke: var(--border, #ccc); }
+    rect[data-status="draft"] { stroke: var(--danger-border, red); stroke-dasharray: 4; }
+    rect[data-status="queued"] { stroke: var(--info-border, blue); }
+    rect[data-status="ready"] { stroke: var(--info-border, blue); }
+    rect[data-status="running"] { stroke: var(--warning-border, orange); stroke-width: 2px; }
+    rect[data-status="completed"] { stroke: var(--success-border, green); stroke-width: 2px; }
+    rect[data-status="failed"] { stroke: var(--danger-border, red); stroke-width: 2px; }
+</style>
 
 <svg width="{{ d.canvas_width }}" height="{{ d.canvas_height }}"
     style="display: block; min-width: {{ d.canvas_width }}px; min-height: {{ d.canvas_height }}px;"
     xmlns="http://www.w3.org/2000/svg">
 
-    {# 2. Definitions (Arrowheads) #}
+    {# 1. Definitions (Arrowheads) #}
     <defs>
         <marker id="{{ marker_id }}"
                 markerWidth="{{ arrow_width }}"
@@ -13,69 +45,42 @@
                 refX="{{ arrow_width / 2 }}" refY="{{ arrow_height / 2 }}"
                 orient="auto">
             <polygon points="0 0, {{ arrow_width }} {{ arrow_height / 2 }}, 0 {{ arrow_height }}"
-                        fill="var(--primary)" />
+                        fill="var(--primary)"/>
         </marker>
     </defs>
 
-    {# 3. Draw Edges (Underneath the nodes) #}
+    {# 2. Draw Edges #}
     {% for edge in d.edges %}
-        <path d="{{ edge.path_d }}" 
+        {# Only draw the arrowhead if it's pointing to a REAL node, not a dummy routing node #}
+        {% set is_to_dummy = edge.target_id.startswith('dummy_') %}
+        <path id="edge-{{ marker_id }}-{{ loop.index }}"
+            d="{{ edge.path_d }}" 
             fill="none" 
             stroke="var(--primary)" 
             stroke-width="2.5" 
-            marker-end="url(#{{ marker_id }})"/>
+            {% if not is_to_dummy %}marker-end="url(#{{ marker_id }})"{% endif %}/>
+        
+        {# Draw pinned artifact IDs along the path #}
+        {% if edge.label %}
+            <text font-family="sans-serif" font-size="11" fill="white" dy="-5">
+                <textPath href="#edge-{{ marker_id }}-{{ loop.index }}" startOffset="10%">
+                    {{ edge.label }}
+                </textPath>
+            </text>
+        {% endif %}
+
     {% endfor %}
 
-    {# 4. Draw Nodes (On top of edges) #}
-    {% for node in d.nodes %}
-        {# A. Only wrap real tasks in the clickable anchor tag #}
+    {# 3. Draw Nodes #}
+    {% for node in d.nodes.values() %}
         
-        {% if not node.is_virtual %}
-            <a href="{{ base_url }}/{{ node.id }}" style="cursor: pointer;">
-        {% endif %}
-        
-            <g class="node-group" transform="translate({{ node.x }}, {{ node.y }})">
-
-                {# B. User input virtual nodes #}
-                {% if node.is_virtual %}
-                    <rect width="{{ node.width }}" height="{{ node.height }}"
-                          rx="{{ node.height / 2 }}" ry="{{ node.height / 2 }}"
-                          fill="var(--info-bg)"/>
-                    <text x="{{ node.width / 2 }}" y="{{ (node.height / 2) + 4 }}"
-                          text-anchor="middle" font-family="sans-serif" font-size="12"
-                          fill="var(--info)"
-                          style="pointer-events: none;">
-                        {{ node.label | truncate(15) }}
-                    </text>
-                
-                {# C. Task nodes #}
-                {% else %}
-                    {% set visual_status = (node.payload.status.value if node.payload.status.value else node.payload.status) | string | lower %}
-                    {% if workflow is defined and workflow %}
-                        {% if not node.payload.error %}
-                            {% set visual_status = 'template' %}
-                        {% endif %}
-                    {% endif %}
-                    <rect class="node-rect" 
-                        data-status="{{ visual_status }}"
-                        width="{{ node.width }}" height="{{ node.height }}" 
-                        rx="var(--radius-sm)" ry="var(--radius-sm)" 
-                        fill="white" 
-                        stroke="var(--border)" stroke-width="1" 
-                        style="filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.1)); transition: fill 0.2s ease, stroke 0.2s ease;"/>
-                    
-                    <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
-                        {{ node.label | truncate(25) }}
-                    </text>
-                    
-                    <text x="12" y="44" font-family="sans-serif" font-size="11" fill="var(--text-muted)">
-                        {{ node.payload.registry_key | replace('_', ' ') | title }}
-                    </text>
-                {% endif %}
-            </g>
-
-        {% if not node.is_virtual %}
-        </a>
+        {# A. Skip Invisible Dummy Nodes #}
+        {% if node.node_type == "dummy" %}
+            {# pass #}
+            
+        {# B. All other nodes #}
+        {% else %}
+            {{ graph_ui.render_graph_node(node, base_url, layout_dir, is_oob=False, workflow=workflow) }}
         {% endif %}
     {% endfor %}
 

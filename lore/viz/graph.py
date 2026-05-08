@@ -20,69 +20,167 @@ Four steps:
 4. Coordinate assignment (vertex placement creates a balanced graph)
 """
 
-from dataclasses import dataclass
-from typing import Any, Literal
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any
+
+
+class Direction(StrEnum):
+    LR = "LR"
+    TB = "TB"
+
+
+@dataclass
+class GraphPort:
+    """
+    A single input or output port/slot on a node. A node can have 0 or more
+    ports, which can indicate different data types or connections.
+    TODO: Should this have a payload?
+    """
+    id: str     # e.g., "protein_sequence"
+    label: str  # e.g., "Protein Sequence"
+
+
+# --- Graph Nodes/Vertices ---
 
 
 @dataclass
 class GraphNode:
+    """
+    The base node type in the graph. Defines Node identity, ports, and geometry
+    for the layout engine (calculated by a layout algorithm).
+    _layout_dir and the main_* and cross_* properties allows the same code
+    to create left-right and top-bottom layouts without duplicating logic.
+    """
+    # Identity
     id: str
     label: str
+    node_type: str = "base"
     payload: Any = None  # Arbitrary data associated with a node
     layer: int = 0
+
+    # Ports/Slots/Connections
+    inputs: list[GraphPort] = field(default_factory=list)
+    outputs: list[GraphPort] = field(default_factory=list)
+
+    # Geometry
     x: float = 0.0
     y: float = 0.0
     width: float = 200.0
     height: float = 60.0
-    is_virtual: bool = False
+    _layout_dir: Direction = Direction.LR  # set by layout engine for main/cross context
+
+    # Presentation
+    node_type: str = "base"
+    css_class: str = "node-default"
+
+    @property
+    def main_pos(self) -> float:
+        return self.x if self._layout_dir == Direction.LR else self.y
+
+    @main_pos.setter
+    def main_pos(self, value: float):
+        if self._layout_dir == Direction.LR:
+            self.x = value
+        else:
+            self.y = value
+
+    @property
+    def cross_pos(self) -> float:
+        if self._layout_dir == Direction.LR:
+            return self.y
+        else:
+            return self.x
+
+    @cross_pos.setter
+    def cross_pos(self, value: float):
+        if self._layout_dir == Direction.LR:
+            self.y = value
+        else:
+            self.x = value
+
+    @property
+    def main_size(self) -> float:
+        return self.width if self._layout_dir == Direction.LR else self.height
+
+    @property
+    def cross_size(self) -> float:
+        return self.height if self._layout_dir == Direction.LR else self.width
+
+
+@dataclass
+class DummyNode(GraphNode):
+    node_type: str = "dummy"
+    width: float = 0.0
+    height: float = 0.0
+    css_class: str = "node-dummy"
+
+
+# --- Graph edges ---
+
 
 @dataclass
 class GraphEdge:
+    """
+    An edge connecting two nodes. Can carry a label and payload of data.
+    """
     source_id: str
     target_id: str
     label: str
-    path_d: str = ""  # SVG path data for edge routing
+    source_port: str | None = None  
+    target_port: str | None = None
+    payload: Any = None
+
+    # Geometry for layout (calculated by layout algorithm)
+    path_d: str = ""
 
 
 class Graph:
-    """A generic container for graph data."""
+    """
+    Pure mathematical graph structure of nodes and edges.
+    Once passed through a layout engine, holds bound geometry.
+    """
     def __init__(self):
         self.nodes: dict[str, GraphNode] = {}
         self.edges: list[GraphEdge] = []
 
-    def add_node(self, node_id: str, label: str, **kwargs):
-        self.nodes[node_id] = GraphNode(id=node_id, label=label, **kwargs)
+        self.canvas_width: float = 0.0
+        self.canvas_height: float = 0.0
+
+    def add_node(self, node: GraphNode):
+        """
+        Add a node to the graph.
+        """
+        self.nodes[node.id] = node
 
     def add_edge(self, source_id: str, target_id: str, label: str, **kwargs):
+        """
+        Add an edge to the graph. Optional kwargs:
+        - payload: Arbitrary data included with edge
+        - source_port: The port on the source node
+        - target_port: The port on the target node
+        """
         self.edges.append(GraphEdge(source_id=source_id, target_id=target_id, label=label, **kwargs))
 
 
-@dataclass
-class DiagramResult:
-    """Final output of the graph layout for rendering."""
-    nodes: list[GraphNode]
-    edges: list[GraphEdge]
-    canvas_width: float
-    canvas_height: float
-
-
-class DagLayout:
-    """Layered DAG diagram layout (Sugiyama method)."""
+class SugiyamaLayout:
+    """
+    Layout engine for the Sugiyama method of drawing DAGs.
+    Takes a Graph topology and stamps it with X,Y geometry.
+    """
     def __init__(
         self,
         graph: Graph,
-        direction: Literal["TB", "LR"] = "LR",
+        direction: Direction = Direction.LR,
         arrow_margin: float = 5.0,
         gap: float = 50.0,
         **overrides,
     ):
         self.graph = graph
-        self.direction = direction.upper()  # top-bottom or left-right
+        self.direction = direction  # top-bottom or left-right
         self.arrow_margin = arrow_margin
         self.gap = gap
         self._overrides = overrides  # useful for testing
-        self.canvas_width = 0.0
-        self.canvas_height = 0.0
 
     @property
     def padding(self) -> float:
@@ -102,39 +200,134 @@ class DagLayout:
         max_h = max((n.height for n in self.graph.nodes.values()), default=60.0)
         return max_h + self.gap
 
-    def compute(self) -> DiagramResult:
+    @property
+    def main_step(self) -> float:
+        """The grid spacing in the direction of flow (e.g. Column Width in LR)"""
+        return self.column_width if self.direction == "LR" else self.row_height
+
+    @property
+    def cross_step(self) -> float:
+        """The grid spacing perpendicular to flow (e.g. Row Height in LR)"""
+        return self.row_height if self.direction == "LR" else self.column_width
+
+    def compute(self) -> Graph:
         """
-        Step 1: Input is DAG, so already acyclic.
-        Runs the layout algorithm and returns nodes, edges, and canvas dimensions.
+        Runs the layout algorithm and returns the mutated Graph.
         """
+        # 1. Inject the flexbox-style main/cross context into nodes
+        for node in self.graph.nodes.values():
+            node._layout_dir = self.direction
+
+        # 2. Run the Sugiyama method steps
         self._assign_layers()
-        self._build_layer_map()     # keeps ordered layers in scope for edge routing
-        self._order_vertices()      # group nodes by layer to be near parents/children
+        self._create_proper_hierarchy()
+        self._build_layer_map()
+        self._order_vertices()
+
+        # 3. Apply geometry
         self._assign_coordinates()  # assigns (x,y) to nodes based on layer and order
         self._route_edges()         # calculates bezier control points for edge paths
-        return DiagramResult(
-            nodes=list(self.graph.nodes.values()),
-            edges=self.graph.edges,
-            canvas_width=self.canvas_width,
-            canvas_height=self.canvas_height,
-        )
+
+        return self.graph
 
     def _assign_layers(self):
-        """Step 2: Assign nodes to columns (longest path from roots).
-        TODO: Topological sort with longest path layering could be more efficient..."""
-        changed = True
-        while changed:
-            changed = False
+        """
+        Step 1a: Assign nodes to layers using Longest Path (Kahn's Algorithm)
+        Guarantees O(V + E) for DAGs
+        """
+        # 1. Calculate in-degrees for all nodes
+        in_degree = {node_id: 0 for node_id in self.graph.nodes}
+        for edge in self.graph.edges:
+            if edge.target_id in in_degree:
+                in_degree[edge.target_id] += 1
+
+        # 2. Find roots (in-degree 0) and put them in layer 0
+        queue = [node_id for node_id, deg in in_degree.items() if deg == 0]
+        for n_id in queue:
+            self.graph.nodes[n_id].layer = 0
+
+        # 3. Propagate layer assignment downwards
+        while queue:
+            u_id = queue.pop(0)
+            u_layer = self.graph.nodes[u_id].layer
+
             for edge in self.graph.edges:
-                if edge.source_id not in self.graph.nodes or edge.target_id not in self.graph.nodes:
-                    continue  # Ignore edges with missing nodes
+                if edge.source_id == u_id:
+                    v_id = edge.target_id
+                    if v_id in self.graph.nodes:
+                        # Push the child down to the longest path from any parent
+                        self.graph.nodes[v_id].layer = max(
+                            self.graph.nodes[v_id].layer, u_layer + 1
+                        )
+                        in_degree[v_id] -= 1
+                        if in_degree[v_id] == 0:
+                            queue.append(v_id)
 
-                source = self.graph.nodes[edge.source_id]
-                target = self.graph.nodes[edge.target_id]
+        # 4. Kahn's algorithm is done, now adjust terminal nodes to go one layer
+        #    up from their children to reduce dummy nodes in the next step
+        for node in self.graph.nodes.values():
+            if node.node_type in ("input", "start", "source", "root"):
+                targets = [e.target_id for e in self.graph.edges if e.source_id == node.id]
+                valid_target_layers = [
+                    self.graph.nodes[t].layer for t in targets if t in self.graph.nodes
+                ]
 
-                if target.layer <= source.layer:
-                    target.layer = source.layer + 1
-                    changed = True
+                if valid_target_layers:
+                    # one layer before earliest target
+                    node.layer = max(0, min(valid_target_layers) -  1)
+
+    def _create_proper_hierarchy(self):
+        """
+        Step 1b: Convert to a 'proper hierarchy' by breaking long edges with 
+        dummy nodes.
+        """
+        original_edges = list(self.graph.edges)
+        self.graph.edges = []
+
+        for edge in original_edges:
+            if edge.source_id not in self.graph.nodes or edge.target_id not in self.graph.nodes:
+                continue
+
+            source = self.graph.nodes[edge.source_id]
+            target = self.graph.nodes[edge.target_id]
+            span = target.layer - source.layer
+
+            if span <= 1:
+                # Normal edge
+                self.graph.edges.append(edge)
+            else:
+                # Long span, use dummy nodes
+                prev_id = edge.source_id
+
+                for current_layer in range(source.layer + 1, target.layer):
+                    # 1. Create a dummy node
+                    dummy_id = f"dummy_{edge.source_id}_{edge.target_id}_{current_layer}"
+                    dummy_node = DummyNode(
+                        id=dummy_id,
+                        label="",
+                        layer=current_layer,
+                    )
+                    self.graph.add_node(dummy_node)
+
+                    # 2. Link previous node to dummy
+                    is_first_segment = (prev_id == edge.source_id)
+                    self.graph.add_edge(
+                        source_id=prev_id,
+                        source_port=edge.source_port if is_first_segment else None,
+                        target_id=dummy_id,
+                        label=edge.label if is_first_segment else "",
+                        payload={"is_segment": True, "original_edge": edge},
+                    )
+                    prev_id = dummy_id
+
+                # 3. Link last dummy to target
+                self.graph.add_edge(
+                    source_id=prev_id,
+                    target_id=edge.target_id,
+                    label="",
+                    target_port=edge.target_port,
+                    payload={"is_segment": True, "original_edge": edge},
+                )
 
     def _build_layer_map(self):
         """Helper to group nodes by layer."""
@@ -143,7 +336,7 @@ class DagLayout:
             self._layer_map.setdefault(node.layer, []).append(node)
 
     def _order_vertices(self):
-        """Step 3: Order vertices within layers to minimize edge crossings (barycenter heuristic)."""
+        """Step 2: Order vertices within layers to minimize edge crossings (barycenter heuristic)."""
         if not self._layer_map:
             return  # No nodes to order
 
@@ -152,9 +345,8 @@ class DagLayout:
         parents = {}   # node_id -> [source_ids]
         children = {}  # node_id -> [target_ids]
         for e in self.graph.edges:
-            if e.source_id in self.graph.nodes and e.target_id in self.graph.nodes:
-                children.setdefault(e.source_id, []).append(e.target_id)
-                parents.setdefault(e.target_id, []).append(e.source_id)
+            children.setdefault(e.source_id, []).append(e.target_id)
+            parents.setdefault(e.target_id, []).append(e.source_id)
 
         # Sweep downwards
         for _ in range(4):
@@ -165,11 +357,13 @@ class DagLayout:
                     continue
                 prev_pos = {n.id: i for i, n in enumerate(self._layer_map.get(l - 1, []))}
 
-                def bary_up(n, _pos=prev_pos):
-                    hits = [_pos[pid] for pid in parents.get(n.id, []) if pid in _pos]
-                    return sum(hits) / len(hits) if hits else float('inf')
+                def bary_up(n, current_idx):
+                    hits = [prev_pos[pid] for pid in parents.get(n.id, []) if pid in prev_pos]
+                    return sum(hits) / len(hits) if hits else current_idx
 
-                self._layer_map[l].sort(key=bary_up)
+                nodes_with_idx = list(enumerate(nodes))
+                nodes_with_idx.sort(key=lambda x: bary_up(x[1], x[0]))
+                self._layer_map[l] = [n for idx, n in nodes_with_idx]
 
             # Backward pass: Sort layer by average position of children in next layer
             for l in range(max_layer - 1, -1, -1):
@@ -178,11 +372,13 @@ class DagLayout:
                     continue
                 next_pos = {n.id: i for i, n in enumerate(self._layer_map.get(l + 1, []))}
 
-                def bary_down(n, _pos=next_pos):
-                    hits = [_pos[cid] for cid in children.get(n.id, []) if cid in _pos]
-                    return sum(hits) / len(hits) if hits else float('inf')
+                def bary_down(n, current_idx):
+                    hits = [next_pos[cid] for cid in children.get(n.id, []) if cid in next_pos]
+                    return sum(hits) / len(hits) if hits else current_idx
 
-                self._layer_map[l].sort(key=bary_down)
+                nodes_with_idx = list(enumerate(nodes))
+                nodes_with_idx.sort(key=lambda x: bary_down(x[1], x[0]))
+                self._layer_map[l] = [n for idx, n in nodes_with_idx]
 
     def _assign_coordinates(self):
         """Step 4: Assign (x,y) coordinates to nodes based on layer and order."""
@@ -190,136 +386,99 @@ class DagLayout:
             return
 
         # 1. Find the tallest column to act as the vertical anchor
-        max_nodes_in_layer = max(len(nodes) for nodes in self._layer_map.values())
+        max_nodes_in_layer = max((len(nodes) for nodes in self._layer_map.values()), default=0)
         padding = self.padding
-        max_x = 0.0
-        max_y = 0.0
+        max_main = 0.0
+        max_cross = 0.0
+
+        max_cross_span = max_nodes_in_layer * self.cross_step
 
         # 2. Calculate where this layer should start for centering
-        if self.direction == "LR":
-            tallest = max_nodes_in_layer * self.row_height
-            for layer_idx, nodes in self._layer_map.items():
-                col_height = len(nodes) * self.row_height
-                start_y = padding + (tallest - col_height) / 2
-                for i, node in enumerate(nodes):
-                    node.x = padding + layer_idx * self.column_width
-                    node.y = start_y + i * self.row_height
-                    max_x = max(max_x, node.x + node.width)
-                    max_y = max(max_y, node.y + node.height)
-        else:  # Top-Bottom
-            widest = max_nodes_in_layer * self.column_width
-            for layer_idx, nodes in self._layer_map.items():
-                row_width = len(nodes) * self.column_width
-                start_x = padding + (widest - row_width) / 2
-                for i, node in enumerate(nodes):
-                    node.x = start_x + i * self.column_width
-                    node.y = padding + layer_idx * self.row_height
-                    max_x = max(max_x, node.x + node.width)
-                    max_y = max(max_y, node.y + node.height)
+        for layer_idx, nodes in self._layer_map.items():
+            layer_cross_span = len(nodes) * self.cross_step
+            start_cross = padding + (max_cross_span - layer_cross_span) / 2
 
-        self.canvas_width = max_x + padding
-        self.canvas_height = max_y + padding
+            for i, node in enumerate(nodes):
+                # Sum the size of nodes (allows polymorphic nodes)
+                main_offset = (self.main_step - node.main_size) / 2
+                cross_offset = (self.cross_step - node.cross_size) / 2
+
+                node.main_pos = padding + (layer_idx * self.main_step) + main_offset
+                node.cross_pos = start_cross + (i * self.cross_step) + cross_offset
+
+                # 3. Canvas bounding box tracking
+                max_main = max(max_main, node.main_pos + node.main_size)
+                max_cross = max(max_cross, node.cross_pos + node.cross_size)
+
+        # 4. Final canvas size with padding into Graph object
+        if self.direction == "LR":
+            self.graph.canvas_width = max_main + padding
+            self.graph.canvas_height = max_cross + padding
+        else:
+            self.graph.canvas_width = max_cross + padding
+            self.graph.canvas_height = max_main + padding
+
+    def _get_port_coords(
+        self,
+        node: GraphNode,
+        port_id: str | None,
+        is_source: bool,
+    ) -> tuple[float, float]:
+        """Calculates the exact (main, cross) coordinate for an edge connection."""
+        # 1. Early exit: 'Virtual nodes' are routing points
+        if node.node_type == "dummy":
+            return node.main_pos, node.cross_pos
+
+        # 2. Main Axis (side of the node bounding box)
+        if is_source:
+            main = node.main_pos + node.main_size
+            ports = node.outputs
+        else:
+            main = node.main_pos - self.arrow_margin
+            ports = node.inputs
+
+        # 2. Cross Axis (distributed along the side of the node)
+        if port_id and ports:
+            try:
+                idx = next(i for i, p in enumerate(ports) if p.id == port_id)
+                cross = node.cross_pos + (node.cross_size * (idx + 1) / (len(ports) + 1))
+            except StopIteration:
+                cross = node.cross_pos + (node.cross_size / 2) # Fallback to center
+        else:
+            cross = node.cross_pos + (node.cross_size / 2) # Fallback to center
+
+        return main, cross
 
     def _route_edges(self):
-        """Calculates the Bezier curve paths connection the nodes."""
+        """Step 5: Calculates the Bezier curve paths connection the nodes."""
         valid_edges = [
             e for e in self.graph.edges
             if e.source_id in self.graph.nodes and e.target_id in self.graph.nodes
         ]
-        # TODO: Draw stubs to/from missing nodes
-
-        # Group edges by source and target node
-        outgoing = {}
-        incoming = {}
-        for edge in valid_edges:
-            outgoing.setdefault(edge.source_id, []).append(edge)
-            incoming.setdefault(edge.target_id, []).append(edge)
-
-        # Sort by perpendicular position to minimize crossings
-        is_lr = self.direction == "LR"
-        perp = (lambda n: n.y) if is_lr else (lambda n: n.x)
-
-        for edges in outgoing.values():
-            edges.sort(key=lambda e: perp(self.graph.nodes[e.target_id]))
-        for edges in incoming.values():
-            edges.sort(key=lambda e: perp(self.graph.nodes[e.source_id]))
 
         for edge in valid_edges:
             source = self.graph.nodes[edge.source_id]
             target = self.graph.nodes[edge.target_id]
 
-            out_edges = outgoing[edge.source_id]
-            in_edges = incoming[edge.target_id]
-            out_slot = out_edges.index(edge)
-            in_slot = in_edges.index(edge)
+            s_main, s_cross = self._get_port_coords(source, edge.source_port, is_source=True)
+            t_main, t_cross = self._get_port_coords(target, edge.target_port, is_source=False)
 
-            if is_lr:
-                # Distribute along the right side of source, left side of target
-                sx = source.x + source.width
-                sy = source.y + source.height * (out_slot + 1) / (len(out_edges) + 1)
-                ex = target.x - self.arrow_margin  # give space for arrowhead
-                ey = target.y + target.height * (in_slot + 1) / (len(in_edges) + 1)
-                ctrl_dx = abs(ex - sx) * 0.5
-                nudge = self._compute_nudge(source, target, sy, ey, self._layer_map)
+            # Bezier control point distance
+            ctrl_dist = abs(t_main - s_main) * 0.5
 
+            # SVG Paths require explicit X,Y coordinates
+            # Translate main/cross to X,Y based on layout direction
+            if self.direction == Direction.LR:
                 edge.path_d = (
-                    f"M {sx},{sy} "
-                    f"C {sx + ctrl_dx},{sy + nudge} "
-                    f"{ex - ctrl_dx},{ey + nudge} "
-                    f"{ex},{ey}"
+                    f"M {s_main},{s_cross} "
+                    f"C {s_main + ctrl_dist},{s_cross}, "
+                    f"{t_main - ctrl_dist},{t_cross}, "
+                    f"{t_main},{t_cross}"
                 )
             else:
-                # Distribute along the bottom of the source, top side of target
-                sx = source.x + source.width * (out_slot + 1) / (len(out_edges) + 1)
-                sy = source.y + source.height
-                ex = target.x + target.width * (in_slot + 1) / (len(in_edges) + 1)
-                ey = target.y - self.arrow_margin  # give space for arrowhead
-                ctrl_dy = abs(ey - sy) * 0.5
-                nudge = self._compute_nudge(source, target, sx, ex, self._layer_map)
-
                 edge.path_d = (
-                    f"M {sx},{sy} "
-                    f"C {sx + nudge},{sy + ctrl_dy} "
-                    f"{ex + nudge},{ey - ctrl_dy} "
-                    f"{ex},{ey}"
+                    f"M {s_cross},{s_main} "
+                    f"C {s_cross},{s_main + ctrl_dist}, "
+                    f"{t_cross},{t_main - ctrl_dist}, "
+                    f"{t_cross},{t_main}"
                 )
-
-    def _compute_nudge(self, source, target, start_perp, end_perp, layer_map):
-        """
-        Perpendicular offset for bezier controls to dodge intermediate nodes.
-
-        Walks each layer between source and target. At each layer, interpolates 
-        where the straight line would cross, then checks if an node overlaps its
-        position. Collects the worst-case clearance needed in both directions, 
-        then picks the less disruptive one.
-        """
-        span = target.layer - source.layer
-        if span <= 1:
-            return 0.0  # No intermediate layers, no nudge needed
-
-        is_lr = self.direction == "LR"
-        padding = 20
-        push_neg = 0.0  # maximum up/left shift
-        push_pos = 0.0  # maximum down/right shift
-        obstructed = False
-
-        for layer_idx in range(source.layer + 1, target.layer):
-            t = (layer_idx - source.layer) / span
-            line_pos = start_perp + t * (end_perp - start_perp)
-
-            for node in layer_map.get(layer_idx, []):
-                lo = node.y if is_lr else node.x
-                hi = (node.y + node.height) if is_lr else (node.x + node.width)
-
-                if lo - padding < line_pos < hi + padding:
-                    obstructed = True
-                    push_neg = min(push_neg, (lo - padding) - line_pos)
-                    push_pos = max(push_pos, (hi + padding) - line_pos)
-
-        if not obstructed:
-            return 0.0  # no nudge needed
-
-        # Pick the smaller nudge direction
-        raw = push_neg if abs(push_neg) < abs(push_pos) else push_pos
-        # Cubic Bezier at 0.5 receives ~75% of the nudge, can play with this
-        return raw / 0.75
