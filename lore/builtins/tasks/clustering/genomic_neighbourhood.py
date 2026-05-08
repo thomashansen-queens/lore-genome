@@ -230,7 +230,7 @@ def _extract_neighbourhoods(
     window: tuple[int, int],
     window_type: str,
     collapse_replicons: bool,
-):
+) -> pd.DataFrame:
     """
     Extracts the genomic neighbourhood for each input accession across the input 
     annotation DataFrame.
