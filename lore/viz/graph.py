@@ -118,6 +118,15 @@ class DummyNode(GraphNode):
 
 # --- Graph edges ---
 
+@dataclass
+class GraphEdgeSegment:
+    """A physical routing line between exactly two adjacent layers."""
+    source_id: str
+    target_id: str
+    source_port: str | None = None
+    target_port: str | None = None
+    path_d: str = ""
+
 
 @dataclass
 class GraphEdge:
@@ -131,8 +140,8 @@ class GraphEdge:
     target_port: str | None = None
     payload: Any = None
 
-    # Geometry for layout (calculated by layout algorithm)
-    path_d: str = ""
+    # Geometry for layout (populated by the layout engine)
+    segments: list[GraphEdgeSegment] = field(default_factory=list)
 
 
 class Graph:
@@ -173,42 +182,28 @@ class SugiyamaLayout:
         graph: Graph,
         direction: Direction = Direction.LR,
         arrow_margin: float = 5.0,
-        gap: float = 50.0,
+        gap_nodes: float = 25.0,
+        gap_layers: float = 50.0,
         **overrides,
     ):
         self.graph = graph
         self.direction = direction  # top-bottom or left-right
         self.arrow_margin = arrow_margin
-        self.gap = gap
+        self.gap_nodes = gap_nodes  # spacing between nodes
+        self.gap_layers = gap_layers  # spacing between layers
         self._overrides = overrides  # useful for testing
 
     @property
     def padding(self) -> float:
-        return self._overrides.get("padding", self.gap)
-
-    @property
-    def column_width(self) -> float:
-        if "column_width" in self._overrides:
-            return self._overrides["column_width"]
-        max_w = max((n.width for n in self.graph.nodes.values()), default=200.0)
-        return max_w + self.gap
-
-    @property
-    def row_height(self) -> float:
-        if "row_height" in self._overrides:
-            return self._overrides["row_height"]
-        max_h = max((n.height for n in self.graph.nodes.values()), default=60.0)
-        return max_h + self.gap
+        return self._overrides.get("padding", self.gap_nodes)
 
     @property
     def main_step(self) -> float:
         """The grid spacing in the direction of flow (e.g. Column Width in LR)"""
-        return self.column_width if self.direction == "LR" else self.row_height
-
-    @property
-    def cross_step(self) -> float:
-        """The grid spacing perpendicular to flow (e.g. Row Height in LR)"""
-        return self.row_height if self.direction == "LR" else self.column_width
+        if "main_step" in self._overrides:
+            return self._overrides["main_step"]
+        max_main = max((n.main_size for n in self.graph.nodes.values()), default=200.0)
+        return max_main + self.gap_layers
 
     def compute(self) -> Graph:
         """
@@ -226,6 +221,7 @@ class SugiyamaLayout:
 
         # 3. Apply geometry
         self._assign_coordinates()  # assigns (x,y) to nodes based on layer and order
+        self._straighten_dummies()  # de-lumpifies dummy nodes to make smooth edges
         self._route_edges()         # calculates bezier control points for edge paths
 
         return self.graph
@@ -281,10 +277,9 @@ class SugiyamaLayout:
         Step 1b: Convert to a 'proper hierarchy' by breaking long edges with 
         dummy nodes.
         """
-        original_edges = list(self.graph.edges)
-        self.graph.edges = []
+        for edge in self.graph.edges:
+            edge.segments = []
 
-        for edge in original_edges:
             if edge.source_id not in self.graph.nodes or edge.target_id not in self.graph.nodes:
                 continue
 
@@ -294,7 +289,12 @@ class SugiyamaLayout:
 
             if span <= 1:
                 # Normal edge
-                self.graph.edges.append(edge)
+                edge.segments.append(GraphEdgeSegment(
+                    source_id=edge.source_id,
+                    target_id=edge.target_id,
+                    source_port=edge.source_port,
+                    target_port=edge.target_port,
+                ))
             else:
                 # Long span, use dummy nodes
                 prev_id = edge.source_id
@@ -311,23 +311,21 @@ class SugiyamaLayout:
 
                     # 2. Link previous node to dummy
                     is_first_segment = (prev_id == edge.source_id)
-                    self.graph.add_edge(
+                    edge.segments.append(GraphEdgeSegment(
                         source_id=prev_id,
-                        source_port=edge.source_port if is_first_segment else None,
                         target_id=dummy_id,
-                        label=edge.label if is_first_segment else "",
-                        payload={"is_segment": True, "original_edge": edge},
-                    )
+                        source_port=edge.source_port if is_first_segment else None,
+                        target_port=None,
+                    ))
                     prev_id = dummy_id
 
                 # 3. Link last dummy to target
-                self.graph.add_edge(
+                edge.segments.append(GraphEdgeSegment(
                     source_id=prev_id,
                     target_id=edge.target_id,
-                    label="",
+                    source_port=None,
                     target_port=edge.target_port,
-                    payload={"is_segment": True, "original_edge": edge},
-                )
+                ))
 
     def _build_layer_map(self):
         """Helper to group nodes by layer."""
@@ -381,42 +379,72 @@ class SugiyamaLayout:
                 self._layer_map[l] = [n for idx, n in nodes_with_idx]
 
     def _assign_coordinates(self):
-        """Step 4: Assign (x,y) coordinates to nodes based on layer and order."""
+        """
+        Step 4: Assign (x,y) coordinates to nodes based on layer and order.
+        In an LR layout, 'main' is X and 'cross' is Y.
+        """
         if not self.graph.nodes:
             return
 
-        # 1. Find the tallest column to act as the vertical anchor
-        max_nodes_in_layer = max((len(nodes) for nodes in self._layer_map.values()), default=0)
+        # 1. Calculate column cross sizes for centering
         padding = self.padding
-        max_main = 0.0
-        max_cross = 0.0
+        gap = self.gap_nodes
 
-        max_cross_span = max_nodes_in_layer * self.cross_step
+        layer_cross_size = {
+            layer_idx: sum(n.cross_size for n in nodes) + max((len(nodes) - 1), 0) * gap
+            for layer_idx, nodes in self._layer_map.items()
+        }
+
+        max_cross = max(layer_cross_size.values(), default=0) + (padding * 2)
+        max_main = 0.0
 
         # 2. Calculate where this layer should start for centering
         for layer_idx, nodes in self._layer_map.items():
-            layer_cross_span = len(nodes) * self.cross_step
-            start_cross = padding + (max_cross_span - layer_cross_span) / 2
+            # current_cross = center - half of layer size
+            current_cross = (max_cross / 2) - (layer_cross_size[layer_idx] / 2)
 
-            for i, node in enumerate(nodes):
-                # Sum the size of nodes (allows polymorphic nodes)
+            for node in nodes:
+                # Center node in its layer
                 main_offset = (self.main_step - node.main_size) / 2
-                cross_offset = (self.cross_step - node.cross_size) / 2
-
                 node.main_pos = padding + (layer_idx * self.main_step) + main_offset
-                node.cross_pos = start_cross + (i * self.cross_step) + cross_offset
 
-                # 3. Canvas bounding box tracking
+                # Cross position comes from cursor
+                node.cross_pos = current_cross
+
+                # Advance the cursor and bounding box
+                current_cross += node.cross_size + gap
                 max_main = max(max_main, node.main_pos + node.main_size)
-                max_cross = max(max_cross, node.cross_pos + node.cross_size)
 
         # 4. Final canvas size with padding into Graph object
-        if self.direction == "LR":
-            self.graph.canvas_width = max_main + padding
-            self.graph.canvas_height = max_cross + padding
+        if self.direction == Direction.LR:
+            self.graph.canvas_width = max_main + (padding * 2)
+            self.graph.canvas_height = max_cross
         else:
-            self.graph.canvas_width = max_cross + padding
-            self.graph.canvas_height = max_main + padding
+            self.graph.canvas_width = max_cross
+            self.graph.canvas_height = max_main + (padding * 2)
+
+    def _straighten_dummies(self):
+        """
+        Step 4b: Aligns dummy nodes along a perfect linear interpolation 
+        between their original source and target ports to eliminate wavy edges.
+        """
+        for edge in self.graph.edges:
+            if len(edge.segments) <= 2:
+                continue
+
+            # Extract just the dummy nodes in this edge's path
+            dummy_ids = [s.source_id for s in edge.segments if s.source_id.startswith("dummy_")]
+            if not dummy_ids:
+                continue
+
+            dummies = [self.graph.nodes[did] for did in dummy_ids]
+
+            # "Rubber-band" heuristic: flatten to average cross poosition
+            # TODO: Use a max-min approach to truly avoid collisions
+            avg_cross = sum(d.cross_pos for d in dummies) / len(dummies)
+
+            for dummy in dummies:
+                dummy.cross_pos = avg_cross
 
     def _get_port_coords(
         self,
@@ -451,34 +479,30 @@ class SugiyamaLayout:
 
     def _route_edges(self):
         """Step 5: Calculates the Bezier curve paths connection the nodes."""
-        valid_edges = [
-            e for e in self.graph.edges
-            if e.source_id in self.graph.nodes and e.target_id in self.graph.nodes
-        ]
+        for edge in self.graph.edges:
+            for seg in edge.segments:
+                source = self.graph.nodes[seg.source_id]
+                target = self.graph.nodes[seg.target_id]
 
-        for edge in valid_edges:
-            source = self.graph.nodes[edge.source_id]
-            target = self.graph.nodes[edge.target_id]
+                s_main, s_cross = self._get_port_coords(source, seg.source_port, is_source=True)
+                t_main, t_cross = self._get_port_coords(target, seg.target_port, is_source=False)
 
-            s_main, s_cross = self._get_port_coords(source, edge.source_port, is_source=True)
-            t_main, t_cross = self._get_port_coords(target, edge.target_port, is_source=False)
+                # Bezier control point distance
+                ctrl_dist = abs(t_main - s_main) * 0.5
 
-            # Bezier control point distance
-            ctrl_dist = abs(t_main - s_main) * 0.5
-
-            # SVG Paths require explicit X,Y coordinates
-            # Translate main/cross to X,Y based on layout direction
-            if self.direction == Direction.LR:
-                edge.path_d = (
-                    f"M {s_main},{s_cross} "
-                    f"C {s_main + ctrl_dist},{s_cross}, "
-                    f"{t_main - ctrl_dist},{t_cross}, "
-                    f"{t_main},{t_cross}"
-                )
-            else:
-                edge.path_d = (
-                    f"M {s_cross},{s_main} "
-                    f"C {s_cross},{s_main + ctrl_dist}, "
-                    f"{t_cross},{t_main - ctrl_dist}, "
-                    f"{t_cross},{t_main}"
-                )
+                # SVG Paths require explicit X,Y coordinates
+                # Translate main/cross to X,Y based on layout direction
+                if self.direction == Direction.LR:
+                    seg.path_d = (
+                        f"M {s_main},{s_cross} "
+                        f"C {s_main + ctrl_dist},{s_cross}, "
+                        f"{t_main - ctrl_dist},{t_cross}, "
+                        f"{t_main},{t_cross}"
+                    )
+                else:
+                    seg.path_d = (
+                        f"M {s_cross},{s_main} "
+                        f"C {s_cross},{s_main + ctrl_dist}, "
+                        f"{t_cross},{t_main - ctrl_dist}, "
+                        f"{t_cross},{t_main}"
+                    )
