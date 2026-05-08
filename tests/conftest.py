@@ -3,7 +3,7 @@ Fixtures for tests.
 """
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from pydantic import BaseModel
 import pytest
 
@@ -11,6 +11,10 @@ from lore.core.adapters import TableAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
 from lore.core.tasks import task_registry
+
+from logging import Logger
+from lore.core.execution import ExecutionContext
+from lore.core.tasks import Task 
 
 # --- Data fixtures ---
 
@@ -148,3 +152,13 @@ def populated_registry(semantic_registry):
     semantic_registry.register(ProteinFastaAdapter())
 
     return semantic_registry
+
+@pytest.fixture
+def fake_ctx():
+    # rt = MagicMock()
+    # ctx = ExecutionContext(rt, "42", task)
+    ctx = MagicMock()
+    ctx.get_config.return_value = None
+    ctx.logger = Logger("Fake Context Debug Logger")  
+    return ctx  
+    
