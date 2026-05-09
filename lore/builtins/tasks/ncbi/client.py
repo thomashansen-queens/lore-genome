@@ -54,6 +54,7 @@ def ncbi_client(api_key: str | None = None, timeout: float = 60.0):
         headers=headers,
         timeout=httpx.Timeout(connect=5.0, read=timeout, write=timeout, pool=timeout),
         event_hooks={"response": [raise_on_4xx_5xx]},
+        verify=False,
     ) as client:
         yield client
 
