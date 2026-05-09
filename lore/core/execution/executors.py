@@ -14,7 +14,7 @@ logger = logging.getLogger("lore.execution")
 
 class BaseExecutor(ABC):
     """
-    Defines the contract for all LoRē Task Executors.
+    Defines the contract for all LoRe Task Executors.
     """
     @abstractmethod
     def submit(self, session_id: str, task_id: str) -> None:

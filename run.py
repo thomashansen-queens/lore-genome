@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LoRē bootstrap helper.
+LoRe bootstrap helper.
 
 Generates novice-friendly launcher scripts:
 - run.sh   (macOS/Linux)
@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 if sys.version_info < (3, 10):
-    print("LoRē bootstrap")
+    print("LoRe bootstrap")
     print("==============")
     print("WARNING: Python 3.10 or higher is required to run this script.")
     print(f"Your current Python version is: {sys.version.split()[0]}")
@@ -131,7 +131,7 @@ def make_executable(path: Path, dry_run: bool) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate local launcher scripts for LoRē (run.sh / run.bat)."
+        description="Generate local launcher scripts for LoRe (run.sh / run.bat)."
     )
     parser.add_argument(
         "--force",
@@ -156,14 +156,14 @@ def main() -> int:
     )
     make_executable(run_sh_path, dry_run=args.dry_run)
 
-    print("LoRē bootstrap")
+    print("LoRe bootstrap")
     print("==============")
     print(f"Repository: {REPO_ROOT}")
     print(f"run.sh: {sh_state}")
     print(f"run.bat: {bat_state}")
 
     current_os = platform.system().lower()
-    print("\nNow, you can run LoRē with the following file:")
+    print("\nNow, you can run LoRe with the following file:")
     if "windows" in current_os:
         print("  Run: .\\run.bat")
     else:

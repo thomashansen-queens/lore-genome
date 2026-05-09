@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(rt: Runtime) -> FastAPI:
     """Create and configure the FastAPI app for a LoRe Genome Runtime."""
-    app = FastAPI(title="LoRē Genome", lifespan=lifespan)
+    app = FastAPI(title="LoRe Genome", lifespan=lifespan)
     app.state.rt = rt
     app.mount("/static", StaticFiles(
         directory=Path(__file__).resolve().parent / "static"),

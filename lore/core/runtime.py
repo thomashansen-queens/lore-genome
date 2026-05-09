@@ -1,5 +1,5 @@
 """
-Runtime context and configuration for LoRē Genome.
+Runtime context and configuration for LoRe Genome.
 """
 
 from dataclasses import dataclass, field
@@ -46,7 +46,7 @@ class SessionSummary:
 
 @dataclass
 class Runtime:
-    """Configuration for the LoRē Genome Runtime environment."""
+    """Configuration for the LoRe Genome Runtime environment."""
 
     cache_dir: Path
     settings_dir: Path
@@ -71,7 +71,7 @@ class Runtime:
         )
 
         # Debug on launch
-        self.logger.info("Initialized LoRē Runtime with data root: %s", self.data_root)
+        self.logger.info("Initialized LoRe Runtime with data root: %s", self.data_root)
         self.logger.debug("Settings: %s", self.settings)
         self.logger.debug("Cache: %s", self.cache.cas_dir)
 

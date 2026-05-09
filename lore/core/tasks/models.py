@@ -1,5 +1,5 @@
 """
-A Task is a contract to perform a single unit of work in LoRē. Each Task is defined by a series of
+A Task is a contract to perform a single unit of work in LoRe. Each Task is defined by a series of
 models:
 
 - TaskDefinition: The entire contract for a Task. Registered at runtime and immutable.
@@ -39,7 +39,7 @@ from lore.core.utils import is_collection_type
 @dataclass(frozen=True)
 class TaskDefinition:
     """
-    Each Task is a contract to perform a single unit of work in LoRē, with defined inputs, outputs,
+    Each Task is a contract to perform a single unit of work in LoRe, with defined inputs, outputs,
     and a handler function that does the science.
 
     Attributes:
