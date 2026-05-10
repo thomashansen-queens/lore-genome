@@ -69,15 +69,23 @@ def wrap_in_bindings(inputs: dict[str, Any] | None) -> dict[str, list[Binding]]:
         for item in items:
             # 1. An already instantiated Binding object
             if isinstance(item, (LiteralBinding, ReferenceBinding, UserInputBinding)):
+                # Intercept empty LiteralBindings
+                if isinstance(item, LiteralBinding) and item.value in (None, ""):
+                    continue
                 parsed_list.append(item)
 
             # 2. A dict that can be parsed as a binding (e.g. from a manifest or front end)
             elif isinstance(item, dict) and item.get("type") in {"literal", "reference", "user_input"}:
+                # Intercept JSON dicts with empty literals
+                if item.get("type") == "literal" and item.get("value") in (None, ""):
+                    continue
                 parsed_list.append(binding_parser.validate_python(item))
 
             # 3. Raw primitive: Wrap it in a LiteralBinding
             else:
-                parsed_list.append(LiteralBinding(value=item))
+                # Intercept empty literals (Allow False and 0)
+                if item is not None and item != "":
+                    parsed_list.append(LiteralBinding(value=item))
 
         binding_inputs[k] = parsed_list
 

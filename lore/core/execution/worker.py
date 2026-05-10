@@ -8,8 +8,8 @@ import traceback
 from typing import TYPE_CHECKING
 from uuid import uuid4
 import logging
+import sys
 
-from lore.core.bindings import wrap_in_bindings
 from lore.core.settings import LOG_FORMAT
 from lore.core.tasks import task_registry, TaskResults, Task, TaskStatus
 from lore.core.execution.context import ExecutionContext, PreviewContext
@@ -19,80 +19,81 @@ if TYPE_CHECKING:
     from lore.core.runtime import Runtime
 
 
-def _attach_task_logger(rt: "Runtime", session_id: str, task_id: str) -> logging.FileHandler:
-    """
-    Creates a unique log file for the task and attaches it to the root logger.
-    Returns the logging handler.
-    """
-    session_dir = rt._find_session_dir(session_id)
-    if not session_dir:
-        raise FileNotFoundError(f"Session {session_id} vanished before task {task_id} could start.")
+# def _attach_task_logger(rt: "Runtime", session_id: str, task_id: str) -> logging.FileHandler:
+#     """
+#     Creates a unique log file for the task and attaches it to the root logger.
+#     Returns the logging handler.
+#     """
+#     session_dir = rt.find_session_dir(session_id)
+#     if not session_dir:
+#         raise FileNotFoundError(f"Session {session_id} vanished before task {task_id} could start.")
 
-    log_dir = session_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{task_id}.log"
+#     log_dir = session_dir / "logs"
+#     log_dir.mkdir(parents=True, exist_ok=True)
+#     log_path = log_dir / f"{task_id}.log"
 
-    # 1. Create the FileHandler
-    task_handler = logging.FileHandler(log_path, mode="a")
+#     # 1. Create the FileHandler
+#     task_handler = logging.FileHandler(log_path, mode="a")
     
-    # 2. Use the same formatting as the central logger
-    formatter = logging.Formatter(LOG_FORMAT)
-    task_handler.setFormatter(formatter)
+#     # 2. Use the same formatting as the central logger
+#     formatter = logging.Formatter(LOG_FORMAT)
+#     task_handler.setFormatter(formatter)
 
-    # 3. Attach it to the main logger
-    rt.logger.addHandler(task_handler)
+#     # 3. Attach it to the main logger
+#     rt.logger.addHandler(task_handler)
 
-    return task_handler
+#     return task_handler
 
 
 def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     """
     Worker function that runs as a background process.
     Manages the Task state machine (RUNNING -> COMPLETED/FAILED) and file locks.
+    On error, uses sys.exit(1) to signal failure to the Orchestrator.
     """
-    # 1. Top bread (fast initialization, short lock)
+    # 1a. Top bread (fast initialization, short lock) - mutates Session manifest
     try:
-        with rt.open_session(session_id) as s:
+        with rt.open_session(session_id, read_only=False) as s:
             task = s.get_task(task_id)
             if not task:
                 rt.logger.error("Task ID: '%s' not found in Session %s", task_id, session_id)
-                return
+                sys.exit(1)
             if task.status != TaskStatus.READY:
                 rt.logger.warning("Task ID: '%s' is %s: skipping execution.)", task_id, task.status)
-                return
+                sys.exit(1)
 
+            task.validate_and_serialize()  # sanity check
             task_def = task_registry[task.registry_key]
-
-            # Materialize Task inputs
-            try:
-                # Gatekeep
-                task.validate_and_serialize()
-
-                # Resolve references to concrete values (e.g. Artifact IDs to Artifacts)
-                resolved_kwargs, input_artifacts = materialize_task_inputs(
-                    s=s,
-                    task_def=task_def,
-                    bindings=task.inputs,
-                )
-            except Exception as e:
-                task.status = TaskStatus.FAILED
-                task.error = f"Input resolution failed: {str(e)}"
-                rt.logger.error("Input resolution failed: %s", e)
-                s.mark_dirty()
-                return
-
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now(tz=timezone.utc)
+
             s.mark_dirty()
             rt.logger.info("Task ID: '%s' is now RUNNING", task_id)
-
     except Exception as e:
-        rt.logger.error("Worker failed to initialize session: %s", e)
-        return
+        rt.logger.error("Worker failed to initialize task: %s", e)
+        sys.exit(1)
+
+    # 1b. Top bread continued (read-only, separated so heavy i/o for 
+    #     materialization doesn't hold lock)
+    try:
+        with rt.open_session(session_id, read_only=True) as s:
+            # Resolve references to concrete values (e.g. Artifact IDs to Artifacts)
+            resolved_kwargs, input_artifacts = materialize_task_inputs(
+                s=s,
+                task_def=task_def,
+                bindings=task.inputs,
+            )
+    except Exception as e:
+        # Short lock on session again just to log fail state
+        with rt.open_session(session_id, read_only=False) as s:
+            task.status = TaskStatus.FAILED
+            task.error = f"Input resolution or materialization failed: {str(e)}"
+            s.mark_dirty()
+        sys.exit(1)
 
     # 2. The meat (slow execution, no lock)
     ctx = None
-    task_handler = _attach_task_logger(rt, session_id, task_id)
+    # task_handler = _attach_task_logger(rt, session_id, task_id)
 
     try:
         ctx = ExecutionContext(
@@ -111,11 +112,11 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
 
             if task is None:
                 rt.logger.error("Task ID: '%s' vanished during execution in Session %s", task_id, session_id)
-                return
+                sys.exit(1)
             if task.status != TaskStatus.RUNNING:
                 rt.logger.warning("Task ID: '%s' is %s during completion phase: skipping finalization.)", 
                             task_id, task.status)
-                return
+                sys.exit(1)
 
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now(tz=timezone.utc)
@@ -132,7 +133,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                 task = s.get_task(task_id)
                 if task is None:
                     rt.logger.error("Task ID: '%s' vanished during execution in Session %s", task_id, session_id)
-                    return
+                    sys.exit(1)
 
                 task.status = TaskStatus.FAILED
                 task.error = error_msg
@@ -146,8 +147,8 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
         if ctx:
             ctx.cleanup()  # Always clean up, even on failure
 
-        rt.logger.removeHandler(task_handler)
-        task_handler.close()
+        # rt.logger.removeHandler(task_handler)
+        # task_handler.close()
 
 
 def run_preview_worker(
@@ -160,6 +161,7 @@ def run_preview_worker(
     """
     Execute a Task purely in memory. Is synchronous and meant for quick previews
     in the UI. Does not modify the Manifest or create Artifacts.
+    Errors raise or return, rather than sys.exit.
     """
     rt.logger.info("Running preview for '%s' in Session ID: '%s'", task_key, session_id)
 
@@ -187,7 +189,7 @@ def run_preview_worker(
     except Exception as e:
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
-    # 3. Resolve inputs (requires a short lock on the session)
+    # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
         resolved_inputs, input_artifacts = materialize_task_inputs(
             s,

@@ -4,6 +4,7 @@ Executors determine *how* and *where* a Task is run, but do not run the Task
 themselves.
 """
 
+from pathlib import Path
 import subprocess
 import sys
 import logging
@@ -47,11 +48,11 @@ class LocalSubprocessExecutor(BaseExecutor):
         # Maps task_id -> active subprocess.Popen object
         self._active_processes: dict[str, subprocess.Popen] = {}
 
-    def submit(self, session_id: str, task_id: str) -> None:
+    def submit(self, session_id: str, task_id: str, log_path: Path) -> None:
         # 1. Run command (sys.executable for consistent Python environment)
         command = [
             sys.executable, "-m", "lore",
-            "execute-task",
+            "_worker-run-task",
             "--session", session_id,
             "--task", task_id
         ]
@@ -59,16 +60,13 @@ class LocalSubprocessExecutor(BaseExecutor):
         logger.info("Submitting Task %s to LocalSubprocessExecutor", task_id)
 
         # 2. Spawn isolated OS process
-        proc = subprocess.Popen(
-            command,
-            # FUTURE: Route this to a log-file/the UI
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL,
-        )
+        with open(log_path, "a") as f:
+            proc = subprocess.Popen(
+                command,
+                stdout=f,
+                stderr=subprocess.STDOUT,
+            )
         self._active_processes[task_id] = proc
-
-        # The background process will independently update the Session JSON manifest 
-        # when it finishes
 
     def wait(self, task_id: str) -> int | None:
         proc = self._active_processes.get(task_id)
