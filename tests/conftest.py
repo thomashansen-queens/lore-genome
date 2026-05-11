@@ -154,11 +154,11 @@ def populated_registry(semantic_registry):
     return semantic_registry
 
 @pytest.fixture
-def fake_ctx():
-    # rt = MagicMock()
-    # ctx = ExecutionContext(rt, "42", task)
-    ctx = MagicMock()
-    ctx.get_config.return_value = None
-    ctx.logger = Logger("Fake Context Debug Logger")  
-    return ctx  
+def fake_ctx(temp_runtime):
+    with patch('lore.core.execution.ExecutionContext') as ctx:
+        ctx = MagicMock()
+        ctx.runtime = temp_runtime
+        ctx.get_config.return_value = None
+        ctx.logger = Logger("Fake Context Debug Logger")  
+        return ctx  
     
