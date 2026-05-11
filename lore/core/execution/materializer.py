@@ -7,6 +7,7 @@ import io
 import itertools
 import types
 from typing import TYPE_CHECKING, Any, get_origin
+from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from lore.core.adapters import TableAdapter
@@ -44,15 +45,24 @@ def materialize_task_inputs(
                 b.value for b in binding_list 
                 if isinstance(b, (LiteralBinding, UserInputBinding))
             ]
-            if is_collection_type(field_info.annotation):
-                resolved[key] = vals
-            else:
-                if len(vals) >  1:
-                    raise ValueError(
-                        f"Input '{key}' does not allow multiple values, "
-                        f"but got {len(vals)}: {vals}. Check pipeline connections."
-                    )
-                resolved[key] = vals[0] if vals else None
+            try:
+                if is_collection_type(field_info.annotation):
+                    resolved[key] = TypeAdapter(field_info.annotation).validate_python(vals)
+                else:
+                    if len(vals) >  1:
+                        raise ValueError(
+                            f"Input '{key}' does not allow multiple values, "
+                            f"but got {len(vals)}: {vals}. Check pipeline connections."
+                        )
+                    raw_val = vals[0] if vals else None
+                    if raw_val is not None:
+                        resolved[key] = TypeAdapter(field_info.annotation).validate_python(raw_val)
+                    else:
+                        resolved[key] = None
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to cast input '{key}' to type {field_info.annotation}: {e}"
+                )
             continue
 
         # 3. Extract Metadata from DSL

@@ -131,6 +131,7 @@
                         {% if out.description %}
                             <div class="muted small">{{ out.description }}</div>
                         {% endif %}
+
                         {% if out.is_artifact %}
                             {% if not out.value %}
                                 <div class="muted small">Pending...</div>
@@ -165,6 +166,7 @@
                         {% else %}
                             <div class="card mono small">{{ out.value }}</div>
                         {% endif %}
+                        
                     </div>
                 {% endfor %}
 
