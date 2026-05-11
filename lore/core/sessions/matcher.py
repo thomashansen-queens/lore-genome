@@ -1,5 +1,6 @@
 """
-Matcher functions for finding Artifacts to satisfy Task input requirements.
+Concrete matching functions for finding Artifacts to satisfy Task 
+input requirements.
 """
 
 from typing import Any, TYPE_CHECKING
@@ -22,23 +23,33 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
 
     valid_artifacts = []
 
-    for artifact in session.list_artifacts():
-        # 1. True wildcard
-        if "*" in accepted_data:
-            valid_artifacts.append(artifact)
-            continue
+    # 1. True wildcard (field accepts anything)
+    if "*" in accepted_data:
+        return session.list_artifacts()
 
-        # 2. Adapter resolvable types
+    for artifact in session.list_artifacts():
+        # 2. Semantic check (does the file match any accepted types?)
         resolvable_types = artifact.resolvable_types()
         if accepted_data & resolvable_types:
             valid_artifacts.append(artifact)
+            continue
 
-        # 3. Check metadata for schema-less matching
-        if any (isinstance(adapter, TableAdapter) for adapter in artifact.get_adapters()):
-            cols = set(artifact.metadata.get("columns", []))
-            cols.update(artifact.metadata.get("keys", []))
+        # 3. Does a slice of a table-like artifact match?
+        table_adapters = [a for a in artifact.get_adapters() if isinstance(a, TableAdapter)]
+        if table_adapters:
+            available_cols = set()
 
-            if accepted_data & cols:
+            # A. Dynamic schema: Columns (e.g. from arbitrary CSVs)
+            available_cols.update(artifact.metadata.get("columns", []))
+            available_cols.update(artifact.metadata.get("keys", []))
+
+            # B. Static schema: Adapter-provided
+            for adapter in table_adapters:
+                schema = getattr(adapter, "schema", {})
+                available_cols.update(schema.keys())
+
+            # Is either schema capable of satisfying the accepted data requirements?
+            if accepted_data & available_cols:
                 valid_artifacts.append(artifact)
 
     return valid_artifacts
@@ -64,6 +75,7 @@ def map_artifacts_to_task_inputs(session: "Session", task_def: "TaskDefinition",
     """
     Given a TaskDefinition and a list of candidate Artifact IDs, determine 
     the best mapping of Artifacts to Task inputs.
+    TODO: Add complexity and elegance to how artifacts are assigned to input slots
 
     :returns: dict[field_name: artifact_id | list[artifact_id]]
     """

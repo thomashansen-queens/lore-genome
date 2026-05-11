@@ -87,6 +87,7 @@ class Artifact(BaseArtifact):
 
     # Lineage
     created_by_task_id: str | None = None
+    created_by_output_key: str | None = None
     parent_artifact_ids: list[str] = Field(default_factory=list)
 
     # Metadata

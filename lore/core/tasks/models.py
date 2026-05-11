@@ -17,10 +17,11 @@ models:
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, cast, Callable, get_origin, Type
+from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.fields import FieldInfo
 
+from lore.core.adapters import BaseAdapter
 from lore.core.bindings import (
     Binding,
     LiteralBinding,
@@ -62,13 +63,18 @@ class TaskDefinition:
     icon: str = "⚡"
     live_preview: bool = False
 
-    def field_meta(self, key: str) -> tuple[FieldInfo, dict[str, Any]]:
+    def field_meta(self, key: str, is_output: bool = False) -> tuple[FieldInfo, dict[str, Any]]:
         """
         Validates and extracts metadata for a given input field in a TaskDefinition.
         :returns: tuple[FieldInfo, json_schema_extra_dict]
         """
-        model_fields = self.input_model.model_fields
-        field_info = model_fields.get(key)
+        model = self.output_model if is_output else self.input_model
+
+        # No output model (e.g. it's an exporter)
+        if not model:
+            return FieldInfo(annotation=None), {}
+
+        field_info = model.model_fields.get(key)
 
         # 1. Graceful fallback (e.g. missing TaskDefinition)
         if field_info is None:
@@ -93,6 +99,22 @@ class TaskDefinition:
 
         return None
 
+    def get_adapters_for_output(self, output_key: str) -> list["BaseAdapter"]:
+        """
+        Convenience accessor to find valid Adapters for a specific theoretical output.
+        Mirrors the behavior of Artifact.get_adapters()
+        """
+        from lore.core.adapters import adapter_registry
+
+        field = self.output_model.model_fields.get(output_key)
+        if not field:
+            return []
+
+        _, meta = self.field_meta(output_key, is_output=True)
+        data_type = meta.get("data_type", "unknown")
+
+        return adapter_registry.get_adapters_by_type(data_type=data_type, extension="*")
+
 
 # --- Task execution ---
 
@@ -108,6 +130,7 @@ class TaskStatus(str, Enum):
     FAILED = "failed"  # Errored out (check task.error)
     CANCELLED = "cancelled"  # Stopped by user
     UNKNOWN = "unknown"  # Fallback state
+    TEMPLATE = "template"  # Workflow-only status
 
     @property
     def is_active(self) -> bool:
@@ -174,12 +197,14 @@ class Task(BaseModel):
     """
     A concrete unit of work within a Session. Inputs are validated on assignment.
     """
-
+    # Identity
     model_config = ConfigDict(validate_assignment=True)
     id: str
     registry_key: str
     name: str | None = None
+    description: str | None = None
 
+    # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)
     integrity: TaskIntegrity = Field(default=TaskIntegrity.UNKNOWN)
 
@@ -248,16 +273,21 @@ class Task(BaseModel):
 
             unwrapped_list = []
             for b in bindings:
-                if isinstance(b, ReferenceBinding):
-                    raise UnresolvedReferenceError(
-                        f"Waiting on upstream output: {b.source_id}.{b.output_key}"
-                    )
                 if isinstance(b, UserInputBinding):
                     raise MissingUserInputError(f"Missing user input: {key}")
-                if not isinstance(b, LiteralBinding):
+                elif isinstance(b, ReferenceBinding):
+                    if b.artifact_id:
+                        # Pinned: Concrete Artifact ID provided
+                        unwrapped_list.append(b.artifact_id)
+                    else:
+                        # Unpinned: Must resolve at runtime
+                        # This string is meaningless and exists only to satisfy Pydantic;
+                        # the materializer will resolve the ReferenceBinding to concrete data
+                        unwrapped_list.append(f"<promise:{b.source_id}.{b.output_key}>")
+                elif isinstance(b, LiteralBinding):
+                    unwrapped_list.append(b.value)
+                else:
                     raise ValueError(f"Invalid binding type for input '{key}': {type(b)}")
-
-                unwrapped_list.append(b.value)
 
             # 2. Shape the data to match the schema's expectations
             if expects_collection:
@@ -279,12 +309,15 @@ class Task(BaseModel):
         inputs: dict[str, list[Binding]] | None = None,
         exec_config: dict[str, Any] | None = None,
         name: str | None = None,
+        description: str | None = None,
     ) -> None:
         """
         Mutate the Task in place. Handles DRAFT/READY status.
         """
-        if name:
+        if name is not None:
             self.name = name
+        if description is not None:
+            self.description = description
 
         # 1. Update the raw stored dictionaries
         if inputs is not None:
@@ -301,14 +334,17 @@ class Task(BaseModel):
             self.status = TaskStatus.READY
             self.error = None
         except MissingUserInputError as e:
+            # Not an error, just waiting on a human
             self.status = TaskStatus.DRAFT
-            self.error = str(e)  # Waiting on a human
+            self.error = None
         except UnresolvedReferenceError as e:
+            # Not an error per se, just waiting
             self.status = TaskStatus.QUEUED
-            self.error = None  # Not an error per se, just waiting
+            self.error = None
         except ValueError as e:
+            # Genuine validation error
             self.status = TaskStatus.DRAFT
-            self.error = str(e)  # Genuine validation error
+            self.error = str(e)
 
 
 class TaskResults:

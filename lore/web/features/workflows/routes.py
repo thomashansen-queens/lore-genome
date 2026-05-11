@@ -4,14 +4,14 @@ Routers for the Workflows feature.
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic_core import PydanticUndefined
 
 from lore.core.tasks import task_registry
 from lore.core.utils import is_collection_type
-from lore.core.workflows.diagram import generate_workflow_diagram
+from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.web.deps import PageContext, RT, templates
-from lore.web.utils.forms import get_form_list, get_form_str, format_binding_for_ui
+from lore.web.utils.configure_task import build_widget_context, build_task_configure_context
+from lore.web.utils.forms import get_form_list, get_form_str
 
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -54,20 +54,19 @@ def view_workflow(workflow_id: str, rt: RT, ctx: PageContext = Depends()):
     """
     View details of a specific workflow.
     """
-    workflow = rt.workflows.get_workflow(workflow_id)
-    if not workflow:
+    w = rt.workflows.get_workflow(workflow_id)
+    if not w:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    diagram_tb = generate_workflow_diagram(workflow, task_registry, "TB")
-    diagram_lr = generate_workflow_diagram(workflow, task_registry, "LR")
+    diagram_tb = generate_dag_diagram(w.tasks, task_registry, "TB")
+    diagram_lr = generate_dag_diagram(w.tasks, task_registry, "LR")
     
-    ctx.generate_breadcrumbs({workflow_id: workflow.name})
+    ctx.generate_breadcrumbs({workflow_id: w.name})
     return templates.TemplateResponse(
         request=ctx.request,
         name="features/workflows/detail.html",
         context=ctx.render(
-            workflow=workflow,
-            task_registry=task_registry,
+            workflow=w,
             diagram_tb=diagram_tb,
             diagram_lr=diagram_lr,
         ),
@@ -89,7 +88,7 @@ def rename_workflow_action(
     except ValueError:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    return ctx.redirect_back(fallback_url=f"/workflows/{updated_workflow.id}")
+    return ctx.redirect(url=f"/workflows/{updated_workflow.id}")
 
 
 @router.post("/{workflow_id}/update_description", response_class=RedirectResponse)
@@ -150,7 +149,7 @@ async def hydrate_workflow_action(
 
     # 2. Package the Runtime Inputs
     runtime_inputs = {}
-    for field_name, value in form_data.items():
+    for field_name in form_data.keys():
         if field_name.startswith("input__"):
             # strip "input__" to pass "step_id__key__idx"
             ref_key = field_name[len("input__"):]
@@ -205,114 +204,73 @@ def delete_workflow_action(workflow_id: str, rt: RT, ctx: PageContext = Depends(
         message_type="success",
     )
 
-# --- Step routes ---
+# --- Workflow task routes ---
 
-@router.get("/{workflow_id}/steps", response_class=HTMLResponse)
+@router.get("/{workflow_id}/tasks", response_class=HTMLResponse)
 def workflow_steps(workflow_id: str, ctx: PageContext = Depends()):
     return ctx.redirect(f"/workflows/{workflow_id}")
 
 
-@router.get("/{workflow_id}/steps/{step_id}", response_class=HTMLResponse)
-def view_workflow_step(workflow_id: str, step_id: str, rt: RT, ctx: PageContext = Depends()):
+@router.get("/{workflow_id}/tasks/{task_id}", response_class=HTMLResponse)
+def view_workflow_task(
+    workflow_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
     workflow = rt.workflows.get_workflow(workflow_id)
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    step = next((s for s in workflow.steps if s.id == step_id), None)
-    if not step:
-        raise HTTPException(status_code=404, detail="Step not found in workflow")
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    task = workflow.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found in workflow.")
 
-    # 1. Get Task schema (allowing for missing TaskDefinition in shared workflows)
-    task_def = task_registry.get_safe(step.task_key)
-    all_keys = list(set(task_def.input_model.model_fields.keys()) | set(step.inputs.keys()))
+    # Using a helper to adhere to the "thin router" philosophy
+    ui_context = build_task_configure_context(workflow, task.registry_key, task_id)
 
-    # 2. UI config with values
-    ui_config = {}
-    for key in all_keys:
-        bindings = step.inputs.get(key, [])
-        ui_config[key] = []
-        literals = []
+    ctx.generate_breadcrumbs({workflow.id: workflow.name, "configure": "Configure Workflow Task"})
 
-        for b in bindings:
-            # i. Type could be Pydantic model or dict; allow both
-            b_type = getattr(b, "type", None) or (b.get("type") if isinstance(b, dict) else None)
-
-            # ii. Combine multiple literals to single comma-separated string
-            if b.type == "literal":
-                literals.append(format_binding_for_ui(b.value))
-            else:
-                ui_config[key].append(b)
-
-        if literals:
-            # Filter out empty strings to avoid weird commas
-            clean_literals = [l for l in literals if l.strip()]
-            ui_config[key].insert(0, {"type": "literal", "value": ", ".join(clean_literals)})
-
-        # iii. Preserve blanks: If no literals, show default
-        if not ui_config[key]:
-            field_info, _ = task_def.field_meta(key)
-            default_val = ""
-            if field_info.default is not PydanticUndefined:
-                default_val = format_binding_for_ui(field_info.default)
-
-            ui_config[key].append({"type": "literal", "value": default_val})
-
-    # 3. UI schemas for rendering input fields
-    ui_schemas = {}
-    for key in all_keys:
-            field_info, extra = task_def.field_meta(key)
-            mutable_extra = dict(extra) if extra else {}
-            mutable_extra["is_required"] = (
-                field_info.is_required()
-                if field_info and hasattr(field_info, "is_required")
-                else False
-            )
-            ui_schemas[key] = mutable_extra
-
-    ctx.generate_breadcrumbs({
-        workflow_id: workflow.name,
-        f"{workflow_id}/steps/{step_id}": task_def.name,
-    })
     return templates.TemplateResponse(
         request=ctx.request,
-        name="features/workflows/step.html",
+        name="features/workflows/task.html",
         context=ctx.render(
             workflow=workflow,
-            step=step,
-            task_def=task_def,
-            ui_config=ui_config,
-            ui_schemas=ui_schemas,
-        ),
+            context_type="workflow",
+            preview_api_url=None,  # No preview for workflows (yet)
+            commit_api_url=f"/workflows/{workflow.id}/tasks/{task_id}/update",
+            **ui_context,  # Unpacks into expected vars for Jinja
+        )
     )
 
 
-@router.post("/{workflow_id}/steps/{step_id}/rename", response_class=RedirectResponse)
-async def rename_workflow_step_action(
+@router.post("/{workflow_id}/tasks/{task_id}/rename", response_class=RedirectResponse)
+async def rename_workflow_task_action(
     workflow_id: str,
-    step_id: str,
+    task_id: str,
     rt: RT,
     ctx: PageContext = Depends(),
 ):
     form_data = await ctx.request.form()
     new_name = get_form_str(form_data, "name") or ""
-    rt.workflows.rename_step(workflow_id, step_id, new_name)
+    rt.workflows.rename_task(workflow_id, task_id, new_name)
 
     return ctx.redirect_back(fallback_url=f"/workflows/{workflow_id}")
 
 
-@router.post("/{workflow_id}/steps/{step_id}/update", response_class=RedirectResponse)
-async def update_workflow_step_action(
+@router.post("/{workflow_id}/tasks/{task_id}/update", response_class=RedirectResponse)
+async def update_workflow_task_action(
     workflow_id: str,
-    step_id: str,
+    task_id: str,
     rt: RT,
     ctx: PageContext = Depends(),
 ):
-    """Update a Workflow Step's configuration."""
-    step = rt.workflows.get_step(workflow_id, step_id)
-    if not step:
-        raise HTTPException(status_code=404, detail="Step not found in workflow")
-    task_def = task_registry.get(step.task_key)
+    """Update a Workflow Task's configuration."""
+    task = rt.workflows.get_task(workflow_id, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found in workflow")
+    task_def = task_registry.get(task.registry_key)
     if not task_def:
-        raise HTTPException(status_code=404, detail="Task definition not found for step")
+        raise HTTPException(status_code=404, detail="Task definition not found for task")
 
     # 1. Get form data
     form_data = await ctx.request.form()
@@ -372,13 +330,49 @@ async def update_workflow_step_action(
                 new_inputs[key].append(ReferenceBinding(source_id=ref_parts[0], output_key=ref_parts[1]))
             else:
                 # This will break the workflow until fixed
-                new_inputs[key].append(step.inputs[key][int(idx)])  # fallback to original binding if parsing fails
+                new_inputs[key].append(task.inputs[key][int(idx)])  # fallback to original binding if parsing fails
 
-    # 4. Update the step and save the workflow
-    rt.workflows.update_step(workflow_id, step_id, description, new_inputs)
+    # 4. Update the task and save the workflow
+    rt.workflows.update_task(workflow_id, task_id, description, new_inputs)
 
     return ctx.redirect_back(
         fallback_url=f"/workflows/{workflow_id}",
-        message="Step updated successfully.",
+        message="Task updated successfully.",
         message_type="success",
+    )
+
+# --- HTMX endpoints ---
+
+@router.get("/{workflow_id}/tasks/{task_id}/input-widget", response_class=HTMLResponse)
+def get_workflow_input_widget(
+    workflow_id: str,
+    task_id: str,
+    field_name: str,
+    rt: RT,
+    ctx: PageContext = Depends()
+):
+    """HTMX endpoint to hot-swap input widgets when the user changes the dropdown type."""
+    workflow = rt.workflows.get_workflow(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    task = workflow.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found in workflow")
+
+    new_mode = ctx.request.query_params.get(f"__mode__{field_name}", "literal")
+
+    widget_context = build_widget_context(workflow, task.registry_key, field_name, new_mode, task_id)
+    f_name = widget_context.pop("field_name")
+    f_info = widget_context.pop("field_info")
+
+    return templates.TemplateResponse(
+        request=ctx.request,
+        name="components/task_input.html",
+        context=ctx.render(
+            context_type="workflow",
+            edit_task_id=task_id,
+            field_name=f_name,
+            field_info=f_info,
+            ui_state=widget_context,
+        )
     )

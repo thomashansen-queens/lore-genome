@@ -11,6 +11,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from lore.core.utils import is_collection_type, is_optional_type
+from lore.core.utils.pydantic import get_base_type
 
 # --- Data handling ---
 
@@ -259,13 +260,8 @@ class ValueInput(TaskInput):
         # 2. Unwrap collections (e.g. list[str] -> str) to get item type for Enums
         is_list = is_collection_type(self.annotated_type)
 
-        # 3. If it's a list, get the item type for Enum handling
-        target_type = self.annotated_type
-        origin = get_origin(self.annotated_type)
-        if origin is Union or origin is types.UnionType:
-            non_none_args = [a for a in get_args(self.annotated_type) if a is not type(None)]
-            if len(non_none_args) == 1:
-                target_type = non_none_args[0]
+        # 3. Get the base scalar type for widget inference/Enum handling
+        target_type = get_base_type(self.annotated_type)
 
         # 4. Interpret Pydantic kwargs
         if "ge" in self.pydantic_kwargs:

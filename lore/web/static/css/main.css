@@ -469,6 +469,22 @@ table {
     &.fixed { table-layout: fixed; }
 }
 
+table.sortable th:not([data-sort-method="none"]) {
+    cursor: pointer;
+    transition: filter 0.2s; 
+}
+table.sortable th:not([data-sort-method="none"]):hover {
+    filter: brightness(0.80);
+}
+table.sortable th[aria-sort="ascending"]::after {
+    content: " ▲";
+    opacity: 0.5;
+}
+table.sortable th[aria-sort="descending"]::after {
+    content: " ▼";
+    opacity: 0.5;
+}
+
 /* ======================
    Z. Semantic and utility classes
    ====================== */

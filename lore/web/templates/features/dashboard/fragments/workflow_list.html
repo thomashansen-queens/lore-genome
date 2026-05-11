@@ -6,7 +6,7 @@
         <tr>
             <th>Name</th>
             <th>Description</th>
-            <th>Steps</th>
+            <th>Tasks</th>
             <th>Created</th>
             <th>Actions</th>
         </tr>
@@ -18,7 +18,7 @@
                 <code><a href="/workflows/{{ w.id }}">{{ w.name }}</a></code>
             </td>
             <td>{{ w.description|truncate(100) }}</td>
-            <td>{{ w.step_count }}</td>
+            <td>{{ w.task_count }}</td>
             <td class="muted">{{ w.created_at[:10] }}</td>
             <td>
                 {# === Kebab menu === #}

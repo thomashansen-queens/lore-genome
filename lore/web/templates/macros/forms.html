@@ -7,10 +7,7 @@
     {% set candidate_ids = candidates | map(attribute='id') | list %}
 
     <div style="margin-bottom: 1rem;">
-        <label>
-            {{ label }}{% if field_info.is_required() %}<span class="required"> *</span>{% endif %}
-        </label>
-
+    
         {# Single Artifact dropdown #}
         {% if widget == 'artifact_single_select' %}
             {% set is_manual_prefill = prefill and prefill not in candidate_ids %}

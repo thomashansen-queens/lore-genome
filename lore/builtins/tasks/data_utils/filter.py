@@ -134,6 +134,16 @@ def filter_query_handler(
             query_metadata = query_string
 
         except Exception as query_err:
+            if any(op in query_string for op in ["==", "!=", ">", "<", "&", "|", "~"]):
+                raise ValueError(
+                    f"Invalid Pandas Query Syntax: {query_err}\n"
+                    f"Query: {query_string}"
+                ) from query_err
+            else:
+                ctx.logger.warning(
+                    "Pandas query failed (%s). Falling back to substring search for: %s", 
+                    query_err, query_string
+                )
             try:
                 # C. Fallback to case-insensitive substring search
                 search_pattern = _make_query_pattern(query_string)

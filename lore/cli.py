@@ -80,24 +80,35 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
     else:
         run_ui(rt, host=host, port=port)
 
-
-@main.command(name="execute-task", hidden=True)
+@main.command(name="run-task", hidden=True)
 @click.option("--session", required=True, help="ID of Session containing the Task.")
 @click.option("--task", required=True, help="ID of Task to execute.")
 @pass_runtime
-def execute_task(rt: Runtime, session: str, task: str):
-    """Internal headless worker entrypoint for a single Task execution."""
+def run_task(rt: Runtime, session: str, task: str):
+    """Headless entrypoint to run a single Task via the Orchestrator."""
     rt.logger.info("CLI worker booting up for Task %s in Session %s", task, session)
-    from lore.core.execution.worker import run_task_worker
+    from lore.core.execution.orchestrator import SequentialOrchestrator
+    SequentialOrchestrator(rt).run_single(session, task)
 
-    run_task_worker(rt, session, task)
 
-
-@main.command(name="execute-session", hidden=True)
-@click.option("--session", required=True, help="ID of Session containing the Task.")
+@main.command(name="run-session", hidden=True)
+@click.option("--session", required=True, help="ID of Session to run.")
 @pass_runtime
-def execute_session(rt: Runtime, session: str):
-    """Internal headless worker entrypoint for a single Task execution."""
+def orchestrate_session(rt: Runtime, session: str):
+    """Headless entrypoint to spawn an Orchestrator to run the whole session."""
     rt.logger.info("CLI orchestrator booting up for Session %s", session)
     from lore.core.execution.orchestrator import SequentialOrchestrator
     SequentialOrchestrator(rt).run_cascade(session)
+
+
+# --- PRIVATE API ---
+
+@main.command(name="_worker-run-task", hidden=True)
+@click.option("--session", required=True, help="ID of Session containing the Task.")
+@click.option("--task", required=True, help="ID of Task to execute.")
+@pass_runtime
+def _worker_run_task(rt: Runtime, session: str, task: str):
+    """Internal headless entrypoint to instantiate a Worker process for a Task."""
+    rt.logger.info("CLI worker booting up for Task %s in Session %s", task, session)
+    from lore.core.execution.worker import run_task_worker
+    run_task_worker(rt, session, task)

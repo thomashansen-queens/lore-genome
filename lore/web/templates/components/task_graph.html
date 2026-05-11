@@ -1,0 +1,64 @@
+{# Component polls and replaces itself with a fresh graph only in Session mode #}
+{% if session is defined and session %}
+    {% set base_url = '/sessions/' ~ session.id ~ '/tasks' %}
+    {% set htmx_atts = 'hx-get="/sessions/' ~ session.id ~ '/view?type=graph" hx-trigger="every 2s [shouldPoll()]" hx-swap="outerHTML"' %}
+{% elif workflow is defined and workflow %}
+    {% set base_url = '/workflows/' ~ workflow.id ~ '/tasks' %}
+    {% set htmx_attrs = '' %}
+{% endif %}
+
+<div id="session-graph"
+    style="position: relative;
+        background: var(--secondary);
+        min-width: 100%;
+        min-height: 100%;
+        width: max-content;
+        height: max-content;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.1);">
+
+
+    {# --- 2. Conditional Rendering --- #}
+    {% if diagram_tb %}
+        {# If BOTH diagrams exist (Workflows), use responsive design #}
+        <div id="graph-lr" style="display: none;">
+            {% with d=diagram_lr, layout_dir="LR" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+        <div id="graph-tb" style="display: none;">
+            {% with d=diagram_tb, layout_dir="TB" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+
+        <script>
+        (function() {
+            const container = document.getElementById('session-graph');
+            const lr = document.getElementById('graph-lr');
+            const tb = document.getElementById('graph-tb');
+
+            function pick() {
+                if (!container) return;
+                const wide = container.clientWidth >= container.clientHeight;
+                lr.style.display = wide ? 'block' : 'none';
+                tb.style.display = wide ? 'none' : 'block';
+            }
+
+            pick();
+            new ResizeObserver(pick).observe(container);
+        })();
+        </script>
+        
+    {% else %}
+        {# If ONLY diagram_lr exists (Sessions), just render it directly! #}
+        <div id="graph-lr">
+            {% with d=diagram_lr, layout_dir="LR" %}
+                {% include "components/_graph_svg.html" %}
+            {% endwith %}
+        </div>
+    {% endif %}
+
+</div>

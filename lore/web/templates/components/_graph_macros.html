@@ -1,0 +1,81 @@
+{% macro render_graph_node(node, base_url, layout_dir, is_oob=False, workflow=None) %}
+    
+    {# THE MASTER GROUP: Handles the position and the HTMX swapping #}
+    {# Useful for out-of-band (OOB) updates from SSE stream #}
+    <g id="node-{{ node.id }}" 
+       {% if is_oob %}hx-swap-oob="true"{% endif %}
+       transform="translate({{ node.x }}, {{ node.y }})">
+
+        {# --- SHAPE 1. INPUT NODE --- #}
+        {% if node.node_type in ("input", "start", "source", "root") %}
+            <g class="node-group">
+                <rect class="{{ node.css_class }}" 
+                    width="{{ node.width }}" height="{{ node.height }}" 
+                    rx="{{ node.height / 2 }}" ry="{{ node.height / 2 }}"/>
+                
+                <text x="{{ node.width / 2 }}" y="{{ (node.height / 2) + 4 }}" 
+                    text-anchor="middle" font-family="sans-serif" font-size="12" 
+                    fill="var(--info)" style="pointer-events: none;">
+                    {{ node.label | truncate(25) }}
+                </text>
+            </g>
+
+        {# --- SHAPE 2. TASK NODE --- #}
+        {% elif node.node_type == "task" %}
+            <a href="{{ base_url }}/{{ node.id }}" style="cursor: pointer; outline: none; text-decoration: none;">
+                <g class="node-group">
+
+                    {% set visual_status = (node.payload.status.value if node.payload.status.value else node.payload.status) | string | lower %}
+                    {% if workflow is defined and workflow %}
+                        {% if not node.payload.error %}
+                            {% set visual_status = 'template' %}
+                        {% endif %}
+                    {% endif %}
+                    
+                    <rect class="{{ node.css_class }}" 
+                        data-status="{{ visual_status }}" 
+                        width="{{ node.width }}" height="{{ node.height }}" 
+                        rx="var(--radius-sm)" ry="var(--radius-sm)" />
+                    
+                    <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
+                        {{ node.label | truncate(25) }}
+                    </text>
+                    
+                    <text x="12" y="44" font-family="sans-serif" font-size="11" fill="var(--text-muted)">
+                        {{ node.payload.registry_key | replace('_', ' ') | title }}
+                    </text>
+                </g>
+            </a>
+
+        {% endif %}
+
+        {# --- 2. THE PORTS --- #}
+        <g class="port-group">
+            {% for port in node.inputs %}
+                {% set cx = 0 if layout_dir == 'LR' else (node.width * (loop.index0 + 1) / (node.inputs|length + 1)) %}
+                {% set cy = (node.height * (loop.index0 + 1) / (node.inputs|length + 1)) if layout_dir == 'LR' else 0 %}
+                
+                <circle cx="{{ cx }}" cy="{{ cy }}" 
+                    r="5" fill="var(--bg-subtle)" stroke="var(--border)" stroke-width="1.5"
+                    style="cursor: crosshair; transition: r 0.1s ease, fill 0.1s ease;"
+                    onmouseover="this.setAttribute('r', '7'); this.setAttribute('fill', 'var(--primary)');"
+                    onmouseout="this.setAttribute('r', '5'); this.setAttribute('fill', 'var(--bg-subtle)');">
+                    <title>Input: {{ port.label }}</title>
+                </circle>
+            {% endfor %}
+
+            {% for port in node.outputs %}
+                {% set cx = node.width if layout_dir == 'LR' else (node.width * (loop.index0 + 1) / (node.outputs|length + 1)) %}
+                {% set cy = (node.height * (loop.index0 + 1) / (node.outputs|length + 1)) if layout_dir == 'LR' else node.height %}
+                
+                <circle cx="{{ cx }}" cy="{{ cy }}"
+                    r="5" fill="var(--bg-subtle)" stroke="var(--border)" stroke-width="1.5"
+                    style="cursor: crosshair; transition: r 0.1s ease, fill 0.1s ease;"
+                    onmouseover="this.setAttribute('r', '7'); this.setAttribute('fill', 'var(--primary)');"
+                    onmouseout="this.setAttribute('r', '5'); this.setAttribute('fill', 'var(--bg-subtle)');">
+                    <title>Output: {{ port.label }}</title>
+                </circle>
+            {% endfor %}
+        </g>
+    </g>
+{% endmacro %}

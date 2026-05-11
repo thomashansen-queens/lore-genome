@@ -85,14 +85,14 @@
         {# === Viewer === #}
         <div id="viewer-target" class="column" style="transition: opacity 0.2s ease;">
             {% if view_mode == 'table' %}
-                {% include 'partials/viewers/table.html' %}
+                {% include 'components/viewers/table.html' %}
 
             {% elif view_mode in ['svg', 'image'] %}
-                {% include 'partials/viewers/svg.html' ignore missing %}
-                {% include 'partials/viewers/image.html' ignore missing %}
+                {% include 'components/viewers/svg.html' ignore missing %}
+                {% include 'components/viewers/image.html' ignore missing %}
 
             {% elif view_mode == 'raw' %}
-                {% include 'partials/viewers/raw.html' %}
+                {% include 'components/viewers/raw.html' %}
 
             {% else %}
                 <div>

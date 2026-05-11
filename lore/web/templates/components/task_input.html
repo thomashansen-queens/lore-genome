@@ -1,0 +1,90 @@
+{% import "macros/forms.html" as forms %}
+
+{% set extra = field_info.json_schema_extra or {} %}
+{% set label = field_info.title or field_name | capitalize %}
+{% set is_required = field_info.is_required() if field_info.is_required else False %}
+
+{# The Outer Container (Targeted by HTMX for swapping) #}
+<div id="field-container-{{ field_name }}" class="task-input-container">
+    
+    {# --- Header & Toggle Bar --- #}
+    <div class="row" style="justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
+        <label style="font-weight: 600;">
+            {{ label }}{% if is_required %}<span class="required"> *</span>{% endif %}
+        </label>
+        
+        <select name="__mode__{{ field_name }}" 
+            class="form-control small" 
+            style="width: auto;" 
+            hx-trigger="change" 
+            hx-target="#field-container-{{ field_name }}" 
+            hx-swap="outerHTML" 
+            hx-get="{{ ui_state.widget_url }}">
+
+                <option value="literal" {% if ui_state.binding_mode == 'literal' %}selected{% endif %}>
+                    Literal Value
+                </option>
+
+                {% if ui_state.avail_tasks|length > 0 %}
+                    <option value="reference" {% if ui_state.binding_mode == 'reference' %}selected{% endif %}>
+                        Task Output
+                    </option>
+                {% endif %}
+
+                <option value="user_input" {% if ui_state.binding_mode == 'user_input' %}selected{% endif %}>
+                    Set each time
+                </option>
+
+        </select>
+    </div>
+
+    {# --- Input Widget --- #}
+    <div class="input-body">
+        
+        {% if ui_state.binding_mode == 'literal' or ui_state.binding_mode == 'user_input' %}
+            
+            {% if ui_state.binding_mode == 'user_input' %}
+            <div class="small warning fullwidth">
+                User will provide or confirm this value at runtime.
+            </div>
+            {% endif %}
+
+            {{ forms.render_field(
+                name=field_name, 
+                field_info=field_info, 
+                prefill_val=ui_state.literal_val, 
+                candidates=ui_state.candidates,
+            ) }}
+            
+        {% elif ui_state.binding_mode == 'reference' %}
+            {# DAG Reference Dropdown #}
+            <div style="margin-bottom: 1rem;">
+                <select name="{{ field_name }}" class="form-control fullwidth">
+                    <option value="" disabled {% if not ui_state.ref_val %}selected{% endif %}>
+                        Select an upstream output...
+                    </option>
+                    
+                    {% for upstream_task in ui_state.avail_tasks %}
+                        {# Only show tasks that actually have outputs #}
+                        <optgroup label="{{ upstream_task.task.name }} ({{ upstream_task.task.status }})">
+                            
+                            {% for out_key in upstream_task.valid_outputs %}
+                                {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
+                                
+                                <option value="{{ ref_string }}" 
+                                    {% if ui_state.ref_val == ref_string %}selected{% endif %}>
+                                    Output: {{ out_key }}
+                                </option>
+                            {% endfor %}
+                            
+                        </optgroup>
+                    {% endfor %}
+                </select>
+                
+                <small class="muted">
+                    This input will wait for the selected task to generate its data.
+                </small>
+            </div>
+        {% endif %}
+    </div>
+</div>

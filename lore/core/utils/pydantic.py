@@ -33,3 +33,29 @@ def is_optional_type(annotation: Any) -> bool:
     if is_union:
         return type(None) in get_args(annotation)
     return False
+
+
+def get_base_type(annotation: Any) -> Any:
+    """
+    Recursively drills down through Optionals and Collections to find the core scalar type.
+    Example: list[list[MyEnum] | None] -> MyEnum
+    """
+    # 1. Base Case: We hit the bottom (e.g., int, str, MyEnum)
+    if get_origin(annotation) is None:
+        return annotation
+
+    # 2. Unwrap Union / Optional
+    if is_optional_type(annotation):
+        # Filter out NoneType
+        non_none_args = [a for a in get_args(annotation) if a is not type(None)]
+        if non_none_args:
+             return get_base_type(non_none_args[0])
+
+    # 3. Unwrap Collections (list, set, tuple, etc.)
+    if is_collection_type(annotation):
+        args = get_args(annotation)
+        if args:
+            return get_base_type(args[0])
+
+    # 4. Fallback
+    return annotation

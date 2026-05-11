@@ -8,11 +8,13 @@ from fastapi import Depends, Query
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
-from lore.core.bindings import LiteralBinding
-from lore.core.pipeline import find_artifact_candidates, map_artifacts_to_task_inputs, resolve_task_outputs
+from lore.core.sessions import resolve_task_outputs
+from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding
 from lore.core.tasks.models import TaskConfig
+from lore.core.topology.matcher import infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
-from lore.web.utils.forms import get_form_str, format_inputs_for_ui, form_json_to_dict
+from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
+from lore.web.utils.forms import get_form_str, form_json_to_dict
 from lore.core.tasks import task_registry, TaskStatus
 
 
@@ -55,7 +57,7 @@ def redirect_configure(session_id: str, ctx: PageContext = Depends()):
 
 
 @router.get("/configure/{task_key}", response_class=HTMLResponse)
-async def configure_new_task(
+async def configure_task(
     task_key: str,
     s: ReadOnlySession,
     ctx: PageContext = Depends(),
@@ -71,33 +73,12 @@ async def configure_new_task(
     if not task_def:
         raise HTTPException(status_code=404, detail=f"Task '{task_key}' not found in registry.")
 
-    # 2. Edit if needed
-    raw_inputs = {}
-    prefill_name = task_def.name
-    task_id = None
-
-    if load_task:
-        task = s.get_task(load_task)
-        if task:
-            prefill_name = task.name
-            task_id = task.id
-
-            # 3. Unwrap bindings for UI
-            for k, bindings in task.inputs.items():
-                vals = [b.value for b in bindings if isinstance(b, LiteralBinding)]
-                if not vals:
-                    continue  # skip non-literal bindings in prefill
-
-                # if multiple values, keep as list
-                raw_inputs[k] = vals if len(vals) > 1 else vals[0]
-
-    # 4. Pushed Artifacts
-    if source_artifact_ids:
-        raw_inputs.update(map_artifacts_to_task_inputs(s, task_def, source_artifact_ids))
-
-    # 5. Format for UI
-    prefilled_inputs = format_inputs_for_ui(task_def, raw_inputs)
-    artifact_candidates = find_artifact_candidates(s, task_def)
+    ui_context = build_task_configure_context(
+        container=s,
+        task_key=task_key,
+        task_id=load_task,
+        source_artifact_ids=source_artifact_ids,    
+    )
 
     ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
     return templates.TemplateResponse(
@@ -105,19 +86,16 @@ async def configure_new_task(
         name="features/tasks/configure.html",
         context=ctx.render(
             session=s,
-            task_def=task_def,
-            prefill_name=prefill_name,
-            prefilled_inputs=prefilled_inputs,
-            artifact_candidates=artifact_candidates,
-            edit_task_id=task_id,
+            context_type="session",
             preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/preview",
             commit_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}",
+            **ui_context,  # Unpacks into expected vars for Jinja
         )
     )
 
 
 @router.get("/{task_id}", response_class=HTMLResponse)
-def view_task(
+def view_session_task(
     task_id: str,
     s: ReadOnlySession,
     ctx: PageContext = Depends(),
@@ -175,6 +153,36 @@ def edit_task(
         target_url += f"&{query_string}"
 
     return ctx.redirect(target_url)
+
+# --- HTMX ---
+
+@router.get("/configure/{task_key}/input-widget", response_class=HTMLResponse)
+def get_input_widget(
+    task_key: str,
+    s: ReadOnlySession,
+    field_name: str = Query(...),
+    task_id: str | None = Query(None),
+    ctx: PageContext = Depends(),
+):
+    """
+    HTMX endpoint: Hot-swaps Task input slots
+    """
+    new_mode = ctx.request.query_params.get(f"__mode__{field_name}", "literal")
+    widget_context = build_widget_context(s, task_key, field_name, new_mode, task_id)
+    f_name = widget_context.pop("field_name")
+    f_info = widget_context.pop("field_info")
+
+    return templates.TemplateResponse(
+        request=ctx.request,
+        name="components/task_input.html",
+        context=ctx.render(
+            context_type="session",
+            edit_task_id=task_id,
+            field_name=f_name,
+            field_info=f_info,
+            ui_state=widget_context,
+        )
+    )
 
 # --- Actions ---
 
@@ -284,28 +292,44 @@ def api_task_commit(
         # 2. Parse JSON payload
         raw_inputs = form_json_to_dict(payload.inputs, task_def.input_model)
 
+        ui_modes = {
+            k.replace("__mode__", ""): v
+            for k, v, in payload.inputs.items()
+            if k.startswith("__mode__")
+        }
+
         rt.logger.debug(
             "api_task_commit [%s]: raw_inputs=%r", task_key, raw_inputs
         )
 
-        # 3. Extract parent_artifact_ids dynamically
-        parent_ids = []
-        for field_name in task_def.input_model.model_fields.keys():
-            _, extra = task_def.field_meta(field_name)
-            # Check if this field is an ArtifactInput
-            if extra.get("is_artifact", False):
-                val = raw_inputs.get(field_name)
-                if isinstance(val, list):
-                    parent_ids.extend(val)  # Handle multi-file inputs
-                elif val:
-                    parent_ids.append(val)  # Handle single-file inputs
-
-        # 4. Upsert logic for Task (allows editing existing tasks)
-        task_id = None
-        task = None
-        msg = ""
-
         with rt.open_session(session_id) as s:  # Re-open session to ensure we have a lock for writing
+            # 3. DAG topology (reference bindings)
+            input_bindings = infer_bindings_from_raw(raw_inputs, s, ui_modes)
+
+            # 4. DAG lineage (parent_artifact_ids)
+            parent_ids = []
+            for field_name, bindings_list in input_bindings.items():
+                _, extra = task_def.field_meta(field_name)
+
+                # If this field takes an artifact, extract the artifact IDs
+                if extra.get("is_artifact", False):
+                    for b in bindings_list:
+                        if isinstance(b, ReferenceBinding) and b.artifact_id:
+                            # Pinned ReferenceBinding: concrete artifact ID
+                            parent_ids.append(b.artifact_id)
+                        elif isinstance(b, ReferenceBinding) and not b.artifact_id:
+                            # Unpinned: Expects output from another Task, so get lineage later
+                            pass
+                        elif isinstance(b, LiteralBinding):
+                            # External reference: Uploaded or linked Artifact ID
+                            parent_ids.append(b.value)
+
+            # 5. Upsert logic for Task (allows editing existing tasks)
+            task_id = None
+            task = None
+            msg = ""
+
+            # New tasks will not have an id yet
             if existing_task_id:
                 task = s.get_task(existing_task_id)
                 if task is None:
@@ -317,7 +341,7 @@ def api_task_commit(
             if task:
                 task = s.update_task(
                     task.id,
-                    inputs=raw_inputs,
+                    inputs=input_bindings,
                     exec_config=payload.exec_config.model_dump(mode="json"),
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),
@@ -325,7 +349,7 @@ def api_task_commit(
             else:
                 task = s.add_task(
                     registry_key=task_key,
-                    inputs=raw_inputs,
+                    inputs=input_bindings,
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
                     exec_config=payload.exec_config.model_dump(mode="json"),
@@ -337,7 +361,7 @@ def api_task_commit(
                 task_key, task.id, task.status, task.error, task.inputs,
             )
 
-        # 5. Return success and the redirect URL
+        # 6. Return success and the redirect URL
         return JSONResponse(content={
             "status": "success",
             "message": msg or "Task saved successfully.",
@@ -406,7 +430,7 @@ def api_task_preview(
         # 3. Render the HTML on the Server
         response = templates.TemplateResponse(
             request=ctx.request,
-            name=f"partials/viewers/{view_mode}.html",
+            name=f"components/viewers/{view_mode}.html",
             context=render_context,
         )
         html_content = bytes(response.body).decode("utf-8")

@@ -29,7 +29,7 @@ from lore.core.adapters import adapter_registry
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-templates.env.globals["task_registry"] = task_registry.all
+templates.env.globals["task_registry"] = task_registry
 templates.env.globals["adapter_registry"] = adapter_registry
 templates.env.globals["version"] = version("lore-genome")
 

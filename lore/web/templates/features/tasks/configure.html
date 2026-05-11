@@ -20,7 +20,7 @@
 
         <form id="workbench-form">
             {# Hidden input for metadata #}
-            <input type="hidden" name="task_id" value="{{ edit_task_id | default('') }}">
+            <input type="hidden" name="task_id" value="{{ edit_task_id or '' }}">
             <input type="text"
                     name="name"
                     value="{{ prefill_name | default(task_def.name) }}"
@@ -33,11 +33,10 @@
             <p class="muted small">{{ task_def.description }}</p>
             <hr />
 
-            {# Loop through your task inputs and render your custom ValueInput widgets here! #}
-            {% for field_name, field_info in task_def.input_model.model_fields.items() %}
-                {% set prefilled_val = prefilled_inputs.get(field_name) %}
-                {% set field_candidates = artifact_candidates.get(field_name, []) %}
-                {{ forms.render_field(field_name, field_info, prefilled_val, candidates=field_candidates) }}
+            {# Loop through task inputs and render custom ValueInput widgets #}
+            {% for field_name, field_info in sorted_fields.items() %}
+                {% set ui_state = fields_ui[field_name] %}
+                {% include "components/task_input.html" %}
             {% endfor %}
 
             <div class="column gapped">
