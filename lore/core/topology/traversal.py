@@ -27,7 +27,7 @@ class DAGValidationError(Exception):
 
 def get_parent_ids(task: Task) -> list[str]:
     """
-    Helper to extract all upstream dependency IDs from a Task's inputs.
+    Helper to grab immediately upstream dependency IDs from a Task's inputs.
     """
     upstream = set()
     for bindings in task.inputs.values():
@@ -37,34 +37,73 @@ def get_parent_ids(task: Task) -> list[str]:
     return list(upstream)
 
 
-def get_task_descendants(tasks: list[Task], start_task_id: str) -> set[str]:
+def get_task_descendants(
+    tasks: list[Task],
+    start_task_id: str,
+    generations: int | None = None,
+) -> set[str]:
     """
-    Finds all tasks that rely on the start_task_id, directly or indirectly.
+    Finds downstream tasks that rely on the start_task_id.
+    If generations is set, limits the depth of the search (e.g. 1 = immediate children)
     """
     # 1. Build a quick adjacency list: { source_id: [dependent_task_ids] }
     adj = {t.id: [] for t in tasks}
     for t in tasks:
-        for bindings in t.inputs.values():
-            for b in bindings:
-                # Duck-type check or isinstance check depending on your setup
-                if isinstance(b, ReferenceBinding) and b.source_id in adj:
-                    adj[b.source_id].append(t.id)
+        for parent_id in get_parent_ids(t):
+            if parent_id in adj:
+                adj[parent_id].append(t.id)
 
     # 2. Breadth-first search (BFS) to find all descendants
     descendants = set()
-    queue = [start_task_id]
+    queue = [(start_task_id, 0)]
 
     while queue:
-        current = queue.pop(0)
+        current, depth = queue.pop(0)
+
+        # Stop exploring this branch if we've hit the generation limit
+        if generations is not None and depth >= generations:
+            break
+
         for child_id in adj.get(current, []):
             if child_id not in descendants:
                 descendants.add(child_id)
-                queue.append(child_id)
+                queue.append((child_id, depth + 1))
 
     return descendants
 
 
-def _dfs_sort_dag(dependency_map: dict[str, list[str]]) -> list[str]:
+def get_task_ancestors(
+    tasks: list[Task],
+    start_task_id: str,
+    generations: int | None = None,
+) -> set[str]:
+    """
+    Finds upstream tasks that the start_task_id relies on.
+    If generations is set, limits the depth of the search (e.g. 1 = immediate parents)
+    """
+    # 1. Build a quick reverse adjacency list: { task_id: [parent_ids] }
+    rev_adj = {t.id: get_parent_ids(t) for t in tasks}
+
+    # 2. Breadth-first search (BFS) to find all ancestors
+    ancestors = set()
+    queue = [(start_task_id, 0)]
+
+    while queue:
+        current, depth = queue.pop(0)
+
+        # Stop exploring this branch if we've hit the generation limit
+        if generations is not None and depth >= generations:
+            break
+
+        for parent_id in rev_adj.get(current, []):
+            if parent_id not in ancestors:
+                ancestors.add(parent_id)
+                queue.append((parent_id, depth + 1))
+
+    return ancestors
+
+
+def sort_dag_dfs(dependency_map: dict[str, list[str]]) -> list[str]:
     """
     Topological sort using Depth-First Search (DFS).
     Takes a dictionary mapping {node_id: [list_of_upstream_node_ids]}.
@@ -121,7 +160,7 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
         dependency_map[task.id] = upstream_ids
 
     # 2. Topological sort
-    sorted_ids = _dfs_sort_dag(dependency_map)
+    sorted_ids = sort_dag_dfs(dependency_map)
 
     return [task_map[tid] for tid in sorted_ids]
 

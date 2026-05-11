@@ -10,6 +10,7 @@ from pathlib import Path
 import logging
 import logging.handlers
 import shutil
+import sys
 import tempfile
 from typing import TYPE_CHECKING, Any
 
@@ -129,7 +130,7 @@ class Runtime:
 
     # --- Session management ---
 
-    def _find_session_dir(self, session_id: str) -> Path | None:
+    def find_session_dir(self, session_id: str) -> Path | None:
         """
         Locates the physical directory for a given Session ID
         """
@@ -192,7 +193,7 @@ class Runtime:
                 raise ValueError("Invalid manifest: manifest.json is not valid JSON.")
 
             # 3. Collision check (TODO: Handle reconciliation here)
-            if self._find_session_dir(imported_id):
+            if self.find_session_dir(imported_id):
                 raise ValueError(
                     f"Session ID collision: A session with ID '{imported_id}' already exists."
                 )
@@ -216,7 +217,7 @@ class Runtime:
         from uuid import uuid4
         from shutil import copytree
 
-        source_path = self._find_session_dir(session_id)
+        source_path = self.find_session_dir(session_id)
         if not source_path:
             raise ValueError(f"Cannot clone '{session_id}' that doesn't exist!")
         if not (source_path / "manifest.json").exists():
@@ -251,7 +252,7 @@ class Runtime:
         """Load an existing Session by its ID, finding its actual path on disk."""
         from lore.core.sessions import Session  # avoid circular import
 
-        ses_path = self._find_session_dir(session_id)
+        ses_path = self.find_session_dir(session_id)
         if not ses_path:
             raise FileNotFoundError(f"Session directory for ID '{session_id}' not found.")
 
@@ -262,7 +263,7 @@ class Runtime:
         Exports a session as a .zip archive.
         TODO: Add functionality here (e.g. dehydrated)
         """
-        session_dir = self._find_session_dir(session_id)
+        session_dir = self.find_session_dir(session_id)
         if not session_dir:
             raise FileNotFoundError(f"Session '{session_id}' not found for export.")
 
@@ -282,7 +283,7 @@ class Runtime:
             s.name = new_name
             s.mark_dirty()
 
-        path = self._find_session_dir(session_id)
+        path = self.find_session_dir(session_id)
         if path is None:
             raise FileNotFoundError(
                 f"Session directory for ID '{session_id}' vanished after rename!"
@@ -294,7 +295,7 @@ class Runtime:
         Deferred naming/self-healing function. Checks if the physical directory
         slug matches the Manifest name. If they drift, align them.
         """
-        path = self._find_session_dir(session_id)
+        path = self.find_session_dir(session_id)
         if not path:
             # Can't sync if we can't find it
             return
@@ -372,7 +373,7 @@ class Runtime:
         """
         import shutil
 
-        ses_path = self._find_session_dir(session_id)
+        ses_path = self.find_session_dir(session_id)
         if not ses_path:
             raise ValueError(f"Cannot delete '{session_id}' that doesn't exist.")
         shutil.rmtree(ses_path)
@@ -388,7 +389,10 @@ class Runtime:
         import subprocess
         import sys
 
-        command = [sys.executable, "-m", "lore", "execute-session", "--session", session_id]
+        command = [
+            sys.executable, "-m", "lore", "run-session",
+            "--session", session_id,
+        ]
         self.logger.info("Spawning background Orchestrator for Session: %s", session_id)
         subprocess.Popen(
             command,
@@ -398,13 +402,23 @@ class Runtime:
 
     def execute_task(self, session_id: str, task_id: str) -> None:
         """
-        Passthrough to Execution to run a Task by ID within a Session
-        The execution handles opening/closing the session granularly.
+        Spawn a background process to execute a single Task by its ID.
+        Returns immediately (non-blocking).
         """
-        # from lore.core.execution.context import execute_task
-        # execute_task(self, session_id, task_id)
-        self.logger.info("Dispatching Task %s to Executor", task_id)
-        self.executor.submit(session_id, task_id)
+        import subprocess
+        import sys
+
+        command = [
+            sys.executable, "-m", "lore", "run-task",
+            "--session", session_id,
+            "--task", task_id,
+        ]
+        self.logger.info("Spawning background Orchestrator for single Task %s", task_id)
+        subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def preview_task(
         self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None

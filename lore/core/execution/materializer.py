@@ -13,6 +13,7 @@ from lore.core.adapters import TableAdapter
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.io import get_reader_for
 from lore.core.tasks import Materialization, Cardinality, TaskDefinition
+from lore.core.utils.pydantic import is_collection_type
 
 
 if TYPE_CHECKING:
@@ -43,7 +44,15 @@ def materialize_task_inputs(
                 b.value for b in binding_list 
                 if isinstance(b, (LiteralBinding, UserInputBinding))
             ]
-            resolved[key] = vals[0] if len(vals) == 1 else vals
+            if is_collection_type(field_info.annotation):
+                resolved[key] = vals
+            else:
+                if len(vals) >  1:
+                    raise ValueError(
+                        f"Input '{key}' does not allow multiple values, "
+                        f"but got {len(vals)}: {vals}. Check pipeline connections."
+                    )
+                resolved[key] = vals[0] if vals else None
             continue
 
         # 3. Extract Metadata from DSL

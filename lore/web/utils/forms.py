@@ -302,6 +302,8 @@ def form_json_to_dict(
             if not raw_items:
                 if blank_to_default:
                     result[field_name] = field_info.get_default(call_default_factory=True)
+                else:
+                    result[field_name] = []
                 continue
 
             values = []
@@ -337,6 +339,8 @@ def form_json_to_dict(
         if raw_value is None:
             if blank_to_default:
                 result[field_name] = field_info.get_default(call_default_factory=True)
+            else:
+                result[field_name] = None
             continue
 
         # 6. Clean and type-cast value

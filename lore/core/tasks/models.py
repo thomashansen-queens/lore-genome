@@ -281,9 +281,9 @@ class Task(BaseModel):
                         unwrapped_list.append(b.artifact_id)
                     else:
                         # Unpinned: Must resolve at runtime
-                        raise UnresolvedReferenceError(
-                            f"Waiting on upstream output: {b.source_id}.{b.output_key}"
-                        )
+                        # This string is meaningless and exists only to satisfy Pydantic;
+                        # the materializer will resolve the ReferenceBinding to concrete data
+                        unwrapped_list.append(f"<promise:{b.source_id}.{b.output_key}>")
                 elif isinstance(b, LiteralBinding):
                     unwrapped_list.append(b.value)
                 else:

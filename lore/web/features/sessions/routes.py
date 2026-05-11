@@ -18,6 +18,7 @@ from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.topology.traversal import DAGValidationError, sort_tasks_topologically
 from lore.core.tasks import task_registry
 from lore.core.utils import auto_increment, clean, slugify
+from lore.viz.graph import Direction
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -97,7 +98,7 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
     push_task_targets = _build_push_task_targets(artifacts)
 
     chronological_tasks = s.list_tasks()
-    diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, "LR")
+    diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, Direction.LR)
 
     ctx.generate_breadcrumbs({s.id: s.name})
     return templates.TemplateResponse(
@@ -160,7 +161,7 @@ def view_session(
         )
     else:
         chronological_tasks = s.list_tasks()
-        diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, "LR")
+        diagram_lr = generate_dag_diagram(chronological_tasks, task_registry, Direction.LR)
         return templates.TemplateResponse(
             request=ctx.request,
             name="components/task_graph.html",
@@ -347,7 +348,7 @@ async def stream_session(
                 except DAGValidationError:
                     topo_map = {t.id: "?" for t in current_tasks}
 
-                diagram = generate_dag_diagram(current_tasks, task_registry, "LR")
+                diagram = generate_dag_diagram(current_tasks, task_registry, Direction.LR)
 
                 # Graph nodes
                 html_data += templates.get_template("features/sessions/fragments/oob_updates.html").render(
