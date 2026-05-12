@@ -57,11 +57,11 @@ class ExecutionContext:
 
     def get_input_adapter(self, input_key: str) -> "BaseAdapter | None":
         """Returns the primary adapter used to materialize a specific input."""
-        artifact = self.input_artifacts.get(input_key, [])[0]
-        if not artifact:
+        artifacts = self.input_artifacts.get(input_key, [])
+        if not artifacts:
             return None
 
-        adapters = artifact.get_adapters()
+        adapters = artifacts[0].get_adapters()
         return adapters[0] if adapters else None
 
     def get_temp_path(self, filename: str) -> Path:

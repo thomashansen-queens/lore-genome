@@ -102,6 +102,20 @@ class SequentialOrchestrator:
         # 3. Ripple state outward
         if exit_code != 0:
             logger.error("Task %s failed with exit code %s", task_id, exit_code)
+
+            with self.rt.open_session(session_id, read_only=False) as s:
+                failed_task = s.get_task(task_id)
+                if not failed_task:
+                    logger.warning(
+                        "Task %s vanished from Session %s after failure. This shouldn't happen.",
+                        task_id, session_id
+                    )
+                elif failed_task.status == TaskStatus.RUNNING:
+                    logger.warning("Force-failing stranded Zombie Task: %s", task_id)
+                    failed_task.status = TaskStatus.FAILED
+                    failed_task.error = "Worker process exited unexpectedly with a non-zero exit code."
+                    s.mark_dirty()
+
         else:
             logger.info("Task %s completed successfully", task_id)
             self._propagate_completion(session_id, task_id)

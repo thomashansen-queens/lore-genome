@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from lore.core.sessions import resolve_task_outputs
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding
 from lore.core.tasks.models import TaskConfig
-from lore.core.topology.matcher import infer_bindings_from_raw
+from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
@@ -302,27 +302,10 @@ def api_task_commit(
             "api_task_commit [%s]: raw_inputs=%r", task_key, raw_inputs
         )
 
-        with rt.open_session(session_id) as s:  # Re-open session to ensure we have a lock for writing
-            # 3. DAG topology (reference bindings)
+        with rt.open_session(session_id, read_only=False) as s:  # Re-open session to ensure we have a lock for writing
+            # 3. Topology and lineage
             input_bindings = infer_bindings_from_raw(raw_inputs, s, ui_modes)
-
-            # 4. DAG lineage (parent_artifact_ids)
-            parent_ids = []
-            for field_name, bindings_list in input_bindings.items():
-                _, extra = task_def.field_meta(field_name)
-
-                # If this field takes an artifact, extract the artifact IDs
-                if extra.get("is_artifact", False):
-                    for b in bindings_list:
-                        if isinstance(b, ReferenceBinding) and b.artifact_id:
-                            # Pinned ReferenceBinding: concrete artifact ID
-                            parent_ids.append(b.artifact_id)
-                        elif isinstance(b, ReferenceBinding) and not b.artifact_id:
-                            # Unpinned: Expects output from another Task, so get lineage later
-                            pass
-                        elif isinstance(b, LiteralBinding):
-                            # External reference: Uploaded or linked Artifact ID
-                            parent_ids.append(b.value)
+            parent_ids = extract_lineage(input_bindings, task_def)
 
             # 5. Upsert logic for Task (allows editing existing tasks)
             task_id = None
@@ -389,13 +372,27 @@ def api_task_preview(
     AJAX endpoint for the Workbench. Runs the task in memory and returns JSON.
     """
     try:
+        task_def = task_registry.get(task_key)
+        if not task_def:
+            raise ValueError(f"Task '{task_key}' not found in registry.")
+
         # 1. Execute the task, reading inputs from JSON payload
         form_inputs = form_json_to_dict(payload.inputs, task_registry[task_key].input_model)
+        ui_modes = {
+            k.replace("__mode__", ""): v
+            for k, v in payload.inputs.items()
+            if k.startswith("__mode__")
+        }
 
+        # 2. Topology Inference (resolve JIT bindings for preview)
+        with rt.open_session(session_id, read_only=True) as s:
+            inferred_bindings = infer_bindings_from_raw(form_inputs, s, ui_modes)
+
+        # 3. Ephemeral preview task
         results = rt.preview_task(
             session_id,
             task_key,
-            form_inputs,
+            inferred_bindings,
             exec_config=payload.exec_config.model_dump(mode="json"),
         )
         primary_results = results.primary_data
@@ -406,7 +403,7 @@ def api_task_preview(
             )
         primary_result = primary_results[0]
 
-        # 2. Extract the metadata
+        # 4. Extract the metadata
         output_data = primary_result.get("data", {})
         view_mode = primary_result.get("view_mode", "raw")
         metadata = primary_result.get("metadata", {})
@@ -427,7 +424,7 @@ def api_task_preview(
         elif view_mode == "svg":
             pass  # placeholder
 
-        # 3. Render the HTML on the Server
+        # 5. Render the HTML on the Server
         response = templates.TemplateResponse(
             request=ctx.request,
             name=f"components/viewers/{view_mode}.html",
@@ -435,7 +432,7 @@ def api_task_preview(
         )
         html_content = bytes(response.body).decode("utf-8")
 
-        # 4. Send the compiled HTML to frontend for display
+        # 6. Send the compiled HTML to frontend for display
         return JSONResponse(content={
             "status": "success",
             "html": html_content,

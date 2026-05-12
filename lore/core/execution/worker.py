@@ -10,7 +10,6 @@ from uuid import uuid4
 import logging
 import sys
 
-from lore.core.settings import LOG_FORMAT
 from lore.core.tasks import task_registry, TaskResults, Task, TaskStatus
 from lore.core.execution.context import ExecutionContext, PreviewContext
 from lore.core.execution.materializer import materialize_task_inputs
@@ -18,31 +17,7 @@ from lore.core.execution.materializer import materialize_task_inputs
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
 
-
-# def _attach_task_logger(rt: "Runtime", session_id: str, task_id: str) -> logging.FileHandler:
-#     """
-#     Creates a unique log file for the task and attaches it to the root logger.
-#     Returns the logging handler.
-#     """
-#     session_dir = rt.find_session_dir(session_id)
-#     if not session_dir:
-#         raise FileNotFoundError(f"Session {session_id} vanished before task {task_id} could start.")
-
-#     log_dir = session_dir / "logs"
-#     log_dir.mkdir(parents=True, exist_ok=True)
-#     log_path = log_dir / f"{task_id}.log"
-
-#     # 1. Create the FileHandler
-#     task_handler = logging.FileHandler(log_path, mode="a")
-    
-#     # 2. Use the same formatting as the central logger
-#     formatter = logging.Formatter(LOG_FORMAT)
-#     task_handler.setFormatter(formatter)
-
-#     # 3. Attach it to the main logger
-#     rt.logger.addHandler(task_handler)
-
-#     return task_handler
+logger = logging.getLogger(__name__)
 
 
 def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
@@ -84,8 +59,16 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                 bindings=task.inputs,
             )
     except Exception as e:
+        logger.error("Worker failed during materialization: %s", e)
         # Short lock on session again just to log fail state
         with rt.open_session(session_id, read_only=False) as s:
+            task = s.get_task(task_id)
+            if not task:
+                rt.logger.error(
+                    "Task ID: '%s' vanished from Session %s during input materialization.",
+                    task_id, session_id,
+                )
+                sys.exit(1)
             task.status = TaskStatus.FAILED
             task.error = f"Input resolution or materialization failed: {str(e)}"
             s.mark_dirty()
@@ -196,6 +179,9 @@ def run_preview_worker(
             task_def,
             ephemeral_task.inputs,
         )
+    rt.logger.info("PREVIEW BINDINGS: %s", ephemeral_task.inputs)
+    rt.logger.info("PREVIEW RESOLVED ARTIFACTS: %s", input_artifacts.keys())
+    rt.logger.info("PREVIEW KWARGS: %s", resolved_inputs.keys())
 
     # 4. Execute handler
     ctx = None

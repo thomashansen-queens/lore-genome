@@ -86,7 +86,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
 @pass_runtime
 def run_task(rt: Runtime, session: str, task: str):
     """Headless entrypoint to run a single Task via the Orchestrator."""
-    rt.logger.info("CLI worker booting up for Task %s in Session %s", task, session)
+    rt.logger.info("CLI orchestrator booting up for Task %s in Session %s", task, session)
     from lore.core.execution.orchestrator import SequentialOrchestrator
     SequentialOrchestrator(rt).run_single(session, task)
 

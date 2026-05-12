@@ -3,7 +3,6 @@ Sampling Tasks for LoRe Genome.
 """
 
 from enum import Enum
-import json
 from typing import List
 import random
 import pandas as pd
@@ -33,7 +32,7 @@ class SampleInputs:
         load_as=lore.RAW,
     )
     sample_by = lore.ValueInput(
-        str | None,
+        list[str] | None,
         default=None,
         label="Sample by",
         description="Columns or keys to use for sampling (i.e. for stratification). Comma-separated if multiple.",
@@ -134,14 +133,6 @@ def stratified_sample(
     return picked
 
 
-def _serialize_records(records: list, extension: str) -> str:
-    """Locally serialize a list of records back into text."""
-    if extension in ("jsonl", "ndjson"):
-        return "\n".join(json.dumps(r) for r in records) + "\n"
-    # Default to standard JSON
-    return json.dumps(records, indent=2)
-
-
 @lore.task(
     'filter.sample',
     inputs=SampleInputs,
@@ -153,7 +144,7 @@ def _serialize_records(records: list, extension: str) -> str:
 )
 def sample_handler(
     ctx: lore.ExecutionContext,
-    source: list[dict],
+    source: list | dict,
     strategy: SamplingStrategy | str = SamplingStrategy.STRATIFIED_STRICT,  # use strings from enum
     sample_by: str | None = None,
     sample_size: int | None = None,
@@ -162,40 +153,54 @@ def sample_handler(
 ):
     """
     Use sampling to select a representative population from a group.
-    Artifact -> DataFrame -> Samples -> JSON Artifact
-    By using an Adapter, we are doing "high-dimensional indexing", but the final
-    output is untouched records from the original source in their original format.
+    'source' can be a list of records (i.e. list-of-dicts)
+    and is materialized as RAW (then adapted within the handler) to ensure that
+    the full original data is what gets sampled, regardless of adapter schema.
     """
     strategy = SamplingStrategy(strategy)
+    # 1. Flatten raw source if needed (multiple sources for sampling)
+    if isinstance(source, list) and len(source) > 0 and isinstance(source[0], list):
+        flat_source = []
+        for sublist in source:
+            flat_source.extend(sublist)
+        source = flat_source
+    elif not isinstance(source, list):
+        source = [source]
 
-    # 1. Get adapter and input artifact metadata
+    # 2. Artifact metadata
+    source_artifacts = ctx.input_artifacts.get("source", [])
+    inherited_type = source_artifacts[0].data_type if source_artifacts else "unknown"
+    ext = source_artifacts[0].extension if source_artifacts else "json"
+
+    # 3. Prepare adapter and validate
     adapter = ctx.get_input_adapter("source")
     if adapter is None:
         raise ValueError("No adapter found for the input Artifact(s).")
     if not isinstance(adapter, lore.TableAdapter):
         raise ValueError(f"The adapter for the input Artifact(s) must be a TableAdapter, but got {type(adapter)}.")
 
-    source_artifacts = ctx.input_artifacts.get("source", [])
-    inherited_type = source_artifacts[0].data_type if source_artifacts else "unknown"
-    ext = source_artifacts[0].extension if source_artifacts else "json"
+    if not source:
+        ctx.logger.warning("Received empty source for sampling. Will propagate empty artifact.")
+        ctx.materialize_content("sampled_data", adapter.serialize([], extension=ext), ext, inherited_type)
+        if partition:
+            ctx.materialize_content("remainder", adapter.serialize([], extension=ext), ext, inherited_type)
+        return
 
-    # 2. Adapt to DataFrame
+    # 4. Adapt to DataFrame
     adapted_records = adapter.adapt(source)
     df = pd.DataFrame(adapted_records)
 
     if df.empty:
         raise ValueError("The adapted DataFrame is empty. Check the input data and adapter schema.")
 
-    # 3. Validation
+    # 5. Validation
     sample_cols = []
     if sample_by:
-        selected_cols = [s.strip() for s in sample_by.split(",")] if isinstance(sample_by, str) else sample_by
-
         # Normalize column names from Adapter
         col_map = {str(c).lower().replace(" ", "_"): c for c in df.columns}
 
         missing = []
-        for col in selected_cols:  # Normalize input to match
+        for col in sample_by:  # Normalize input to match
             normalized_input = col.lower().replace(" ", "_")
             if normalized_input in col_map:
                 sample_cols.append(col_map[normalized_input])
@@ -204,19 +209,20 @@ def sample_handler(
         if missing:
             raise ValueError(f"Cannot sample by {missing}. Valid options: {df.columns.tolist()}")
 
-    # 4. Sampling
+    # 6. Sampling
     sampled_df = pd.DataFrame()
     pulled_indices = []
 
     if strategy == SamplingStrategy.RANDOM:
         if sample_size is None or sample_size <= 0:
-            ctx.logger.warning("No sample_size provided for random sampling. Defaulting to 100.")
-            sample_size = 100
+            ctx.logger.warning("No sample_size provided for random sampling. Shuffling dataset.")
+            actual_n = len(df)
+        else:
+            actual_n = min(sample_size, len(df))
 
         # Simple random sample of the whole dataset
-        actual_n = min(sample_size, len(df))
-        if actual_n < sample_size:
-            ctx.logger.warning("Requested %s > available %s. Using all.", sample_size, len(df))
+        if sample_size and actual_n < sample_size:
+            ctx.logger.warning("Requested %s > available %s. Shuffling all.", sample_size, len(df))
 
         sampled_df = df.sample(n=actual_n, random_state=seed)  # that was easy
         pulled_indices = sampled_df.index.tolist()
@@ -244,7 +250,7 @@ def sample_handler(
             sampled_df.groupby(by=sample_cols, dropna=False).ngroups,
         )
 
-    # 6. De-adapt: Map back to original structure
+    # 7. De-adapt: Map back to original structure
     pulled_set = set(pulled_indices)  # in case of sample with replacement
     final_records = [source[i] for i in pulled_indices]
 
@@ -254,7 +260,7 @@ def sample_handler(
     if partition:
         remainder_records = [rec for i, rec in enumerate(source) if i not in pulled_set]
 
-    # 7. Materialization (sample)
+    # 8. Materialization (sample)
     ctx.materialize_content(
         output_key="sampled_data",
         content=adapter.serialize(final_records, extension=ext),

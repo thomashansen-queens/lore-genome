@@ -8,6 +8,7 @@ from typing import Any, Literal
 from lore.core.adapters import BaseAdapter
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.sessions.session import Session
+from lore.core.tasks.models import TaskDefinition
 
 
 def is_output_compatible(
@@ -116,3 +117,20 @@ def infer_bindings_from_raw(
         inferred_bindings[key] = bindings
 
     return inferred_bindings
+
+
+def extract_lineage(bindings: dict[str, list[Binding]], task_def: TaskDefinition) -> list[str]:
+    """Uses Bindings to build a list of parent Artifact IDs for the DAG."""
+    parent_ids = []
+    for field_name, bindings_list in bindings.items():
+        _, extra = task_def.field_meta(field_name)
+        if extra.get("is_artifact"):
+            for b in bindings_list:
+                # Concrete/Pinned edge
+                if isinstance(b, ReferenceBinding) and b.artifact_id:
+                    parent_ids.append(b.artifact_id)
+                # Uploaded or external Artifact ID provided directly
+                elif isinstance(b, LiteralBinding) and isinstance(b.value, str):
+                    if b.value.strip():
+                        parent_ids.append(b.value)
+    return list(set(parent_ids))
