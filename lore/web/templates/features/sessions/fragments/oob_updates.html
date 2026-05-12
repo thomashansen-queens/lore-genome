@@ -2,18 +2,24 @@
 {% import "macros/ui.html" as ui %}
 {% import 'components/_graph_macros.html' as graph_ui %}
 
+{# Jinja2-flavoured list comprehension #}
+{% set changed_task_ids = changed_tasks | map(attribute='id') | list %}
+
 {# 1. Task graph OOB updates #}
-{% for node in diagram.nodes.values() %}
-    {% if not node.is_virtual and node.width > 0 %}
-        
-        {# Assume Session always uses LR graph... #}
-        {{ graph_ui.render_graph_node(node, base_url, layout_dir|default('LR'), is_oob=True) }}
-        
-    {% endif %}
-{% endfor %}
+{# Wrapped in <svg> so HTMX can parse as SVG elements #}
+<svg style="display: none;">
+    {% for node in diagram.nodes.values() %}
+        {% if node.width > 0 and node.height > 0 %}
+            {% if node.id in changed_task_ids %}
+                {# Assume Session always uses LR graph... #}
+                {{ graph_ui.render_graph_node(node, base_url, layout_dir|default('LR'), is_oob=True) }}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+</svg>
 
 {# 2. Task table rows #}
-{% for task in tasks %}
+{% for task in changed_tasks %}
     <tr id="task-row-{{ task.id }}" 
         data-status="{{ task.status.value if task.status.value else task.status | string | lower }}" 
         hx-swap-oob="true">

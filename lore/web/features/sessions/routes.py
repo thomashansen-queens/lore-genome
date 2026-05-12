@@ -12,7 +12,7 @@ import tempfile
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
-from fastapi.sse import EventSourceResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.topology.traversal import DAGValidationError, sort_tasks_topologically
@@ -310,9 +310,10 @@ async def api_export_session(
 
 @router.get("/{session_id}/stream", response_class=EventSourceResponse)
 async def stream_session(
-    s: ReadOnlySession,
+    session_id: str,
+    rt: RT,
     ctx: PageContext = Depends(),
-) -> AsyncIterable[str]:
+) -> AsyncIterable[ServerSentEvent]:
     """
     SSE stream that pushes DOM updates for changes in Session state (e.g.
     Task status change, new Artifact emitted, etc.).
@@ -320,13 +321,22 @@ async def stream_session(
     last_task_statuses = {}
     last_artifact_ids = set()
 
+    # Set initial state trackers
+    with rt.open_session(session_id, read_only=True) as s:
+        initial_tasks = s.list_tasks(reverse=True)
+        initial_artifacts = s.list_artifacts(reverse=True)
+
+        last_task_statuses = {t.id: t.status for t in initial_tasks}
+        last_artifact_ids = set(a.id for a in initial_artifacts)
+
     while True:
         if await ctx.request.is_disconnected():
             break
 
-        # 1. Set live state
-        current_tasks = s.list_tasks(reverse=True)
-        current_artifacts = s.list_artifacts(reverse=True)
+        # 1. Set live state (re-check the Session state on each poll)
+        with rt.open_session(session_id, read_only=True) as s:
+            current_tasks = s.list_tasks(reverse=True)
+            current_artifacts = s.list_artifacts(reverse=True)
 
         current_task_statuses = {t.id: t.status for t in current_tasks}
         current_artifact_ids = set(a.id for a in current_artifacts)
@@ -340,6 +350,12 @@ async def stream_session(
 
             # 3. Render and concatenate out-of-band (OoB) HTML fragments
             if tasks_changed:
+                # Diff the tasks to find which ones changed status
+                changed_tasks = [
+                    t for t in current_tasks 
+                    if last_task_statuses.get(t.id) != t.status
+                ]
+
                 # topo_map mirrored from the /view endpoint
                 topo_map = {}
                 try:
@@ -353,19 +369,29 @@ async def stream_session(
                 # Graph nodes
                 html_data += templates.get_template("features/sessions/fragments/oob_updates.html").render(
                     session=s,
-                    tasks=current_tasks,
+                    base_url=f"/sessions/{s.id}/tasks",
+                    changed_tasks=changed_tasks,
                     diagram=diagram,
                     topo_map=topo_map,
                 )
 
             if artifacts_changed:
+                # Diff the Artifacts to find which ones are new
+                new_artifacts = [
+                    a for a in current_artifacts 
+                    if a.id not in last_artifact_ids
+                ]
                 push_targets = _build_push_task_targets(current_artifacts)
                 html_data += templates.get_template("features/sessions/fragments/artifact_list.html").render(
-                    session=s, artifacts=current_artifacts, push_task_targets=push_targets, oob=True,
+                    session=s, artifacts=new_artifacts, push_task_targets=push_targets, oob=True,
                 )
 
             # 4. Push a single SSE message with all the HTML data
-            yield html_data
+            # HTMX listens for 'message' events, which is the default for ServerSentEvent if
+            # 'event' is not specified.
+            # FastAPI normally yields JSON-encoded dicts, but for out-of-band updates,
+            # we need to use raw_data to send plain HTML
+            yield ServerSentEvent(raw_data=html_data)
 
             # 5. Update state trackers
             last_task_statuses = current_task_statuses
