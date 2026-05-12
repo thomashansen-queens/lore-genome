@@ -1,67 +1,83 @@
 {# Live-updated list of Artifacts #}
 {% import "macros/ui.html" as ui %}
 
-<table id="artifact-list" 
-    class="sortable" 
-    {% if oob %}hx-swap-oob="true"{% endif %}>
-    <thead>
-        <tr>
-            <th>#</th>
-            <th>Name</th>
-            <th>Data type</th>
-            <th>Size</th>
-            <th>Created at</th>
-            <th data-sort-method="none">Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for a in artifacts %}
-        <tr>
-            <td>
-                <small class="muted">{{ loop.index }}</small>
-            </td>
-            <td>
-                <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}" 
-                    class="code">
-                    {{ a.name or a.path.split('/')[-1] }}
-                </a>
-            </td>
-            <td>{{ a.data_type }}</td>
-            <td>{{ a.display_size }}</td>
-            <td>{{ a.created_at.astimezone().strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>
-
-                {# === Artifact actions dropdown === #}
-                <div class="dropdown">
-                    <button class="btn-kebab" popovertarget="menu-{{ a.id }}">⋮</button>
-                    <div id="menu-{{ a.id }}" class="dropdown-menu right up" popover>
-
-                        {# Section 1: Pipeline ("push") #}
-                        {% if push_task_targets %}<div class="ui-label">NEW TASK</div>{% endif %}
-                        {% for task in push_task_targets.get(a.id, []) %}
-                            <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}?source_artifact_ids={{ a.id }}">
-                                {{ task.icon }} {{ task.name }}
-                            </a>
-                        {% endfor %}
-                        {% if not push_task_targets.get(a.id, []) %}
-                            <div class="muted small">No compatible tasks</div>
-                        {% endif %}
-                        <hr />
-
-                        {# Section 2: Standard actions #}
-                        <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
-                        {{ ui.rename_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
-                        <hr />
-                        {{ ui.delete_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/delete") }}
-
-                    </div>
-                </div>
-            </td>
-        </tr>
-    {% else %}
-        <td class="muted center" colspan="6">
-            <p>No Artifacts yet.</p>
+{# === Macro to draw artifact table rows === #}
+{% macro artifact_row(a, session, push_task_targets, loop_index) %}
+    <tr>
+        <td><small class="muted">{{ loop_index }}</small></td>
+        <td>
+            <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}" class="code">
+                {{ a.name or a.path.split('/')[-1] }}
+            </a>
         </td>
-    {% endfor %}
-    </tbody>
-</table>
+        <td>{{ a.data_type }}</td>
+        <td>{{ a.display_size }}</td>
+        <td>{{ a.created_at.astimezone().strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+            {# === Artifact actions dropdown === #}
+            <div class="dropdown">
+                <button class="btn-kebab" popovertarget="menu-{{ a.id }}">⋮</button>
+                <div id="menu-{{ a.id }}" class="dropdown-menu right up" popover>
+
+                    {# Section 1: Pipeline ("push") #}
+                    {% if push_task_targets %}<div class="ui-label">NEW TASK</div>{% endif %}
+                    {% for task in push_task_targets.get(a.id, []) %}
+                        <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}?source_artifact_ids={{ a.id }}">
+                            {{ task.icon }} {{ task.name }}
+                        </a>
+                    {% endfor %}
+                    {% if not push_task_targets.get(a.id, []) %}
+                        <div class="muted small">No compatible tasks</div>
+                    {% endif %}
+                    <hr />
+
+                    {# Section 2: Standard actions #}
+                    <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
+                    {{ ui.rename_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
+                    <hr />
+                    {{ ui.delete_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/delete") }}
+                </div>
+            </div>
+        </td>
+    </tr>
+{% endmacro %}
+
+{% if oob %}
+
+    {# Out-of-band update content #}
+    <template hx-swap-oob="beforeend:#artifact-list tbody">
+        {% for a in artifacts %}
+            {{ artifact_row(a, session, push_task_targets, ' ') }}
+        {% endfor %}
+    </template>
+
+    {# If no artifacts were showing, delete that message #}
+    <template hx-swap-oob="delete:#empty-artifacts-msg"></template>
+
+{% else %}
+
+    <table id="artifact-list" class="sortable">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Data type</th>
+                <th>Size</th>
+                <th>Created at</th>
+                <th data-sort-method="none">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for a in artifacts %}
+            {{ artifact_row(a, session, push_task_targets, loop.index) }}
+        {% else %}
+            <tr id="empty-artifacts-msg">
+                <td class="muted center" colspan="6">
+                    <p>No Artifacts yet.</p>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+{% endif %}
