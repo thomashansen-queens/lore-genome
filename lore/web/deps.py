@@ -25,6 +25,8 @@ from lore.core.sessions import Session
 from lore.core.tasks import task_registry
 from lore.core.adapters import adapter_registry
 
+import traceback
+
 # --- Templates setup ---
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -55,6 +57,7 @@ def get_active_session(session_id: str, rt: RT) -> Generator["Session", None, No
         with rt.open_session(session_id) as s:
             yield s
     except (FileNotFoundError, ValueError) as e:
+        rt.logger.error(traceback.format_exc())
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
 
 
@@ -71,6 +74,7 @@ def get_read_only_session(session_id: str, rt: RT) -> Generator["Session", None,
         with rt.open_session(session_id, read_only=True) as s:
             yield s
     except (FileNotFoundError, ValueError) as e:
+        rt.logger.error(traceback.format_exc())
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found") from e
 
 
