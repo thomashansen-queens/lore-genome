@@ -4,11 +4,14 @@
 
 {% block workspace %}
 
-{# === Split Layout Container === #}
+{# === Open SSE stream for live updates === #}
 <div class="column gapped"
      hx-ext="sse"
      sse-connect="/sessions/{{ session.id }}/stream">
+     {# Invisible div to catch SSE messages, trigger HTMX out-of-band hot swaps #}
+     <div sse-swap="message" style="display:none;"></div>
 
+{# === Split Layout Container === #}
     {# === Manifest: Tasks === #}
     <div class="card" style="flex: 1;">
         
