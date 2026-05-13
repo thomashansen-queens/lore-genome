@@ -106,6 +106,7 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
         name="/features/sessions/detail.html",
         context=ctx.render(
             session=s,
+            session_id=s.id,
             tasks=tasks,
             artifacts=artifacts,
             push_task_targets=push_task_targets,
@@ -368,8 +369,8 @@ async def stream_session(
 
                 # Graph nodes
                 html_data += templates.get_template("features/sessions/fragments/oob_updates.html").render(
-                    session=s,
-                    base_url=f"/sessions/{s.id}/tasks",
+                    session_id=session_id,
+                    base_url=f"/sessions/{session_id}/tasks/",
                     changed_tasks=changed_tasks,
                     diagram=diagram,
                     topo_map=topo_map,
@@ -383,7 +384,10 @@ async def stream_session(
                 ]
                 push_targets = _build_push_task_targets(current_artifacts)
                 html_data += templates.get_template("features/sessions/fragments/artifact_list.html").render(
-                    session=s, artifacts=new_artifacts, push_task_targets=push_targets, oob=True,
+                    session_id=session_id,
+                    artifacts=new_artifacts,
+                    push_task_targets=push_targets,
+                    oob=True,
                 )
 
             # 4. Push a single SSE message with all the HTML data

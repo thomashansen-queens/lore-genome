@@ -28,7 +28,7 @@
             <small class="muted">{{ topo_map[task.id] }}</small>
         </td>
         <td>
-            <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}" class="code">
+            <a href="/sessions/{{ session_id }}/tasks/{{ task.id }}" class="code">
                 {{ task.name }}
             </a>
         </td>
@@ -46,15 +46,15 @@
                 <button class="btn-kebab" popovertarget="menu-{{ task.id }}">⋮</button>
                 <div id="menu-{{ task.id }}" class="dropdown-menu right" popover>
                     {% if task.status == 'ready' %}
-                        {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/run", "Run", "▶") }}
+                        {{ ui.action_button("/sessions/" ~ session_id ~ "/tasks/" ~ task.id ~ "/run", "Run", "▶") }}
                         <hr />
                     {% endif %}
 
-                    {{ ui.rename_item("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/rename", "task_name", task.name) }}
-                    {{ ui.action_button("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/clone", "Clone", "⟳") }}
-                    
+                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/tasks/" ~ task.id ~ "/rename", "task_name", task.name) }}
+                    {{ ui.action_button("/sessions/" ~ session_id ~ "/tasks/" ~ task.id ~ "/clone", "Clone", "⟳") }}
+
                     <hr />
-                    {{ ui.delete_item("/sessions/" ~ session.id ~ "/tasks/" ~ task.id ~ "/delete") }}
+                    {{ ui.delete_item("/sessions/" ~ session_id ~ "/tasks/" ~ task.id ~ "/delete") }}
                 </div>
             </div>
         </td>
