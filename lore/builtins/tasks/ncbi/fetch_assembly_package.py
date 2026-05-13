@@ -11,7 +11,7 @@ import zipfile
 import httpx
 
 import lore.dsl as lore
-from .client import ncbi_client, retry
+from lore.builtins.tasks.ncbi.client import ncbi_client, retry
 
 # Enum value: (glob path in zip, output_key in outputs)
 # --- NCBI API Enums ---

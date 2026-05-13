@@ -9,7 +9,7 @@ import logging
 import httpx
 
 import lore.dsl as lore
-from .client import ncbi_client, retry
+from lore.builtins.tasks.ncbi.client import ncbi_client, retry
 
 
 # --- Enums for Dropdowns (copied from NCBI Open API) ---
