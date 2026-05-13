@@ -163,7 +163,7 @@ def filter_query_handler(
     # 5. Materialize
     ctx.materialize_content(
         output_key="filtered_data",
-        content=adapter.serialize(final_records, extension=ext),
+        content="".join(final_records),
         extension=ext,
         data_type=inherited_type,
         metadata={
