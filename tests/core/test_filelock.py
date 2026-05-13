@@ -40,7 +40,8 @@ def test_is_file_locked_status(dummy_lock_file):
         assert is_file_locked(dummy_lock_file) is False
 
     finally:
-        release_lock(f)
+        if is_file_locked(dummy_lock_file):
+            release_lock(f)
         f.close()
 
 

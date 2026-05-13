@@ -160,10 +160,16 @@ def filter_query_handler(
     # 4. Map back to RAW data for preservation of provenance
     final_records = [source[i] for i in surviving_indices]
 
+    # Temporary fix for preview adapter, which expects a list of strings rather than dicts.
+    if len(final_records) > 0 and type(final_records[0]) is dict:
+        content = adapter.serialize(final_records, extension=ext)
+    else:
+        content = "".join(final_records)
+
     # 5. Materialize
     ctx.materialize_content(
         output_key="filtered_data",
-        content=adapter.serialize(final_records, extension=ext),
+        content=content,
         extension=ext,
         data_type=inherited_type,
         metadata={

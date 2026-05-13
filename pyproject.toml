@@ -59,3 +59,8 @@ addopts = "-ra -q -v --color=yes"
 testpaths = ["tests"]
 python_files = ["test*.py"]
 pythonpath = "."
+
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%H:%M:%S"

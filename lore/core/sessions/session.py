@@ -117,16 +117,16 @@ class Session(AbstractContextManager):
         self._manifest = None
         self._artifacts = None
 
-        # Sync directory name to manifest name (handles deferred renames from open sessions)
-        if not self.read_only and exc_type is None:
-            self.runtime.sync_session_dir(self.id)
-
         # Clean up logger handlers to prevent duplicate logs on re-open
         if self._logger:
             handlers = self._logger.handlers[:]
             for handler in handlers:
                 handler.close()
                 self._logger.removeHandler(handler)
+
+        # Sync directory name to manifest name (handles deferred renames from open sessions)
+        if not self.read_only and exc_type is None:
+            self.runtime.sync_session_dir(self.id)
 
     # --- Session properties ---
 

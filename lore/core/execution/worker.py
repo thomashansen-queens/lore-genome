@@ -33,7 +33,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
             if not task:
                 rt.logger.error("Task ID: '%s' not found in Session %s", task_id, session_id)
                 sys.exit(1)
-            if task.status != TaskStatus.READY:
+            if not task.status.is_runnable:
                 rt.logger.warning("Task ID: '%s' is %s: skipping execution.)", task_id, task.status)
                 sys.exit(1)
 
