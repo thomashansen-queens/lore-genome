@@ -17,7 +17,7 @@ import logging
 import httpx
 
 import lore.dsl as lore
-from .client import ncbi_client, retry
+from lore.builtins.tasks.ncbi.client import ncbi_client, retry
 
 # --- NCBI Enums ---
 class V2GenomeAnnotationRequestAnnotationType(str, Enum):
