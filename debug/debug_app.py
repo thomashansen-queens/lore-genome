@@ -3,4 +3,4 @@
 from lore.web.app import run_ui
 from lore.core.runtime import build_runtime
 
-run_ui(build_runtime())
+run_ui(build_runtime(), port=57145)
