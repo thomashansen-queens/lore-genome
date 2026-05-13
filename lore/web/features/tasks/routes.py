@@ -17,7 +17,6 @@ from lore.web.utils.configure_task import build_task_configure_context, build_wi
 from lore.web.utils.forms import get_form_str, form_json_to_dict
 from lore.core.tasks import task_registry, TaskStatus
 
-from time import sleep
 
 router = APIRouter(prefix="/sessions/{session_id}/tasks", tags=["tasks"])
 
@@ -235,25 +234,9 @@ def run_task_action(
 
         task.error = None
         s.mark_dirty()
-    
-    prev_task_status = task.status
-    task_status = task.status
-    # rt.logger.info("Aleyssu: %s" % prev_task_status)
+
     rt.execute_task(session_id=session_id, task_id=task_id)
-    
-    # Poll for up to 10 seconds for a change in task status before refreshing the page.
-    tries = 100
-    while task and prev_task_status == task_status and tries > 0:
-        with rt.open_session(session_id, read_only=True) as s:
-            # refresh task state
-            task = s.get_task(task_id)
-            if task is not None:
-                task_status = task.status
-                # rt.logger.info("Aleyssu: %s" % (task_status))
-        tries -= 1
-        sleep(0.1)
-    # rt.logger.info("Aleyssu: %s" % task_status)
-    
+
     return ctx.redirect_back(
         fallback_url=f"/sessions/{session_id}",
         message="Task execution started.",
