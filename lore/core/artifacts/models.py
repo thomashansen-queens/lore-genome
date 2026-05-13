@@ -79,7 +79,7 @@ class BaseArtifact(BaseModel, ABC):
 
 class Artifact(BaseArtifact):
     """
-    A concrete, discrete unit of data managed by LoRe.
+    A concrete, discrete unit of data managed by LoRē.
     """
     path: str  # relative to Session dir for portability
     size_bytes: int

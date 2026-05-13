@@ -13,7 +13,7 @@ from lore.viz.graph import Graph, GraphNode, GraphPort, SugiyamaLayout, Directio
 
 @dataclass
 class TaskNode(GraphNode):
-    """A standard LoRe Task."""
+    """A standard LoRē Task."""
     width: float = 200.0
     height: float = 60.0
     node_type: str = "task"
@@ -44,7 +44,7 @@ def generate_dag_diagram(
     direction: Direction = Direction.LR,
 ) -> Graph:
     """
-    Reads a LoRe Task DAG and generates layout coordinates for rendering.
+    Reads a LoRē Task DAG and generates layout coordinates for rendering.
     """
     graph = Graph()
 

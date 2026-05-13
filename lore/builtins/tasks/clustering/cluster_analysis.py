@@ -202,7 +202,7 @@ class InspectClusterInputs(BaseClusterInputs):
     )
     save_fasta = lore.ValueInput(
         bool,
-        description="Whether to write the sequences of the cluster members to a new FASTA file. This is not very useful for LoRe thanks to the semantic typing system, but maybe you want to download the FASTA for use elsewhere?",
+        description="Whether to write the sequences of the cluster members to a new FASTA file. This is not very useful for LoRē thanks to the semantic typing system, but maybe you want to download the FASTA for use elsewhere?",
         default=False,
         label="Write cluster FASTA",
     )

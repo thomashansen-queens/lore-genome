@@ -64,13 +64,13 @@ class TaskRegistry:
     ):
         """
         Decorator to registers a TaskDefinition with a unique key.
-        Internally compiles LoRe TaskInput DSL to Pydantic model for validation
+        Internally compiles LoRē TaskInput DSL to Pydantic model for validation
         and UI generation. Also allows for raw Pydantic models for power users.
         """
 
         def _compile_inputs_to_pydantic(task_key: str, input_model: Type[Any]) -> Type[BaseModel]:
             """
-            Compiles a LoRe TaskInput DSL class to a Pydantic BaseModel.
+            Compiles a LoRē TaskInput DSL class to a Pydantic BaseModel.
             Inspects the fields of the provided dataclass, converts TaskInput
             fields to Pydantic Fields with appropriate metadata, and constructs
             a new Pydantic model class dynamically

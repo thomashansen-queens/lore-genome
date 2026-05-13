@@ -249,7 +249,7 @@ def _materialize_manual_input(
     if m == Materialization.ARTIFACT:
         raise ValueError(
             f"Not a valid Artifact ID: {value}."
-            f"Input for '{field_info.title}' strictly requires a LoRe Artifact record."
+            f"Input for '{field_info.title}' strictly requires a LoRē Artifact record."
         )
 
     if m == Materialization.PATH:

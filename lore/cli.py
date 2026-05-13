@@ -1,5 +1,5 @@
 """
-Main entry point for the LoRe Genome program. Accessed by 'lore' in the command line.
+Main entry point for the LoRē Genome program. Accessed by 'lore' in the command line.
 """
 from functools import update_wrapper
 from pathlib import Path
@@ -46,13 +46,13 @@ def pass_runtime(f):
 
 @click.group()
 @click.option("--data-root", type=click.Path(path_type=Path), default=None,
-              help="Directory for LoRe Genome project data storage.")
+              help="Directory for LoRē Genome project data storage.")
 @click.option("-v", "--verbose", is_flag=True, default=False,
               help="Very very detailed logging for debugging purposes.")
 @click.version_option()
 @click.pass_context
 def main(ctx, data_root, verbose):
-    """LoRe Genome: A tool for comparitive genomic analysis."""
+    """LoRē Genome: A tool for comparitive genomic analysis."""
     ctx.ensure_object(dict)
     ctx.obj["global_opts"] = {
         "data_root": data_root,
@@ -67,10 +67,10 @@ def main(ctx, data_root, verbose):
 @click.option("--reload", is_flag=True, default=False,
               help="Enable auto-reload for development; code changes are live-reloaded.")
 def ui(rt: Runtime, host: str, port: int | None, reload: bool):
-    """Launch the LoRe Genome web user interface."""
+    """Launch the LoRē Genome web user interface."""
     from lore.web.app import run_ui, pick_free_port, make_url
-    # make LoRe runtime available to the FastAPI app
-    click.echo("LoRe Genome web UI is starting...")
+    # make LoRē runtime available to the FastAPI app
+    click.echo("LoRē Genome web UI is starting...")
     if port is None:
         port = pick_free_port(host, port)
     webbrowser.open_new_tab(make_url(host, port))

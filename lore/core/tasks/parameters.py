@@ -1,5 +1,5 @@
 """
-LoRe domain-specific language (DSL) for defining Task inputs and outputs.
+LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 """
 
 from datetime import datetime
@@ -121,7 +121,7 @@ class TaskInput:
 
     def to_field_info(self) -> FieldInfo:
         """
-        Compiles LoRe DSL args to Pydantic Field's internal args.
+        Compiles LoRē DSL args to Pydantic Field's internal args.
         Smuggled in through json_schema_extra
         """
         field_kwargs = {
@@ -167,7 +167,7 @@ class ArtifactInput(TaskInput):
     widget and enforce constraints:
     - select: number of Artifacts ("cardinality" is exposed as "select" for clarity)
     - load_as: what to pass to the handler ("materialization" is exposed as "load_as")
-    - Accepted data: Fuzzy search for LoRe data type (e.g. "protein_fasta"),
+    - Accepted data: Fuzzy search for LoRē data type (e.g. "protein_fasta"),
       file format (e.g. "fasta") or slice of data by key (e.g. "protein_sequences")
     """
 
@@ -350,7 +350,7 @@ class TaskOutput(BaseModel):
     A named output slot for a Task
 
     Attributes:
-        data_type: LoRe data type for this output (e.g. "genome_report", "phylo_tree").
+        data_type: LoRē data type for this output (e.g. "genome_report", "phylo_tree").
         yields: Expected number of Artifacts for this output
         label: Human-readable label for this output (used in UI, default file names)
         description: Optional details about this output (used in UI)
