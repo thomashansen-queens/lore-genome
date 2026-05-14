@@ -55,7 +55,7 @@ def test_session_rename(temp_runtime, closed_session):
     closed_session.name = "Renamed Session"
 
     # closed_session._root is now stale — use the Runtime to find the actual path
-    renamed_dir = temp_runtime._find_session_dir(closed_session.id)
+    renamed_dir = temp_runtime.find_session_dir(closed_session.id)
     assert not original_dir.exists()
     assert renamed_dir.exists()
     assert renamed_dir != original_dir
@@ -70,7 +70,7 @@ def test_session_rename(temp_runtime, closed_session):
         assert s.dir == renamed_dir  # Directory unchanged while open (deferred)
 
     # 3. After closing, sync_session_dir renames the directory to match
-    final_dir = temp_runtime._find_session_dir(closed_session.id)
+    final_dir = temp_runtime.find_session_dir(closed_session.id)
     assert final_dir != renamed_dir
 
     with temp_runtime.open_session(closed_session.id) as s:

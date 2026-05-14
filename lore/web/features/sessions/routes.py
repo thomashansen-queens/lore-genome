@@ -370,7 +370,7 @@ async def stream_session(
                 # Graph nodes
                 html_data += templates.get_template("features/sessions/fragments/oob_updates.html").render(
                     session_id=session_id,
-                    base_url=f"/sessions/{session_id}/tasks/",
+                    base_url=f"/sessions/{session_id}/tasks",
                     changed_tasks=changed_tasks,
                     diagram=diagram,
                     topo_map=topo_map,
@@ -390,12 +390,23 @@ async def stream_session(
                     oob=True,
                 )
 
+            # Strip empty lines and indent/trailing whitespaces (from Jinja template)
+            # to drastically reduce SSE payload size
+            clean_html = "\n".join(line.strip() for line in html_data.splitlines() if line.strip())
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Session {session_id} - Tasks changed: {tasks_changed}")
+            logger.info(f"Session {session_id} - Artifacts changed: {artifacts_changed}")
+            logger.info("Length of HTML data to push: %d", len(clean_html))
+            logger.info(clean_html)
+
             # 4. Push a single SSE message with all the HTML data
             # HTMX listens for 'message' events, which is the default for ServerSentEvent if
             # 'event' is not specified.
             # FastAPI normally yields JSON-encoded dicts, but for out-of-band updates,
             # we need to use raw_data to send plain HTML
-            yield ServerSentEvent(raw_data=html_data)
+            yield ServerSentEvent(raw_data=clean_html)
 
             # 5. Update state trackers
             last_task_statuses = current_task_statuses

@@ -44,15 +44,17 @@
 
 {% if oob %}
 
-    {# Out-of-band update content #}
-    <template hx-swap-oob="beforeend:#artifact-list tbody">
-        {% for a in artifacts %}
-            {{ artifact_row(a, session_id, push_task_targets, ' ') }}
-        {% endfor %}
-    </template>
+    <template>
+        <tbody hx-swap-oob="beforebegin:#artifact-tbody">
+            {# Out-of-band update content: HTMX strips outer tbody and appends tr to artifact-list #}
+            {% for a in artifacts %}
+                {{ artifact_row(a, session_id, push_task_targets, ' ') }}
+            {% endfor %}
+        </tbody>
 
-    {# If no artifacts were showing, delete that message #}
-    <template hx-swap-oob="delete:#empty-artifacts-msg"></template>
+        {# If no artifacts were showing, delete that message #}
+        <div hx-swap-oob="delete:#empty-artifacts-msg"></div>
+    </template>
 
 {% else %}
 
@@ -67,7 +69,7 @@
                 <th data-sort-method="none">Actions</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="artifact-tbody">
         {% for a in artifacts %}
             {{ artifact_row(a, session_id, push_task_targets, loop.index) }}
         {% else %}
