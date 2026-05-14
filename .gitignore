@@ -1,8 +1,8 @@
 .github/
-.vscode/
 docs/
 *.ipynb
 *.bak
+custom-scripts/
 
 notes.md
 CLAUDE.md

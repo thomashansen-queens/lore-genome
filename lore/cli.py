@@ -80,6 +80,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
     else:
         run_ui(rt, host=host, port=port)
 
+
 @main.command(name="run-task", hidden=True)
 @click.option("--session", required=True, help="ID of Session containing the Task.")
 @click.option("--task", required=True, help="ID of Task to execute.")
