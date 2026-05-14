@@ -4,16 +4,25 @@
 {% block workspace %}
 <div id="task-detail-container"
     data-current-status="{{ task.status.value }}"
-    class="column fill">
+    class="column fill"
+    {% if task.status.value not in ['completed', 'failed', 'cancelled'] %}
+        hx-get="/sessions/{{ session.id }}/tasks/{{ task.id }}"
+        hx-trigger="every 1s"
+        hx-select="#task-detail-container"
+        hx-swap="outerHTML"
+    {% endif %}
+    >
 
     {# === Header === #}
     <div>
         <span class="ui-label">Task</span>
-        {{ ui.editable_header(
-            task.name,
-            '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/rename',
-            subtitle=None,
-            input_name='name') }}
+        <div id="task-header-preserve" hx-preserve="true">
+            {{ ui.editable_header(
+                task.name,
+                '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/rename',
+                subtitle=None,
+                input_name='name') }}
+        </div>
 
         {# === Task status and metadata === #}
         <div class="row">
@@ -186,54 +195,14 @@
 
 {% block scripts %}
 <script>
-    function hasActiveTasks() {
-        const container = document.getElementById('task-detail-container');
-        if (!container) return false;
-        
-        const status = container.dataset.currentStatus;
-        // Only poll if tab is active (TODO: Is this the best way to check for this?)
-        return status === 'running' && !document.hidden;
-    }
-
-    function pollTaskStatus() {
-        if (!hasActiveTasks()) {
-            return;
+    // 🚀 Listen for HTMX swaps, and scroll the log to the bottom!
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'task-detail-container') {
+            const logWindow = document.getElementById('task-log');
+            if (logWindow) {
+                logWindow.scrollTop = logWindow.scrollHeight;
+            }
         }
-
-        const oldContainer = document.getElementById('task-detail-container');
-
-        // Check if user is typing in the editable header to avoid clobbering input
-        if (oldContainer && oldContainer.contains(document.activeElement)) {
-            return;
-        }
-
-        // Re-fetch current window (skip cache to ensure we get latest status)
-        fetch(window.location.href, { cache: 'no-store' } )
-            .then(response => response.text())
-            .then(html => {
-                // Parse the response into a virtual DOM
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                
-                // Pluck out the updated container
-                const newContainer = doc.getElementById('task-detail-container');
-                
-                if (newContainer && oldContainer) {
-                    // Surgical DOM swap
-                    oldContainer.innerHTML = newContainer.innerHTML;
-                    oldContainer.dataset.currentStatus = newContainer.dataset.currentStatus;
-                    
-                    // Auto-scroll the log to the bottom
-                    const logWindow = document.getElementById('task-log');
-                    if (logWindow) {
-                        logWindow.scrollTop = logWindow.scrollHeight;
-                    }
-                }
-            })
-            .catch(err => console.error("Polling failed:", err));
-    }
-
-    // Check every 2 seconds while tasks are running/pending
-    setInterval(pollTaskStatus, 2000);
+    });
 </script>
 {% endblock %}
