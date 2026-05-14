@@ -9,11 +9,14 @@ TODO:
 - Editable edges (simple logic/retries can go there)
 """
 
+import logging
 from typing import Any
 from lore.core.topology.matcher import is_output_compatible
 from lore.core.tasks.models import Task
 from lore.core.bindings import ReferenceBinding
 from lore.core.tasks.registry import task_registry
+
+logger = logging.getLogger(__name__)
 
 
 class DAGValidationError(Exception):
@@ -144,6 +147,8 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
     """
     Validates a list of Tasks for continuity and cycles.
     Returns a topologically sorted list of Tasks for linear execution.
+    Missing upstream dependencies are gracefully ignored (e.g. if an 
+    upstream Task is deleted).
     """
     task_ids = {task.id for task in tasks}
     task_map = {task.id: task for task in tasks}
@@ -152,12 +157,19 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
     # 1. Continuity check & build dependency map
     for task in tasks:
         upstream_ids = get_parent_ids(task)
+        valid_upstream_ids = []
+
         for upstream_id in upstream_ids:
             if upstream_id not in task_ids:
-                raise DAGValidationError(
-                    f"Task '{task.id}' references unknown upstream task: '{upstream_id}'"
+                logger.warning(
+                    "Task '%s' is missing upstream dependency '%s'.",
+                    task.id,
+                    upstream_id,
                 )
-        dependency_map[task.id] = upstream_ids
+            else:
+                valid_upstream_ids.append(upstream_id)
+
+        dependency_map[task.id] = valid_upstream_ids
 
     # 2. Topological sort
     sorted_ids = sort_dag_dfs(dependency_map)
