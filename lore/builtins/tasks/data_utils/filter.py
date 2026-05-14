@@ -83,7 +83,7 @@ def _make_query_pattern(query_string: str) -> str:
 )
 def filter_query_handler(
     ctx: lore.ExecutionContext,
-    source: list[dict],
+    source: list,
     regex: bool = False,
     query_string: str | None = None,
 ):
@@ -157,15 +157,10 @@ def filter_query_handler(
 
     ctx.logger.info("Query matched %s out of %s records.", len(surviving_indices), len(df))
 
+    # 4. Map back to RAW data for preservation of provenance
+    final_records = [source[i] for i in surviving_indices]
+    content = adapter.serialize(final_records, extension=ext)
 
-    # Temporary fix for preview adapter, which expects a list of strings rather than dicts.
-    if len(source) > 0 and type(source[0]) is dict:
-        # 4. Map back to RAW data for preservation of provenance
-        final_records = [source[i] for i in surviving_indices]
-        content = adapter.serialize(final_records, extension=ext)
-    else:
-        content = df.iloc[surviving_indices].to_csv(index=False)
-    
 
     # 5. Materialize
     ctx.materialize_content(

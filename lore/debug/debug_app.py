@@ -1,6 +1,8 @@
 # Meant to be launched by an IDE like VSCode in debug mode to debug things
+# Do `from lore.debug import *` when you're at a breakpoint that you want to use
+# the below functions on.
 
-from lore.web.app import run_ui
+from lore.web.app import run_ui_reload
 from lore.core.runtime import build_runtime
 import pickle
 from pathlib import Path
@@ -24,4 +26,4 @@ def txt_dump(s:str, file_name="txt_dump"):
         print(s, file=file)
 
 if __name__ == "__main__":
-    run_ui(build_runtime(), port=57145)
+    run_ui_reload(build_runtime())

@@ -263,7 +263,7 @@ def sample_handler(
     # 8. Materialization (sample)
     ctx.materialize_content(
         output_key="sampled_data",
-        content=adapter.serialize(final_records, extension=ext),
+        content=adapter.serialize(final_records, extension=ext, header=df.columns),
         extension=ext,
         data_type=inherited_type,  # could append ".sampled" to be explicit
     )
@@ -271,7 +271,7 @@ def sample_handler(
     if partition:
         ctx.materialize_content(
             output_key="remainder",
-            content=adapter.serialize(remainder_records, extension=ext),
+            content=adapter.serialize(remainder_records, extension=ext, header=df.columns),
             extension=ext,
             data_type=inherited_type,  # could append ".sampled" to be explicit
     )
