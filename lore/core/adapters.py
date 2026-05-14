@@ -354,13 +354,20 @@ class TableAdapter(BaseAdapter):
         df = df.convert_dtypes()
         return df
 
-    def serialize(self, records: list[dict], extension: str = "json") -> str:
+    def serialize(self, records: list, extension: str = "json", header=None) -> str:
         """
-        Translates a list of dictionaries back into raw string format. Override
+        Translates a list of dictionaries or strings back into raw string format. Override
         this in subclasses for other formats (e.g. FASTA, XML, etc.)
+        
+        Pass in a header as a list of strings to preserve the header in tabular formats.
         """
         if extension in ("jsonl", "ndjson"):
             return "\n".join(json.dumps(r) for r in records) + "\n"
+        if len(records) > 0 and type(records[0]) is not dict:
+            result = "".join(records)
+            if header is not None:
+                result = f"{",".join(header)}\n{result}"
+            return result
         return json.dumps(records, indent=2)
 
     def get_series(self, raw_data: Any, series_type: str) -> list[str] | None:
