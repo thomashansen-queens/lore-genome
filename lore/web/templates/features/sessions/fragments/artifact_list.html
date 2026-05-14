@@ -2,11 +2,11 @@
 {% import "macros/ui.html" as ui %}
 
 {# === Macro to draw artifact table rows === #}
-{% macro artifact_row(a, session, push_task_targets, loop_index) %}
+{% macro artifact_row(a, session_id, push_task_targets, loop_index) %}
     <tr>
         <td><small class="muted">{{ loop_index }}</small></td>
         <td>
-            <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}" class="code">
+            <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}" class="code">
                 {{ a.name or a.path.split('/')[-1] }}
             </a>
         </td>
@@ -22,7 +22,7 @@
                     {# Section 1: Pipeline ("push") #}
                     {% if push_task_targets %}<div class="ui-label">NEW TASK</div>{% endif %}
                     {% for task in push_task_targets.get(a.id, []) %}
-                        <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}?source_artifact_ids={{ a.id }}">
+                        <a href="/sessions/{{ session_id }}/tasks/configure/{{ task.key }}?source_artifact_ids={{ a.id }}">
                             {{ task.icon }} {{ task.name }}
                         </a>
                     {% endfor %}
@@ -32,10 +32,10 @@
                     <hr />
 
                     {# Section 2: Standard actions #}
-                    <a href="/sessions/{{ session.id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
-                    {{ ui.rename_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
+                    <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
+                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
                     <hr />
-                    {{ ui.delete_item("/sessions/" ~ session.id ~ "/artifacts/" ~ a.id ~ "/delete") }}
+                    {{ ui.delete_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/delete") }}
                 </div>
             </div>
         </td>
@@ -44,15 +44,17 @@
 
 {% if oob %}
 
-    {# Out-of-band update content #}
-    <template hx-swap-oob="beforeend:#artifact-list tbody">
-        {% for a in artifacts %}
-            {{ artifact_row(a, session, push_task_targets, ' ') }}
-        {% endfor %}
-    </template>
+    <template>
+        <tbody hx-swap-oob="beforebegin:#artifact-tbody">
+            {# Out-of-band update content: HTMX strips outer tbody and appends tr to artifact-list #}
+            {% for a in artifacts %}
+                {{ artifact_row(a, session_id, push_task_targets, ' ') }}
+            {% endfor %}
+        </tbody>
 
-    {# If no artifacts were showing, delete that message #}
-    <template hx-swap-oob="delete:#empty-artifacts-msg"></template>
+        {# If no artifacts were showing, delete that message #}
+        <div hx-swap-oob="delete:#empty-artifacts-msg"></div>
+    </template>
 
 {% else %}
 
@@ -67,9 +69,9 @@
                 <th data-sort-method="none">Actions</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="artifact-tbody">
         {% for a in artifacts %}
-            {{ artifact_row(a, session, push_task_targets, loop.index) }}
+            {{ artifact_row(a, session_id, push_task_targets, loop.index) }}
         {% else %}
             <tr id="empty-artifacts-msg">
                 <td class="muted center" colspan="6">
