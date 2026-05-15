@@ -40,7 +40,7 @@ class QueryInputs:
 class QueryOutputs:
     """Output model for the filter by query task."""
     filtered_data = lore.TaskOutput(
-        data_type="table",
+        data_type=lore.Passthrough("source"),
         label="Filtered Data",
         description="A new Artifact containing only the records that match the query.",
         is_primary=True,

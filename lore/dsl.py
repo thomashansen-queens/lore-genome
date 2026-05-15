@@ -11,6 +11,7 @@ from lore.core.tasks.parameters import (
     Widget,
     Cardinality,
     Materialization,
+    Passthrough,
 )
 from lore.core.tasks.registry import task_registry
 from lore.core.settings import config_registry
@@ -81,6 +82,7 @@ __all__ = [
     "Widget",
     "Cardinality",
     "Materialization",
+    "Passthrough",
     # Traits
     "ANY", "TABULAR",
     # Execution

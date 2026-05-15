@@ -2,6 +2,7 @@
 LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 import types
@@ -362,12 +363,31 @@ def _normalize_options(options: str | list[Any]) -> list[dict[str, Any]]:
 # --- Task output ---
 
 
+@dataclass(frozen=True)
+class Passthrough:
+    """
+    A declarative marker for a TaskOutput to inherit semantic data type and 
+    schema from one of its inputs. This is useful for Tasks that transform data 
+    but don't fundamentally change its nature (e.g. format conversions, slicing, 
+    filtering).
+    
+    Usage:
+        filtered_data = TaskOutput(
+            data_type=Passthrough("source"),
+            label="Filtered data",
+        )    
+    """
+    slot: str
+
+
 class TaskOutput(BaseModel):
     """
     A named output slot for a Task
 
     Attributes:
         data_type: LoRē data type for this output (e.g. "genome_report", "phylo_tree").
+        This can also be a Passthrough to inherit data type from an input slot (e.g. 
+        Passthrough("fasta_input") to say "same data type as the 'fasta_input' slot")
         yields: Expected number of Artifacts for this output
         label: Human-readable label for this output (used in UI, default file names)
         description: Optional details about this output (used in UI)
@@ -375,7 +395,7 @@ class TaskOutput(BaseModel):
         is_artifact: Whether this output is an Artifact (True, default) or primitive value (False).
     """
 
-    data_type: str
+    data_type: str | Passthrough
     label: str
     yields: Cardinality = Cardinality.SINGLE
     description: str = ""

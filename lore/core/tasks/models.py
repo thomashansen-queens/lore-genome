@@ -30,7 +30,7 @@ from lore.core.bindings import (
     UnresolvedReferenceError,
     MissingUserInputError,
 )
-from lore.core.tasks.parameters import Cardinality
+from lore.core.tasks.parameters import Cardinality, Passthrough
 from lore.core.utils import is_collection_type
 
 # --- Task Definition ---
@@ -352,6 +352,58 @@ class Task(BaseModel):
             # Genuine validation error
             self.status = TaskStatus.DRAFT
             self.error = str(e)
+
+    def resolve_output_type(self, output_key: str, container: Any) -> dict[str, Any]:
+        """
+        Calculates the semantic data type and schema of an output slot.
+        Traverses the DAG if the output is a Passthrough to its input slot,
+        which can chain together multiple TaskDefinitions and Adapters to 
+        resolve the final data type of an output.
+        """
+        from lore.core.tasks.registry import task_registry
+
+        task_def = task_registry[self.registry_key]
+        out_def = task_def.output_model.model_fields.get(output_key)
+        if not out_def:
+            raise KeyError(
+                f"Output key '{output_key}' not found in TaskDefinition '{self.registry_key}'"
+            )
+        _, meta = task_def.field_meta(output_key, is_output=True)
+        data_type = meta.get("data_type", "unknown")
+
+        # 1. Base case: Static type (e.g. "protein_sequence")
+        if not isinstance(data_type, Passthrough):
+            return {"data_type": data_type}
+
+        # 2. Recursive case: Passthrough to an input slot
+        passthrough_slot = data_type.slot
+        bindings = self.inputs.get(passthrough_slot, [])
+
+        # 3. Empty slots: nothing plugged in
+        if not bindings:
+            # Fall back to what the slot theoretically accepts based on the 
+            # TaskDefinitions's input model
+            _, input_meta = task_def.field_meta(passthrough_slot)
+            accepted = input_meta.get("accepted_data", ["*"])
+            fallback_type = accepted[0] if accepted else "*"
+            return {"data_type": fallback_type}
+
+        # 4. Traverse the bindings
+        for b in bindings:
+            if isinstance(b, ReferenceBinding):
+                upstream_task = container.get_task(b.source_id)
+                if upstream_task:
+                    return upstream_task.resolve_output_type(b.output_key, container)
+
+            elif isinstance(b, LiteralBinding):
+                # May be a literal binding to an Artifact
+                if isinstance(b.value, str) and container.get_artifact(b.value):
+                    artifact = container.get_artifact(b.value)
+                    return {"data_type": artifact.data_type}
+                else:
+                    return {"data_type": type(b.value).__name__}
+
+        return {"data_type": "*"}
 
 
 class TaskResults:

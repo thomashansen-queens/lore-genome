@@ -71,7 +71,7 @@ def build_task_configure_context(
             field_name=field_name,
             task=task,
             raw_prefill=prefilled_inputs.get(field_name),
-            avail_tasks=find_valid_upstream_tasks(task_id, tasks, field_extra),
+            avail_tasks=find_valid_upstream_tasks(container, task_id, tasks, field_extra),
             candidates=artifact_candidates.get(field_name, []),
             mode_override=None,
         )
@@ -104,7 +104,7 @@ def build_widget_context(
     tasks = container.list_tasks() if isinstance(container, Session) else container.tasks
     task = container.get_task(task_id) if task_id else None
 
-    avail_tasks = find_valid_upstream_tasks(task_id, tasks, field_extra)
+    avail_tasks = find_valid_upstream_tasks(container, task_id, tasks, field_extra)
 
     # 2. Artifact Candidates (Session ONLY)
     artifact_candidates = []

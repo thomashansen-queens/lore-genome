@@ -65,12 +65,16 @@ def dummy_jsonl_file(tmp_path: Path, spaghetti_records: list[dict]) -> Path:
 
 # --- Runtime/Session fixtures ---
 
-@pytest.fixture
-def temp_runtime(tmp_path: Path) -> Runtime:
+@pytest.fixture(scope="session")
+def temp_runtime(tmp_path_factory: pytest.TempPathFactory) -> Runtime:
     """
     Bootstraps the master Runtime engine inside a temporary Pytest directory.
+    Scoped to "session" so all tests share the same Runtime instance, but each
+    test gets a fresh Session via the temp_session fixture.
     """
-    rt = build_runtime(data_root=tmp_path, verbose=False)
+    session_data_root = tmp_path_factory.mktemp("lore_master_runtime")
+
+    rt = build_runtime(data_root=session_data_root, verbose=False)
     return rt
 
 
