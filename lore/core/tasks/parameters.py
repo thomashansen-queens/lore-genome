@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
+from lore.core.topology import traits
 from lore.core.utils import is_collection_type, is_optional_type
 from lore.core.utils.pydantic import get_base_type
 
@@ -162,13 +163,25 @@ class TaskInput:
 
 class ArtifactInput(TaskInput):
     """
-    A single Artifact or list of Artifacts as input to a Task.
-    The UI can use the metadata in json_schema_extra to render the appropriate
+    A topological "Wanted Ad" defining the data requirements for a Task.
+
+    ArtifactInputs are flexible contracts. They define the shapes of data that are
+    acceptable for a Task. The semantic matcher engine in LoRē will discover which 
+    upstream Artifacts and/or task ouputs can satisfy the contract (via the Adapter 
+    layer).
+
+    The UI uses metadata in Pydantic's `json_schema_extra` to render the appropriate
     widget and enforce constraints:
-    - select: number of Artifacts ("cardinality" is exposed as "select" for clarity)
-    - load_as: what to pass to the handler ("materialization" is exposed as "load_as")
-    - Accepted data: Fuzzy search for LoRē data type (e.g. "protein_fasta"),
-      file format (e.g. "fasta") or slice of data by key (e.g. "protein_sequences")
+
+    Attributes:
+        - select (Cardinality): The number of Artifacts allowed (e.g. SINGLE, 
+        OPTIONAL_MULTIPLE)
+        - load_as (Materialization): How the data is delivered to the execution 
+        handler (e.g. ADAPTED to a DataFrame, RAW_STREAM as an iterator)
+        - Accepted data: The contract. Fuzzy search for LoRē data type which can be a 
+        broad trait (e.g. lore.TABULAR), a specific type (e.g. "genome_annotations") 
+        or a slice of from a table (e.g. "genome_accessions"). If provided as a list, 
+        any one match is sufficient.
     """
 
     def __init__(
@@ -177,7 +190,7 @@ class ArtifactInput(TaskInput):
         select: Cardinality = Cardinality.SINGLE,
         load_as: Materialization = Materialization.ADAPTED,
         # Fuzzy Matching: ["json", "ncbi", "genome_accessions"]
-        accepted_data: str | list[str] | None = "*",
+        accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = traits.ANY,
         # Pydantic pass-throughs
         default: Any = PydanticUndefined,
         label: str | None = None,
@@ -186,9 +199,12 @@ class ArtifactInput(TaskInput):
         super().__init__(description=description, default=default, label=label, examples=examples)
         self.cardinality = select
         self.materialization = load_as
-        self.accepted_data = (
-            accepted_data if isinstance(accepted_data, list) else ([accepted_data] or ["*"])
-        )
+        if accepted_data is None:
+            self.accepted_data = [traits.ANY]
+        elif isinstance(accepted_data, list):
+            self.accepted_data = accepted_data
+        else:
+            self.accepted_data = [accepted_data]
 
     def _enrich_schema_extra(self, extra: dict[str, Any]):
         """Artifact-specific metadata for UI rendering and validation"""
@@ -198,6 +214,7 @@ class ArtifactInput(TaskInput):
                 "widget": self.cardinality.ui_widget().value,
                 "select": self.cardinality.value,
                 "load_as": self.materialization.value,
+                # TODO: Stringify traits for serialization/UI
                 "accepted_data": self.accepted_data,
             }
         )

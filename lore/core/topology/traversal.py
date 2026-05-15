@@ -10,11 +10,12 @@ TODO:
 """
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from lore.core.topology.matcher import is_output_compatible
-from lore.core.tasks.models import Task
 from lore.core.bindings import ReferenceBinding
-from lore.core.tasks.registry import task_registry
+
+if TYPE_CHECKING:
+    from lore.core.tasks.models import Task
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class DAGValidationError(Exception):
     pass
 
 
-def get_parent_ids(task: Task) -> list[str]:
+def get_parent_ids(task: "Task") -> list[str]:
     """
     Helper to grab immediately upstream dependency IDs from a Task's inputs.
     """
@@ -41,7 +42,7 @@ def get_parent_ids(task: Task) -> list[str]:
 
 
 def get_task_descendants(
-    tasks: list[Task],
+    tasks: list["Task"],
     start_task_id: str,
     generations: int | None = None,
 ) -> set[str]:
@@ -76,7 +77,7 @@ def get_task_descendants(
 
 
 def get_task_ancestors(
-    tasks: list[Task],
+    tasks: list["Task"],
     start_task_id: str,
     generations: int | None = None,
 ) -> set[str]:
@@ -143,7 +144,7 @@ def sort_dag_dfs(dependency_map: dict[str, list[str]]) -> list[str]:
     return sorted_ids
 
 
-def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
+def sort_tasks_topologically(tasks: list["Task"]) -> list["Task"]:
     """
     Validates a list of Tasks for continuity and cycles.
     Returns a topologically sorted list of Tasks for linear execution.
@@ -179,13 +180,16 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
 
 def find_valid_upstream_tasks(
     current_task_id: str | None,
-    tasks: list[Task],
+    tasks: list["Task"],
     field_extra: dict,
 ) -> list[dict[str, Any]]:
     """
     Looks at previous tasks in a topological sequence and checks their theoretical 
     output schemas to see if they can satisfy the current field's data requirements.
     """
+    # Lazy import to avoid circular dependency
+    from lore.core.tasks.registry import task_registry
+
     valid_upstream = []
     # 1. Find invalid tasks (self + descendants)
     invalid_ids = set()

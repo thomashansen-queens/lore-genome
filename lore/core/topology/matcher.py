@@ -3,40 +3,47 @@ Theoretical matching logic to connect Task outputs and Inputs into a
 directed acyclic graph (DAG). Matching uses semantic types. Edges are
 built from Task-Artifact relationships.
 """
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from lore.core.adapters import BaseAdapter
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
-from lore.core.sessions.session import Session
-from lore.core.tasks.models import TaskDefinition
+from lore.core.topology.traits import DataTrait
+
+if TYPE_CHECKING:
+    from lore.core.sessions.session import Session
+    from lore.core.tasks.models import TaskDefinition
 
 
 def is_output_compatible(
     source_extra: dict,
     target_extra: dict,
-    adapters: list["BaseAdapter"] = [],
+    adapters: list["BaseAdapter"] | None = None,
 ) -> bool:
     """
     Evaluates whether a Task's output can satisfy the data requirements of an input field.
     """
-    default_req = target_extra.get("data_type", "unknown")
-    accepted_data = set(target_extra.get("accepted_data", [default_req]))
-
-    # 1. True wildcard (input accepts anything)
-    if "*" in accepted_data:
-        return True
-
-    # 2. Direct semantic check (Does the base Artifact type match?)
-    produced_type = source_extra.get("data_type", "unknown")
-    if produced_type in accepted_data:
-        # TODO: Won't this be true for unknown accepted_data and unknown produced_type?
-        return True
-
-    # 3. Adapter conversion check
+    provided = str(source_extra.get("data_type", "unknown")).lower()
+    accepted = target_extra.get("accepted_data", provided)
     adapters = adapters or []
-    for requirement in accepted_data:
-        for adapter in adapters:
-            if adapter.provides(requirement):
+
+    # 1. Normalize to a list for uniform processing
+    if not isinstance(accepted, list):
+        accepted = [accepted]
+
+    # 2. True wildcard (input accepts anything)
+    for requirement in accepted:
+        # A. Trait match - Broad semantic category (e.g. "tabular")
+        if isinstance(requirement, DataTrait):
+            if requirement.is_satisfied_by(provided, adapters):
+                return True
+
+        # B. Direct match - Exact type match (e.g. "parquet")
+        elif isinstance(requirement, str):
+            req_lower = requirement.lower()
+            if provided == req_lower:
+                return True
+
+            if any(adapter.provides(req_lower) for adapter in adapters):
                 return True
 
     return False
@@ -44,7 +51,7 @@ def is_output_compatible(
 
 def infer_bindings_from_raw(
     raw_inputs: dict[str, Any],
-    session: Session,
+    session: "Session",
     ui_modes: dict[str, Literal["literal", "reference", "user_input"]] | None = None,
 ) -> dict[str, list[Binding]]:
     """
@@ -119,7 +126,7 @@ def infer_bindings_from_raw(
     return inferred_bindings
 
 
-def extract_lineage(bindings: dict[str, list[Binding]], task_def: TaskDefinition) -> list[str]:
+def extract_lineage(bindings: dict[str, list[Binding]], task_def: "TaskDefinition") -> list[str]:
     """Uses Bindings to build a list of parent Artifact IDs for the DAG."""
     parent_ids = []
     for field_name, bindings_list in bindings.items():

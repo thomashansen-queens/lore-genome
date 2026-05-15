@@ -3,12 +3,14 @@ Translates Workflow objects into Graph structures for visualization
 """
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from lore.core.bindings import ReferenceBinding, UserInputBinding
-from lore.core.tasks.models import Task
 from lore.core.tasks.registry import TaskRegistry
 from lore.viz.graph import Graph, GraphNode, GraphPort, SugiyamaLayout, Direction
+
+if TYPE_CHECKING:
+    from lore.core.tasks.models import Task
 
 
 @dataclass
@@ -39,7 +41,7 @@ class ConditionNode(GraphNode):
 
 
 def generate_dag_diagram(
-    tasks: Iterable[Task],
+    tasks: Iterable["Task"],
     task_registry: TaskRegistry,
     direction: Direction = Direction.LR,
 ) -> Graph:

@@ -16,41 +16,53 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
     Returns a list of Artifacts able to satisfy an input field's data type requirements.
     """
     from lore.core.adapters import TableAdapter
+    from lore.core.topology.traits import DataTrait
+
     if not field_extra.get("is_artifact"):
         return []
 
-    accepted_data = set(field_extra.get("accepted_data", ["*"]))
-
-    valid_artifacts = []
+    accepted_data = field_extra.get("accepted_data", ["*"])
 
     # 1. True wildcard (field accepts anything)
     if "*" in accepted_data:
         return session.list_artifacts()
 
+    trait_requirements = [d for d in accepted_data if isinstance(d, DataTrait)]
+    semantic_requirements = {d for d in accepted_data if not isinstance(d, DataTrait)}
+    valid_artifacts = []
+
     for artifact in session.list_artifacts():
-        # 2. Semantic check (does the file match any accepted types?)
-        resolvable_types = artifact.resolvable_types()
-        if accepted_data & resolvable_types:
+        art_adapters = artifact.get_adapters()
+
+        # 2. Requirement is a trait - e.g. lore.TABULAR
+        if any(
+            trait.is_satisfied_by(artifact.data_type, art_adapters)
+            for trait in trait_requirements
+        ):
             valid_artifacts.append(artifact)
             continue
 
-        # 3. Does a slice of a table-like artifact match?
-        table_adapters = [a for a in artifact.get_adapters() if isinstance(a, TableAdapter)]
-        if table_adapters:
-            available_cols = set()
+        # 3. Requirement is a literal string - e.g. "json"
+        if not semantic_requirements:
+            continue
 
+        provided_types = set(artifact.resolvable_types())
+
+        # 4. Does a slice of a table-like artifact match?
+        table_adapters = [a for a in art_adapters if isinstance(a, TableAdapter)]
+        if table_adapters:
             # A. Dynamic schema: Columns (e.g. from arbitrary CSVs)
-            available_cols.update(artifact.metadata.get("columns", []))
-            available_cols.update(artifact.metadata.get("keys", []))
+            provided_types.update(artifact.metadata.get("columns", []))
+            provided_types.update(artifact.metadata.get("keys", []))
 
             # B. Static schema: Adapter-provided
             for adapter in table_adapters:
                 schema = getattr(adapter, "schema", {})
-                available_cols.update(schema.keys())
+                provided_types.update(schema.keys())
 
-            # Is either schema capable of satisfying the accepted data requirements?
-            if accepted_data & available_cols:
-                valid_artifacts.append(artifact)
+        # 5. Is either schema capable of satisfying the accepted data requirements?
+        if semantic_requirements & provided_types:
+            valid_artifacts.append(artifact)
 
     return valid_artifacts
 

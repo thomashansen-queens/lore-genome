@@ -15,13 +15,16 @@ from lore.core.tasks.parameters import (
 from lore.core.tasks.registry import task_registry
 from lore.core.settings import config_registry
 
-# 2. Execution State
+# 2. Topology & trait matching
+from lore.core.topology.traits import ANY, TABULAR
+
+# 3. Execution State
 from lore.core.execution.context import (
     ExecutionContext,
 )
 from lore.core.cache import memoize
 
-# 3. Adapters
+# 4. Adapters
 from lore.core.adapters import (
     adapter_registry,
     AdapterPreview,
@@ -30,12 +33,12 @@ from lore.core.adapters import (
     TableAdapter,
 )
 
-# 4. Aliases
+# 5. Aliases
 adapter = adapter_registry
 task = task_registry.register
 config = config_registry.register
 
-# 5. Direct Enum access
+# 6. Direct Enum access
 # Cardinality for ArtifactInputs
 OPTIONAL = Cardinality.OPTIONAL_SINGLE
 SINGLE = Cardinality.SINGLE
@@ -78,6 +81,9 @@ __all__ = [
     "Widget",
     "Cardinality",
     "Materialization",
+    # Traits
+    "ANY", "TABULAR",
+    # Execution
     "ExecutionContext",
     "memoize",
     # Adapter layer
@@ -85,7 +91,7 @@ __all__ = [
     "BaseAdapter",
     "ImageAdapter",
     "TableAdapter",
-    # aliases
+    # Decorator aliases
     "adapter",
     "task",
     "config",

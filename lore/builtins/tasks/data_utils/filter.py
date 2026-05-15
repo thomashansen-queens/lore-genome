@@ -13,7 +13,7 @@ class QueryInputs:
     """Input model for the filter by query task."""
     source = lore.ArtifactInput(
         label="Artifact(s) to filter",
-        accepted_data="table",
+        accepted_data=lore.TABULAR,
         select=lore.MULTIPLE,
         load_as=lore.RAW,
     )
@@ -40,7 +40,7 @@ class QueryInputs:
 class QueryOutputs:
     """Output model for the filter by query task."""
     filtered_data = lore.TaskOutput(
-        data_type="table (override in handler)",
+        data_type="table",
         label="Filtered Data",
         description="A new Artifact containing only the records that match the query.",
         is_primary=True,

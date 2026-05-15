@@ -28,6 +28,7 @@ class SampleInputs:
     source = lore.ArtifactInput(
         description="Artifact to sample from (JSON list or DataFrame-compatible)",
         label="Source Artifact",
+        accepted_data=lore.TABULAR,
         select=lore.MULTIPLE,
         load_as=lore.RAW,
     )

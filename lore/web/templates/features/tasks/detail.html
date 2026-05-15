@@ -25,7 +25,7 @@
         </div>
 
         {# === Task status and metadata === #}
-        <div class="row">
+        <div class="row gapped">
             {{ ui.status_badge(task.status) }}
 
             {% if task.status.value == 'completed' %}
