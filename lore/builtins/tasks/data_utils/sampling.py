@@ -72,13 +72,13 @@ class SampleOutputs:
     Outputs for sampling tasks.
     """
     sampled_data = lore.TaskOutput(
-        data_type="*",  # same as input
+        data_type=lore.Passthrough("source"),
         label="Sampled data",
         description="Sampled subset of the original data as a new Artifact",
         is_primary=True,
     )
     remainder = lore.TaskOutput(
-        data_type="*",
+        data_type=lore.Passthrough("source"),
         label="Remainder",
         description="(Optional) Remainder of the data not included in the sample, as a new Artifact",
         yields=lore.OPTIONAL,
