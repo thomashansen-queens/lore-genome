@@ -16,7 +16,7 @@ models:
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.fields import FieldInfo
@@ -119,9 +119,8 @@ class TaskDefinition:
 # --- Task execution ---
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """Execution state of the Task in the engine."""
-
     DRAFT = "draft"  # Missing config or fails validation
     READY = "ready"  # Validated and ready for the user to click 'Run'
     QUEUED = "queued"  # Waiting for engine resources OR upstream FutureArtifacts
@@ -144,24 +143,25 @@ class TaskStatus(str, Enum):
 
     @property
     def is_runnable(self) -> bool:
-        """User can try to run this task."""
-        return self in (
-            TaskStatus.READY,
-            TaskStatus.QUEUED,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        )
+        """User can try to run this task. TODO: Once engine is locked in, uncomment"""
+        return True
+        # return self in (
+        #     TaskStatus.READY,
+        #     TaskStatus.COMPLETED,
+        #     TaskStatus.FAILED,
+        #     TaskStatus.CANCELLED,
+        # )
 
 
-class TaskIntegrity(str, Enum):
+class TaskIntegrity(StrEnum):
     """
     Data continuity state of the Task within the DAG.
     Degraded is when output files are missing/changed, stale is when upstream inputs are modified.
     """
-
-    SATISFIED = "satisfied"
+    INTACT = "intact"
     DEGRADED = "degraded"
     STALE = "stale"
+    PENDING = "pending"
     UNKNOWN = "unknown"
 
 
@@ -325,14 +325,21 @@ class Task(BaseModel):
         if exec_config is not None:
             self.exec_config = exec_config
 
+        is_mutated = (inputs is not None) or (exec_config is not None)
+        if is_mutated and self.status == TaskStatus.COMPLETED:
+            self.status = TaskStatus.DRAFT
+            self.integrity = TaskIntegrity.PENDING
+
         # 2. Gatekeep: Only allow valid Tasks to become READY
         try:
             self.validate_and_serialize()
             clean_config = self.validate_config(self.exec_config)
 
             self.exec_config = clean_config
-            self.status = TaskStatus.READY
-            self.error = None
+            if self.status != TaskStatus.COMPLETED:
+                self.status = TaskStatus.READY
+                self.error = None
+
         except MissingUserInputError as e:
             # Not an error, just waiting on a human
             self.status = TaskStatus.DRAFT

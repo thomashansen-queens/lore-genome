@@ -27,6 +27,22 @@
         {# === Task status and metadata === #}
         <div class="row">
             {{ ui.status_badge(task.status) }}
+
+            {% if task.status.value == 'completed' %}
+                {% set integrity = task.integrity.value %}
+                <span class="badge 
+                    {% if integrity == 'intact' %}success
+                    {% elif integrity == 'stale' %}warning
+                    {% elif integrity == 'degraded' %}danger
+                    {% else %}muted{% endif %}">
+                    {% if integrity == 'intact' %}✔
+                    {% elif integrity == 'stale' %}⟳
+                    {% elif integrity == 'degraded' %}⚠
+                    {% endif %} 
+                    {{ integrity | title }}
+                </span>
+            {% endif %}
+
             <div class="muted mono small">
                 ID: {{ task.id }} | Type: {{ task.registry_key }}
                 {% if task.duration %}
@@ -38,7 +54,7 @@
         {# === Task actions === #}
         {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
 
-            {% if task.status.value not in ['running', 'completed'] %}
+            {% if task.status.value != 'running' %}
                 <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
                     class="btn secondary">
                     ✎ Edit
@@ -48,7 +64,16 @@
             {% if task.status.is_runnable %}
                 <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
                     <button type="submit" class="btn primary">
-                        ▶ {{ 'Retry' if task.status.value in ['failed', 'cancelled'] else 'Run' }}
+                        ▶
+                        {% if task.status.value == 'ready' %}
+                            Run
+                        {% elif task.integrity.value in ['degraded', 'stale'] %}
+                            Fix Data (Re-Run)
+                        {% elif task.status.value == 'completed' %}
+                            Force Re-Run
+                        {% elif task.status.value in ['failed', 'cancelled'] %}
+                            Retry
+                        {% endif %}
                     </button>
                 </form>
             {% endif %}
@@ -195,7 +220,7 @@
 
 {% block scripts %}
 <script>
-    // 🚀 Listen for HTMX swaps, and scroll the log to the bottom!
+    // Listen for HTMX swaps, and scroll the log to the bottom
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (evt.detail.target.id === 'task-detail-container') {
             const logWindow = document.getElementById('task-log');
