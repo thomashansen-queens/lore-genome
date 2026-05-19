@@ -4,6 +4,7 @@ docs/
 *.ipynb
 *.bak
 test.py
+lore/debug/
 
 notes.md
 CLAUDE.md
