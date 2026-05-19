@@ -503,17 +503,33 @@ class AdapterRegistry:
         Finds all adapters that can bridge the gap between this 
         Physical Artifact and the Task's Logical Requirement.
         """
+        from lore.core.topology.traits import DataTrait
+
         matches = []
         for adapter in self._adapters.values():
             # 1. Artifact compatibility: Can I read this?
-            format_match = "*" in adapter.accepted_formats or extension in adapter.accepted_formats
-            type_match = "*" in adapter.accepted_types or data_type in adapter.accepted_types
+            format_match = (
+                extension == "*"
+                or "*" in adapter.accepted_formats
+                or extension in adapter.accepted_formats
+            )
+            type_match = (
+                data_type == "*"
+                or "*" in adapter.accepted_types
+                or data_type in adapter.accepted_types
+            )
             if not (format_match and type_match):
                 continue
 
             # 2. Logical compatibility: Can I provide this?
-            if adapter.provides(must_provide):
+            if must_provide == "*":
                 matches.append(adapter)
+            elif isinstance(must_provide, DataTrait):
+                if must_provide.is_satisfied_by(data_type, [adapter]):
+                    matches.append(adapter)
+            elif isinstance(must_provide, str):
+                if adapter.provides(must_provide):
+                    matches.append(adapter)
 
         # 3. Optimization: Sort by 'Expertise'
         def sort_score(a):

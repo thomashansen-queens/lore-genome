@@ -16,7 +16,7 @@ models:
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.fields import FieldInfo
@@ -30,7 +30,7 @@ from lore.core.bindings import (
     UnresolvedReferenceError,
     MissingUserInputError,
 )
-from lore.core.tasks.parameters import Cardinality
+from lore.core.tasks.parameters import Cardinality, Passthrough
 from lore.core.utils import is_collection_type
 
 # --- Task Definition ---
@@ -119,9 +119,8 @@ class TaskDefinition:
 # --- Task execution ---
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """Execution state of the Task in the engine."""
-
     DRAFT = "draft"  # Missing config or fails validation
     READY = "ready"  # Validated and ready for the user to click 'Run'
     QUEUED = "queued"  # Waiting for engine resources OR upstream FutureArtifacts
@@ -144,24 +143,25 @@ class TaskStatus(str, Enum):
 
     @property
     def is_runnable(self) -> bool:
-        """User can try to run this task."""
-        return self in (
-            TaskStatus.READY,
-            TaskStatus.QUEUED,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        )
+        """User can try to run this task. TODO: Once engine is locked in, uncomment"""
+        return True
+        # return self in (
+        #     TaskStatus.READY,
+        #     TaskStatus.COMPLETED,
+        #     TaskStatus.FAILED,
+        #     TaskStatus.CANCELLED,
+        # )
 
 
-class TaskIntegrity(str, Enum):
+class TaskIntegrity(StrEnum):
     """
     Data continuity state of the Task within the DAG.
     Degraded is when output files are missing/changed, stale is when upstream inputs are modified.
     """
-
-    SATISFIED = "satisfied"
+    INTACT = "intact"
     DEGRADED = "degraded"
     STALE = "stale"
+    PENDING = "pending"
     UNKNOWN = "unknown"
 
 
@@ -325,14 +325,21 @@ class Task(BaseModel):
         if exec_config is not None:
             self.exec_config = exec_config
 
+        is_mutated = (inputs is not None) or (exec_config is not None)
+        if is_mutated and self.status == TaskStatus.COMPLETED:
+            self.status = TaskStatus.DRAFT
+            self.integrity = TaskIntegrity.PENDING
+
         # 2. Gatekeep: Only allow valid Tasks to become READY
         try:
             self.validate_and_serialize()
             clean_config = self.validate_config(self.exec_config)
 
             self.exec_config = clean_config
-            self.status = TaskStatus.READY
-            self.error = None
+            if self.status != TaskStatus.COMPLETED:
+                self.status = TaskStatus.READY
+                self.error = None
+
         except MissingUserInputError as e:
             # Not an error, just waiting on a human
             self.status = TaskStatus.DRAFT
@@ -345,6 +352,58 @@ class Task(BaseModel):
             # Genuine validation error
             self.status = TaskStatus.DRAFT
             self.error = str(e)
+
+    def resolve_output_type(self, output_key: str, container: Any) -> dict[str, Any]:
+        """
+        Calculates the semantic data type and schema of an output slot.
+        Traverses the DAG if the output is a Passthrough to its input slot,
+        which can chain together multiple TaskDefinitions and Adapters to 
+        resolve the final data type of an output.
+        """
+        from lore.core.tasks.registry import task_registry
+
+        task_def = task_registry[self.registry_key]
+        out_def = task_def.output_model.model_fields.get(output_key)
+        if not out_def:
+            raise KeyError(
+                f"Output key '{output_key}' not found in TaskDefinition '{self.registry_key}'"
+            )
+        _, meta = task_def.field_meta(output_key, is_output=True)
+        data_type = meta.get("data_type", "unknown")
+
+        # 1. Base case: Static type (e.g. "protein_sequence")
+        if not isinstance(data_type, Passthrough):
+            return {"data_type": data_type}
+
+        # 2. Recursive case: Passthrough to an input slot
+        passthrough_slot = data_type.slot
+        bindings = self.inputs.get(passthrough_slot, [])
+
+        # 3. Empty slots: nothing plugged in
+        if not bindings:
+            # Fall back to what the slot theoretically accepts based on the 
+            # TaskDefinitions's input model
+            _, input_meta = task_def.field_meta(passthrough_slot)
+            accepted = input_meta.get("accepted_data", ["*"])
+            fallback_type = accepted[0] if accepted else "*"
+            return {"data_type": fallback_type}
+
+        # 4. Traverse the bindings
+        for b in bindings:
+            if isinstance(b, ReferenceBinding):
+                upstream_task = container.get_task(b.source_id)
+                if upstream_task:
+                    return upstream_task.resolve_output_type(b.output_key, container)
+
+            elif isinstance(b, LiteralBinding):
+                # May be a literal binding to an Artifact
+                if isinstance(b.value, str) and container.get_artifact(b.value):
+                    artifact = container.get_artifact(b.value)
+                    return {"data_type": artifact.data_type}
+                else:
+                    return {"data_type": type(b.value).__name__}
+
+        return {"data_type": "*"}
 
 
 class TaskResults:

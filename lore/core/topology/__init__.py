@@ -1,4 +1,4 @@
-from .diagram import generate_dag_diagram
+from .matcher import is_output_compatible
 from .traversal import (
     get_parent_ids,
     sort_tasks_topologically,
@@ -7,8 +7,8 @@ from .traversal import (
 )
 
 __all__ = [
+    "is_output_compatible",
     "find_valid_upstream_tasks",
-    "generate_dag_diagram",
     "get_parent_ids",
     "sort_tasks_topologically",
     "DAGValidationError",

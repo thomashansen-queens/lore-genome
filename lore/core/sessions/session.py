@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 from lore.core.artifacts import Artifact, ArtifactManager, TransferMode
 from lore.core.filelock import acquire_lock, release_lock
 from lore.core.manifest import Manifest
+from lore.core.tasks.models import TaskIntegrity
 from lore.core.utils import fmt_bytes
 
 if TYPE_CHECKING:
@@ -95,7 +96,7 @@ class Session(AbstractContextManager):
                 self._logger.debug("Session ID: '%s' exiting normally.", self.id)
 
         if self._manifest and not self.read_only and self._dirty:
-            # Take inventory of file sizes when closing
+            # 1. Take inventory of file sizes when closing
             # TODO: If Sessions get huge, this will become slow. Optimize by tracking size changes 
             # on-the-go, probably through ArtifactManager (and just ignore the tiny json and logs)
             try:
@@ -104,7 +105,11 @@ class Session(AbstractContextManager):
                 )
             except (FileNotFoundError, PermissionError, OSError):
                 pass
-            # Save Manifest to persist in-memory state
+            # 2. Re-assess Task integrity
+            for task in self.list_tasks():
+                self.verify_task_integrity(task.id)
+
+            # 3. Save Manifest to persist in-memory state
             self._manifest.save(self._root / "manifest.json")
 
         # Release lock and close the lock file
@@ -257,6 +262,7 @@ class Session(AbstractContextManager):
             name=name or registry_key,
             description=description,
             status=TaskStatus.DRAFT,
+            integrity=TaskIntegrity.PENDING,
             inputs=cast(dict[str, list["Binding"]], inputs or {}),  # pydantic will coerce
             outputs={},
             exec_config=exec_config or {},
@@ -355,6 +361,55 @@ class Session(AbstractContextManager):
         if log_path.exists():
             return log_path.read_text(encoding="utf-8")
         return None
+
+    def verify_task_integrity(self, task_id: str) -> TaskIntegrity:
+        """
+        Evaluates whether a Task's inputs are all present and accounted for.
+        Mutates and returns a Task's integrity status.
+        """
+        from lore.core.tasks import TaskStatus
+
+        task = self.get_task(task_id)
+        if not task:
+            raise ValueError(f"Cannot verify integrity of non-existent task ID: {task_id}")
+
+        # 1. If Task is not completed, "integrity" doesn't exist yet (PENDING)
+        if task.status != TaskStatus.COMPLETED:
+            task.integrity = TaskIntegrity.PENDING
+            return task.integrity
+
+        # 2. Graph context (STALE check)
+        # lazy import to avoid circular dependency
+        from lore.core.topology.traversal import get_parent_ids
+        for parent_id in get_parent_ids(task):
+            # Could also look at parent_artifact_ids?
+            parent_task = self.get_task(parent_id)
+            if parent_task and parent_task.completed_at and task.completed_at:
+                if parent_task.completed_at > task.completed_at:
+                    task.integrity = TaskIntegrity.STALE
+                    return task.integrity
+
+        # 3. Filesystem context (DEGRADED check)
+        for output_slot in task.outputs.values():
+            for artifact_id in output_slot:
+                artifact = self.get_artifact(artifact_id)
+                # A. Missing from the manifest?
+                if not artifact:
+                    task.integrity = TaskIntegrity.DEGRADED
+                    return task.integrity
+                # B. Missing from disk?
+                try:
+                    path = self.get_artifact_path(artifact_id)
+                    if not path.exists():
+                        task.integrity = TaskIntegrity.DEGRADED
+                        return task.integrity
+                except (ValueError, FileNotFoundError):
+                    task.integrity = TaskIntegrity.DEGRADED
+                    return task.integrity
+
+        # 4. If we've made it here, clean bill of health (SATISFIED)
+        task.integrity = TaskIntegrity.INTACT
+        return task.integrity
 
     # --- Artifact helpers ---
 

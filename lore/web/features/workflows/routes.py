@@ -58,9 +58,10 @@ def view_workflow(workflow_id: str, rt: RT, ctx: PageContext = Depends()):
     if not w:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    diagram_tb = generate_dag_diagram(w.tasks, task_registry, "TB")
-    diagram_lr = generate_dag_diagram(w.tasks, task_registry, "LR")
-    
+    from lore.core.topology.diagram import Direction
+    diagram_tb = generate_dag_diagram(w.tasks, task_registry, Direction.TB)
+    diagram_lr = generate_dag_diagram(w.tasks, task_registry, Direction.LR)
+
     ctx.generate_breadcrumbs({workflow_id: w.name})
     return templates.TemplateResponse(
         request=ctx.request,

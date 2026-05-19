@@ -33,7 +33,7 @@ class MergeInputs:
 class MergeOutputs:
     """Output model for the merge task."""
     merged_data = lore.TaskOutput(
-        data_type="dynamic (override in handler)",
+        data_type=lore.Passthrough("source"),
         label="Merged Data",
         description="A new Artifact containing the merged records.",
         is_primary=True,

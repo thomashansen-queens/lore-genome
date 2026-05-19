@@ -9,11 +9,17 @@ TODO:
 - Editable edges (simple logic/retries can go there)
 """
 
-from typing import Any
+import logging
+from typing import Any, TYPE_CHECKING
 from lore.core.topology.matcher import is_output_compatible
-from lore.core.tasks.models import Task
 from lore.core.bindings import ReferenceBinding
-from lore.core.tasks.registry import task_registry
+
+if TYPE_CHECKING:
+    from lore.core.sessions.session import Session
+    from lore.core.tasks.models import Task
+    from lore.core.workflows.models import Workflow
+
+logger = logging.getLogger(__name__)
 
 
 class DAGValidationError(Exception):
@@ -25,7 +31,7 @@ class DAGValidationError(Exception):
     pass
 
 
-def get_parent_ids(task: Task) -> list[str]:
+def get_parent_ids(task: "Task") -> list[str]:
     """
     Helper to grab immediately upstream dependency IDs from a Task's inputs.
     """
@@ -38,7 +44,7 @@ def get_parent_ids(task: Task) -> list[str]:
 
 
 def get_task_descendants(
-    tasks: list[Task],
+    tasks: list["Task"],
     start_task_id: str,
     generations: int | None = None,
 ) -> set[str]:
@@ -73,7 +79,7 @@ def get_task_descendants(
 
 
 def get_task_ancestors(
-    tasks: list[Task],
+    tasks: list["Task"],
     start_task_id: str,
     generations: int | None = None,
 ) -> set[str]:
@@ -140,10 +146,12 @@ def sort_dag_dfs(dependency_map: dict[str, list[str]]) -> list[str]:
     return sorted_ids
 
 
-def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
+def sort_tasks_topologically(tasks: list["Task"]) -> list["Task"]:
     """
     Validates a list of Tasks for continuity and cycles.
     Returns a topologically sorted list of Tasks for linear execution.
+    Missing upstream dependencies are gracefully ignored (e.g. if an 
+    upstream Task is deleted).
     """
     task_ids = {task.id for task in tasks}
     task_map = {task.id: task for task in tasks}
@@ -152,12 +160,19 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
     # 1. Continuity check & build dependency map
     for task in tasks:
         upstream_ids = get_parent_ids(task)
+        valid_upstream_ids = []
+
         for upstream_id in upstream_ids:
             if upstream_id not in task_ids:
-                raise DAGValidationError(
-                    f"Task '{task.id}' references unknown upstream task: '{upstream_id}'"
+                logger.warning(
+                    "Task '%s' is missing upstream dependency '%s'.",
+                    task.id,
+                    upstream_id,
                 )
-        dependency_map[task.id] = upstream_ids
+            else:
+                valid_upstream_ids.append(upstream_id)
+
+        dependency_map[task.id] = valid_upstream_ids
 
     # 2. Topological sort
     sorted_ids = sort_dag_dfs(dependency_map)
@@ -166,16 +181,22 @@ def sort_tasks_topologically(tasks: list[Task]) -> list[Task]:
 
 
 def find_valid_upstream_tasks(
+    container: "Session | Workflow",
     current_task_id: str | None,
-    tasks: list[Task],
+    tasks: list["Task"],
     field_extra: dict,
 ) -> list[dict[str, Any]]:
     """
     Looks at previous tasks in a topological sequence and checks their theoretical 
     output schemas to see if they can satisfy the current field's data requirements.
     """
+    # Lazy import to avoid circular dependency
+    from lore.core.adapters import adapter_registry
+    from lore.core.tasks.registry import task_registry
+
     valid_upstream = []
-    # 1. Find invalid tasks (self + descendants)
+
+    # 1. Exclude self + descendants from search
     invalid_ids = set()
     if current_task_id:
         invalid_ids.add(current_task_id)
@@ -203,9 +224,22 @@ def find_valid_upstream_tasks(
         for out_key, out_field in upstream_def.output_model.model_fields.items():
             _, out_extra = upstream_def.field_meta(out_key, is_output=True)
 
-            out_adapters = upstream_def.get_adapters_for_output(out_key)
+            # i. Resolve dynamic Passthrough types with static TaskDefinition metadata
+            source_extra = out_extra.copy()
+            source_extra.update(upstream_task.resolve_output_type(out_key, container))
+
+            # ii. Get candidate adapters if the type resolved to a string
+            data_type = source_extra.get("data_type")
+            out_adapters = []
+            if isinstance(data_type, str):
+                out_adapters = adapter_registry.get_adapters_by_type(
+                    data_type=data_type,
+                    extension=source_extra.get("format", "*"),
+                )
+
+            # iii. Check if any of the candidate adapters can satisfy the input requirements
             if is_output_compatible(
-                source_extra=out_extra,
+                source_extra=source_extra,
                 target_extra=field_extra,
                 adapters=out_adapters,
             ):

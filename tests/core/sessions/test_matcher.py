@@ -92,6 +92,15 @@ def test_find_valid_upstream_outputs(monkeypatch):
     upstream_task = MagicMock()
     upstream_task.id = "task_A"
     upstream_task.registry_key = "tool.A"
+
+    def mock_resolve(out_key, container):
+        if out_key == "report":
+            return {"data_type": "table"}
+        elif out_key == "sequence":
+            return {"data_type": "fasta"}
+        return {"data_tye": "*"}
+
+    upstream_task.resolve_output_type.side_effect = mock_resolve
     mock_session.list_tasks.return_value = [upstream_task]
 
     # Patch the global task_registry so the matcher can find the upstream definition
@@ -101,15 +110,19 @@ def test_find_valid_upstream_outputs(monkeypatch):
         "sequence": {"data_type": "fasta"}
     })
     mock_registry.get_safe.return_value = mock_def
-    monkeypatch.setattr("lore.core.topology.traversal.task_registry", mock_registry)
-
+    monkeypatch.setattr("lore.core.tasks.registry.task_registry.get_safe", mock_registry.get_safe)
 
     # Current field needs a fasta
     field_extra = {"is_artifact": True, "accepted_data": ["fasta"]}
     
     # Run matcher
-    result = find_valid_upstream_tasks(current_task_id="task_B", tasks=[upstream_task], field_extra=field_extra)
-    
+    result = find_valid_upstream_tasks(
+        container=mock_session,
+        current_task_id="task_B",
+        tasks=[upstream_task],
+        field_extra=field_extra,
+    )
+
     # Assertions
     assert len(result) == 1
     assert result[0]["task"].id == "task_A"
