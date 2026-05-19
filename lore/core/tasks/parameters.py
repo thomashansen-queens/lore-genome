@@ -375,7 +375,7 @@ class Passthrough:
         filtered_data = TaskOutput(
             data_type=Passthrough("source"),
             label="Filtered data",
-        )    
+        )
     """
     slot: str
 
@@ -395,7 +395,7 @@ class TaskOutput(BaseModel):
         is_artifact: Whether this output is an Artifact (True, default) or primitive value (False).
     """
 
-    data_type: str | Passthrough
+    data_type: str | type | Passthrough  # LoRē semantic type, Python type, or Passthrough
     label: str
     yields: Cardinality = Cardinality.SINGLE
     description: str = ""

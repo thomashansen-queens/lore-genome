@@ -1,6 +1,11 @@
 """
 Concrete matching functions for finding Artifacts to satisfy Task 
 input requirements.
+
+This matcher module considers how task outputs (Artifacts and primitives)
+can be matched to task inputs within the Session. Topology is not considered 
+at this level. A separate matcher module in the 'topology' layer exists to 
+consider upstream/downstream relationships and other factors (e.g. cycles).
 """
 
 from typing import Any, TYPE_CHECKING
