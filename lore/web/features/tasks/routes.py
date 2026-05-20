@@ -334,9 +334,9 @@ def api_task_commit(
                 task = s.get_task(existing_task_id)
                 if task is None:
                     raise ValueError(f"Task with ID '{existing_task_id}' not found in Session '{s.id}'.")
-                if task.status in {TaskStatus.RUNNING, TaskStatus.COMPLETED}:
+                if task.status == TaskStatus.RUNNING:
                     task = None  # Cannot edit, save as new
-                    msg = "Task is running or completed. Saving as new task."
+                    msg = "Task is running. Saving changes as a new task."
 
             if task:
                 task = s.update_task(
