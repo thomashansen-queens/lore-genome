@@ -83,6 +83,9 @@ def filter_and_sort(
 
     # 2. Sort (always runs if sort_by is set)
     if sort_by and sort_by in df.columns:
+        try:
+            df[sort_by] = pd.to_numeric(df[sort_by])
+        except:
+            pass
         df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
-
     return df
