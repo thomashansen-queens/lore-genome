@@ -74,12 +74,6 @@
             "value": ".75"
           }
         ],
-        "threads": [
-          {
-            "type": "literal",
-            "value": "4"
-          }
-        ],
         "strict_window": [
           {
             "type": "literal",
