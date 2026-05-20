@@ -80,6 +80,18 @@ class SvgRect(SvgElement):
 
 
 @dataclass
+class SvgCircle(SvgElement):
+    """Circle element defined by center (cx, cy) and radius r."""
+    cx: float = 0
+    cy: float = 0
+    r: float = 0
+
+    def render(self) -> str:
+        return (f'<circle cx="{self.cx:.2f}" cy="{self.cy:.2f}" '
+                f'r="{self.r:.2f}" {self._common_attrs()} />')
+
+
+@dataclass
 class SvgPolygon(SvgElement):
     """Polygon element defined by a list of (x, y) points"""
     points: list[tuple[float, float]] = field(default_factory=list)

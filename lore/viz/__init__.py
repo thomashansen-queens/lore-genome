@@ -1,5 +1,6 @@
 from .svg import (
     SvgCanvas,
+    SvgCircle,
     SvgGroup,
     SvgLine,
     SvgPolygon,
@@ -12,6 +13,7 @@ from .svg import (
 
 __all__ = [
     "SvgCanvas",
+    "SvgCircle",
     "SvgGroup",
     "SvgLine",
     "SvgPolygon",
