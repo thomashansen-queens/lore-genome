@@ -181,18 +181,16 @@ def _build_field_ui_state(
             _, meta = task_def.field_meta(field_name)
             cardinality = meta.get("cardinality", Cardinality.SINGLE)
 
-            if meta.get("is_artifact"):
-                # ArtifactInputs need to remain a Python list
-                if cardinality.allows_multiple:
-                    val = extracted
-                else:
-                    val = extracted[0] if extracted else None
+            allows_multiple = getattr(cardinality, "allows_multiple", False)
+            expects_raw_list = meta.get("widget") in ("checkbox_group", "artifact_multi_select")
+
+            if allows_multiple or expects_raw_list:
+                # Pass the python list directly to Jinja widget template
+                val = extracted
             else:
-                # ValueInputs might need to be stiched back into a single comma-separated list
-                expects_raw_list = meta.get("widget") in ("checkbox_group", "artifact_multi_select")
-                if expects_raw_list:
-                    val = extracted
-                elif len(extracted) > 1:
+                # Single-value inputs
+                if len(extracted) > 1:
+                    # Stich together in a multi-value string
                     val = ", ".join(str(v) for v in extracted)
                 else:
                     val = extracted[0] if extracted else None
