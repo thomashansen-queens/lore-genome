@@ -18,14 +18,13 @@ class MmseqsConfig:
         label="Path to MMseqs2 binary",
         description="Provide the full path if not in your system PATH.",
     )
-    
     default_threads = lore.ValueInput(
         int,
         default=4,
         min=1, max=32, step=1,
         label="Default CPU Threads",
         description="Global default for all MMseqs2 tasks.",
-        widget="slider"
+        widget="slider",
     )
 
 
@@ -59,14 +58,6 @@ class Mmseqs2ClusterInputs:
         examples=[4.0],
         widget="slider",
     )
-    threads = lore.ValueInput(
-        int | None,
-        default=None,
-        min=1, max=32, step=1,
-        label="Threads",
-        description="Number of CPU cores to allocate to this job.",
-        widget="slider",
-    )
     cluster_window = lore.ValueInput(
         str | None,
         default="",
@@ -78,7 +69,7 @@ class Mmseqs2ClusterInputs:
         bool,
         default=False,
         label="Strict Window",
-        description="If a region was specified, only include sequences that fully span the requested window."
+        description="If a region was specified, only include sequences that fully span the requested window.",
     )
     keep_representative_fasta = lore.ValueInput(
         bool,
@@ -90,7 +81,7 @@ class Mmseqs2ClusterInputs:
         bool,
         default=False,
         label="Keep truncated FASTA",
-        description="If a region was specified, save all truncated sequences as an Artifact."
+        description="If a region was specified, save all truncated sequences as an Artifact.",
     )
 
 
@@ -119,18 +110,32 @@ class Mmseqs2ClusterOutputs:
 
 def _parse_window(cluster_window: str) -> tuple[int | None, int | None]:
     """
-    Parse the cluster_window string into start and end integers. Single values 
-    are treated as start with no end.
+    Parse the cluster_window string into start and end integers.
+    - "start, end" -> (start, end)
+    - "1000" -> (None, 1000) (first 1000 residues)
+    - "-50" -> (-50, None) (last 50 residues)
     """
-    start = end = None
+    if not cluster_window or not cluster_window.strip():
+        return None, None
 
     if "," in cluster_window:
         start_str, end_str = cluster_window.split(",")
         end = int(end_str.strip()) if end_str.strip() else None
         start = int(start_str.strip()) if start_str.strip() else None
-
         return start, end
-    return int(cluster_window.strip()), None
+
+    try:
+        truncate_int = int(cluster_window.strip())
+        if truncate_int >= 0:
+            return None, truncate_int
+        else:
+            return truncate_int, None
+
+    except ValueError:
+        raise ValueError(
+            f"Cluster window '{cluster_window}' is not a valid format. "
+            f"Use 'start, end' or a single integer."
+        )
 
 
 def _sliced_fasta(
@@ -163,11 +168,11 @@ def _sliced_fasta(
 
             if strict_window:
                 # Positive start out of bounds
-                if start is not None and start > 0 and start >= len(seq):
+                if start is not None and abs(start) > len(seq):
                     dropped_count += 1
                     continue
                 # Negative start out of bounds
-                if start is not None and start < 0 and abs(start) > len(seq):
+                if end is not None and abs(end) > len(seq):
                     dropped_count += 1
                     continue
 
@@ -194,7 +199,6 @@ def mmseqs2_handler(
     min_seq_id: float = 0.9,
     coverage: float = 0.8,
     sensitivity: float = 4.0,
-    threads: int | None = None,
     cluster_window: str | None = None,
     strict_window: bool = False,
     keep_truncated: bool = False,
@@ -232,8 +236,6 @@ def mmseqs2_handler(
         shutil.copy(source_path, target_fasta)
 
     # 4. Build CLI command
-    if threads is None:
-        threads = mmseqs_config.default_threads
     cmd = [
         mmseqs_bin, "easy-cluster",
         target_fasta.name,
@@ -242,7 +244,7 @@ def mmseqs2_handler(
         "--min-seq-id", str(min_seq_id),
         "-c", str(coverage),
         "-s", str(sensitivity),
-        "--threads", str(threads),
+        "--threads", str(mmseqs_config.default_threads),
     ]
     ctx.logger.info("Running MMseqs2 with command: %s", " ".join(cmd))
 

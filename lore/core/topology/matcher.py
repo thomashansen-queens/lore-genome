@@ -14,6 +14,28 @@ if TYPE_CHECKING:
     from lore.core.tasks.models import TaskDefinition
 
 
+def is_primitive_compatible(source_type: Any, target_extra: dict) -> bool:
+    """
+    Checks if a primitive Python type (e.g. int, str, CustomModel) can satisfy 
+    the data requirements of an input field (a ValueInput).
+    """
+    target_type = target_extra.get("annotated_type")
+    if not target_type or not source_type:
+        return False
+
+    # True wildcard: Annotated as Any
+    if target_type == "Any" or source_type == "Any":
+        return True
+
+    # Type checking: Can the source safely act as the target?
+    try:
+        # e.g. int -> float is compatible, but not float -> int
+        return issubclass(source_type, target_type)
+    except TypeError:
+        # fallback for complex types e.g. list[int] or union types
+        return source_type == target_type
+
+
 def is_output_compatible(
     source_extra: dict,
     target_extra: dict,

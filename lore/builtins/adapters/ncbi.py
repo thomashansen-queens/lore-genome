@@ -85,6 +85,7 @@ class NcbiGenomeAnnotationsAdapter(lore.TableAdapter):
             "name": "name",
             "protein_length": ("proteins[0].length", self.safe_int),
             "chromosome": "chromosomes[0]",
+            "contig": "genomicRegions[0].geneRange.accessionVersion",
             "begin": "genomicRegions[0].geneRange.range[0].begin",
             "end": "genomicRegions[0].geneRange.range[0].end",
             "orientation": "genomicRegions[0].geneRange.range[0].orientation",

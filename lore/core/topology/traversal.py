@@ -11,7 +11,6 @@ TODO:
 
 import logging
 from typing import Any, TYPE_CHECKING
-from lore.core.topology.matcher import is_output_compatible
 from lore.core.bindings import ReferenceBinding
 
 if TYPE_CHECKING:
@@ -189,6 +188,11 @@ def find_valid_upstream_tasks(
     """
     Looks at previous tasks in a topological sequence and checks their theoretical 
     output schemas to see if they can satisfy the current field's data requirements.
+    Args:
+    - container: Are we looking in a Session or a Workflow (affects dynamic type resolution)
+    - current_task_id: The ID of the Task we're trying to find upstream links for
+    - tasks: The list of all tasks in the current Session or Workflow
+    - field_extra: The metadata dict for the input slot we're trying to satisfy
     """
     # Lazy import to avoid circular dependency
     from lore.core.adapters import adapter_registry
@@ -227,23 +231,40 @@ def find_valid_upstream_tasks(
             # i. Resolve dynamic Passthrough types with static TaskDefinition metadata
             source_extra = out_extra.copy()
             source_extra.update(upstream_task.resolve_output_type(out_key, container))
-
-            # ii. Get candidate adapters if the type resolved to a string
             data_type = source_extra.get("data_type")
-            out_adapters = []
-            if isinstance(data_type, str):
-                out_adapters = adapter_registry.get_adapters_by_type(
-                    data_type=data_type,
-                    extension=source_extra.get("format", "*"),
-                )
+            is_target_artifact = field_extra.get("is_artifact", False)
+            is_source_artifact = source_extra.get("is_artifact", True)
 
-            # iii. Check if any of the candidate adapters can satisfy the input requirements
-            if is_output_compatible(
-                source_extra=source_extra,
-                target_extra=field_extra,
-                adapters=out_adapters,
-            ):
-                valid_outputs.append(out_key)
+            # Mismatch: Artifacts cannot plug into Python types and vice versa
+            if is_target_artifact != is_source_artifact:
+                continue
+
+            # ii. Path A: Artifact matching (LoRē semantic type + format through adapters)
+            from lore.core.topology.matcher import is_output_compatible, is_primitive_compatible
+
+            if is_target_artifact:
+                out_adapters = []
+                if isinstance(data_type, str):
+                    out_adapters = adapter_registry.get_adapters_by_type(
+                        data_type=data_type,
+                        extension=source_extra.get("format", "*"),
+                    )
+
+                # Check if any of the candidate adapters can satisfy the input requirements
+                if is_output_compatible(
+                    source_extra=source_extra,
+                    target_extra=field_extra,
+                    adapters=out_adapters,
+                ):
+                    valid_outputs.append(out_key)
+
+            # iii. Path B: Primitive matching (strict Python type compatibility)
+            else:
+                if is_primitive_compatible(
+                    source_type=data_type,
+                    target_extra=field_extra,
+                ):
+                    valid_outputs.append(out_key)
 
         if valid_outputs:
             valid_upstream.append({

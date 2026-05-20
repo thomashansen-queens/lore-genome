@@ -211,7 +211,7 @@ class Task(BaseModel):
     # Execution data
     exec_config: dict[str, Any] = Field(default_factory=dict)  # Namespaced config for execution
     inputs: dict[str, list[Binding]] = Field(default_factory=dict)
-    outputs: dict[str, list[str]] = Field(default_factory=dict)  # Artifact IDs out
+    outputs: dict[str, list[Any]] = Field(default_factory=dict)  # Artifact IDs or python objects
 
     # Lineage
     parent_artifact_ids: list[str] = Field(default_factory=list)
@@ -519,9 +519,13 @@ class TaskResults:
         object.__setattr__(self, name, value)
 
     def to_dict(self) -> dict:
-        """Serialize results to a dict for storage in Manifest"""
+        """
+        Serialize results to a dict for storage in Manifest. Artifacts are serialized by their IDs,
+        while other objects are serialized as-is (assuming they are JSON-serializable).
+        """
         serialized = {}
         for k in self.output_keys:
             items = getattr(self, k)
+            # Duck type Artifacts: if an item has an 'id' attribute, serialize by its ID
             serialized[k] = [item.id if hasattr(item, "id") else item for item in items]
         return serialized
