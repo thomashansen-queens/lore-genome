@@ -3,6 +3,8 @@
 docs/
 *.ipynb
 *.bak
+test.py
+lore/debug/
 
 notes.md
 CLAUDE.md
@@ -19,6 +21,10 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+cache/
+debug_output/
+run.*
+sessions/
 build/
 develop-eggs/
 dist/
