@@ -162,8 +162,12 @@ def resolve_task_outputs(session, task_id: str) -> dict[str, ResolvedField]:
             if extra is not None and isinstance(extra, dict):
                 is_artifact = extra.get("is_artifact", True)
                 is_primary = extra.get("is_primary", False)
-                data_type = extra.get("data_type", "unknown")
                 label = extra.get("label", label)
+
+                data_type = extra.get("data_type", "unknown")
+                if hasattr(data_type, "slot"):
+                    # Passthrough data types
+                    data_type = f"From input '{data_type.slot}'"
 
         # 4. Resolve Artifacts if applicable — val is always list[str] of artifact IDs
         if not is_artifact:
