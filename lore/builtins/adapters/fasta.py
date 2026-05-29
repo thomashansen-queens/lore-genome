@@ -4,6 +4,7 @@ Adapter for handling FASTA files in LoRē Genome.
 from typing import Any, Iterator
 
 import lore
+import numpy as np
 
 
 @lore.adapter()
@@ -136,20 +137,41 @@ _PKA_BJELLQVIST = {
 _ACIDIC = {"D", "E", "C", "Y"}
 _BASIC  = {"H", "K", "R"}
 
-
-def _net_charge(seq: str, pH: float, pka: dict) -> float:
+def _net_charge_from_seq(seq: str, pH: float, pka: dict) -> float:
     """Uses Henderson-Hasselbalch equation to calculate net charge of a peptide at a given pH."""
     charge = 0.0
     # N-terminus
     charge += 1.0 / (1.0 + 10 ** (pH - pka["n"]))
     # C-terminus
     charge -= 1.0 / (1.0 + 10 ** (pka["c"] - pH))
-    # Internal residues
+    
     for aa in seq:
         if aa in _ACIDIC and aa in pka:
             charge -= 1.0 / (1.0 + 10 ** (pka[aa] - pH))
         elif aa in _BASIC and aa in pka:
             charge += 1.0 / (1.0 + 10 ** (pH - pka[aa]))
+    return charge
+
+def _net_charge(aa_vec: list[int], pH: float, pka: dict) -> float:
+    """
+    Uses Henderson-Hasselbalch equation to calculate net charge of a peptide at a given pH.
+    aa_vec must contain a list of the number of occurences of the amino acids in the peptide in the given order:
+    [D, E, C, Y, H, K, R]
+    """
+    charge = 0.0
+    # N-terminus
+    charge += 1.0 / (1.0 + 10 ** (pH - pka["n"]))
+    # C-terminus
+    charge -= 1.0 / (1.0 + 10 ** (pka["c"] - pH))
+    # Internal residues
+    
+    charge_vec = []
+    for aa in ['D', 'E', 'C', 'Y']:
+        charge_vec.append(-1 / (1 + 10 ** (pka[aa] - pH)))
+    for aa in ['H', 'K', 'R']:
+        charge_vec.append(1 / (1 + 10 ** (pH - pka[aa])))
+    
+    charge += np.dot(aa_vec, charge_vec)
     return charge
 
 
@@ -166,6 +188,12 @@ def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     (https://doi.org/10.1002/elps.1150150171), which is also what ExPaSy uses.
     """
     seq = seq.upper()
+    charged_aa_counts = {'D': 0, 'E': 0, 'C': 0, 'Y': 0, 'H': 0, 'K': 0, 'R': 0}
+    for aa in seq:
+        if aa in charged_aa_counts: 
+            charged_aa_counts[aa] += 1
+    aa_vec = list(charged_aa_counts.values())
+    
     lo, hi = 0.0, 14.0
 
     # Reaches 14 / 2^i precision after i iterations
@@ -175,7 +203,7 @@ def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     prev = -1
     for _ in range(14):
         mid = (lo + hi) / 2
-        if _net_charge(seq, mid, pka) > 0:
+        if _net_charge(aa_vec, mid, pka) > 0:
             lo = mid
         else:
             hi = mid
