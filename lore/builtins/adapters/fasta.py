@@ -1,13 +1,13 @@
 """
-Adapter for handling FASTA files in LoRe Genome. Currently only works for proteins.
+Adapter for handling FASTA files in LoRē Genome.
 """
 from typing import Any, Iterator
 
-import lore.dsl as lore
+import lore
 
 
 @lore.adapter()
-class FastaAdapter(lore.TableAdapter):
+class FastaAdapter(lore.TabularAdapter):
     """Adapter for FASTA files"""
     accepted_formats = {"fasta", "faa", "fa"}
     accepted_types = {"protein_fasta", "nucleotide_fasta", "fasta"}
@@ -21,7 +21,7 @@ class FastaAdapter(lore.TableAdapter):
             "sequence": "sequence",
         }
 
-    def _apply_schema(self, raw_record: dict) -> dict:
+    def adapt_record(self, raw_record: dict) -> dict:
         """Dynamically applies the schema (including lambdas) to a parsed record."""
         adapted = {}
         for target_key, mapping in self.schema.items():
@@ -67,7 +67,7 @@ class FastaAdapter(lore.TableAdapter):
                 # write then clear buffer
                 if current["accession"] is not None:
                     parsed_rec = {**current, "sequence": "".join(current["sequence"])}
-                    yield self._apply_schema(parsed_rec)
+                    yield self.adapt_record(parsed_rec)
 
                 parts = line[1:].split(None, 1)
                 if not parts:
@@ -83,7 +83,7 @@ class FastaAdapter(lore.TableAdapter):
         # dump final buffer
         if current["accession"] is not None:
             parsed_rec = {**current, "sequence": "".join(current["sequence"])}
-            yield self._apply_schema(parsed_rec)
+            yield self.adapt_record(parsed_rec)
 
     def serialize(self, records: list[dict], **kwargs) -> str:
         """Converts parsed records back into a FASTA string."""
@@ -97,8 +97,13 @@ class FastaAdapter(lore.TableAdapter):
         return "\n".join(lines) + "\n"
 
 # --- Specialized FASTA adapter for computations ---
+# This essentially applies ExPASy's ProtParam calculations on the fly to a 
+# FASTA file. Their tool is avilable at https://web.expasy.org/protparam/
 
 # Average molecular masses (Da)
+# These values are for hydrated amino acids; for peptide MW calculation,
+# the mass of water is substracted for each bond formed.
+# NOTE: These are average masses, not monoisotopic, in case that matters!
 _AA_MW = {
     "A": 89.09, "R": 174.20, "N": 132.12, "D": 133.10, "C": 121.16,
     "E": 147.13, "Q": 146.15, "G": 75.03, "H": 155.16, "I": 131.17,
@@ -150,8 +155,11 @@ def _net_charge(seq: str, pH: float, pka: dict) -> float:
 
 def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     """
-    Toseland et al. 2006 (https://doi.org/10.1093/nar/gkj035) is the most accurate pKa dataset, 
-    per Kozlowski 2021 (https://doi.org/10.1093/nar/gkab295).
+    Binary search for the pH at which net charge is zero (isoelectric point).
+
+    Uses values from:
+    Toseland et al. 2006 (https://doi.org/10.1093/nar/gkj035) which is the most accurate pKa
+    dataset, per Kozlowski 2021 (https://doi.org/10.1093/nar/gkab295).
 
     NOTE: Audain et al. 2016 (https://doi.org/10.1093/bioinformatics/btv674) prefers numbers from 
     Bjellqvist et al. 1993 (https://doi.org/10.1002/elps.11501401163) and Bjellqvist et al. 1994 
@@ -159,13 +167,24 @@ def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     """
     seq = seq.upper()
     lo, hi = 0.0, 14.0
-    for _ in range(20):  # binary search for pI
+
+    # Reaches 14 / 2^i precision after i iterations
+    # Using 14 iterations reaches 0.0008 pH precision, which is more than
+    # enough for practical purposes. That this is 14 iterations is a 
+    # coincidence and is not related to the pH range of 0-14.
+    prev = -1
+    for _ in range(14):
         mid = (lo + hi) / 2
         if _net_charge(seq, mid, pka) > 0:
             lo = mid
         else:
             hi = mid
-    return round((lo + hi) / 2, 4)
+
+        if abs(mid - prev) < 0.001:
+            break
+        prev = mid
+
+    return round(mid, 4)
 
 
 # Extinction coefficient calculations
@@ -220,7 +239,17 @@ def _aromaticity(seq: str) -> float | None:
 
 @lore.adapter()
 class ProtParamAdapter(FastaAdapter):
-    """Protein physicochemical properties from FASTA sequences"""
+    """
+    Protein physicochemical properties from FASTA sequences. Obviously does
+    not work for nucleotide FASTA files.
+
+    This essentially applies ExPASy's ProtParam calculations on the fly to a 
+    FASTA file. Their tool is avilable at https://web.expasy.org/protparam/
+    
+    Please see comments in the code for details on specific calculations and 
+    subtle differences between this and ExPASy's implementation (e.g. choice 
+    of pKa values for isoelectric point).
+    """
     accepted_types = {"protein_fasta"}
     view_mode = "table"
     version = "1.0.0"
