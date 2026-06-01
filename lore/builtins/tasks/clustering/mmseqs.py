@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from lore.builtins.adapters.fasta import FastaAdapter
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 @lore.config(key="mmseqs2", title="MMseqs2 suite")

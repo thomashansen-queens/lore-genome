@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from pydantic import BaseModel
 import pytest
 
-from lore.core.adapters import TableAdapter
+from lore.core.adapters import JsonAdapter, TabularAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
 from lore.core.tasks import task_registry
@@ -129,7 +129,7 @@ def semantic_registry():
 def populated_registry(semantic_registry):
     """A registry populated with highly specific dummy adapters to test resolution."""
 
-    class MockNcbiAdapter(TableAdapter):
+    class MockNcbiAdapter(JsonAdapter):
         # Semantic type *and* format-specific adapter
         accepted_types = {"ncbi_genome_reports"}
         accepted_formats = {"json"}
@@ -141,12 +141,12 @@ def populated_registry(semantic_registry):
         def to_dataframe(self, raw_data, metadata, config):
             pass
 
-    class GenericJsonAdapter(TableAdapter):
+    class GenericJsonAdapter(JsonAdapter):
         # File format-specific adapter
         # accepted_types = {"*"}
         accepted_formats = {"json", "jsonl"}
 
-    class ProteinFastaAdapter(TableAdapter):
+    class ProteinFastaAdapter(TabularAdapter):
         # Semantic type-specific adapter (any format e.g. fa, faa, fasta, txt)
         accepted_types = {"protein_fasta"}
         accepted_formats = {"*"}

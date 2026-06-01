@@ -1,13 +1,13 @@
 """
-Sampling Tasks for LoRe Genome.
+Samples data from an input Artifact based on user-specified criteria.
 """
 
 from enum import Enum
-from typing import List
+from typing import Any, List
 import random
 import pandas as pd
 
-import lore.dsl as lore
+import lore
 
 
 class SamplingStrategy(Enum):
@@ -29,7 +29,7 @@ class SampleInputs:
         description="Artifact to sample from (JSON list or DataFrame-compatible)",
         label="Source Artifact",
         accepted_data=lore.TABULAR,
-        select=lore.MULTIPLE,
+        select=lore.SINGLE,
         load_as=lore.RAW,
     )
     sample_by = lore.ValueInput(
@@ -135,7 +135,7 @@ def stratified_sample(
 
 
 @lore.task(
-    'filter.sample',
+    "filter.sample",
     inputs=SampleInputs,
     outputs=SampleOutputs,
     name="Sample data",
@@ -145,8 +145,8 @@ def stratified_sample(
 )
 def sample_handler(
     ctx: lore.ExecutionContext,
-    source: list | dict,
-    strategy: SamplingStrategy | str = SamplingStrategy.STRATIFIED_STRICT,  # use strings from enum
+    source: Any,
+    strategy: SamplingStrategy | str = SamplingStrategy.STRATIFIED_STRICT,
     sample_by: str | None = None,
     sample_size: int | None = None,
     seed: int = 42,
@@ -154,45 +154,40 @@ def sample_handler(
 ):
     """
     Use sampling to select a representative population from a group.
-    'source' can be a list of records (i.e. list-of-dicts)
-    and is materialized as RAW (then adapted within the handler) to ensure that
-    the full original data is what gets sampled, regardless of adapter schema.
     """
     strategy = SamplingStrategy(strategy)
-    # 1. Flatten raw source if needed (multiple sources for sampling)
-    if isinstance(source, list) and len(source) > 0 and isinstance(source[0], list):
-        flat_source = []
-        for sublist in source:
-            flat_source.extend(sublist)
-        source = flat_source
-    elif not isinstance(source, list):
-        source = [source]
 
     # 2. Artifact metadata
     source_artifacts = ctx.input_artifacts.get("source", [])
-    inherited_type = source_artifacts[0].data_type if source_artifacts else "unknown"
     ext = source_artifacts[0].extension if source_artifacts else "json"
 
     # 3. Prepare adapter and validate
     adapter = ctx.get_input_adapter("source")
     if adapter is None:
         raise ValueError("No adapter found for the input Artifact(s).")
-    if not isinstance(adapter, lore.TableAdapter):
-        raise ValueError(f"The adapter for the input Artifact(s) must be a TableAdapter, but got {type(adapter)}.")
+    if not isinstance(adapter, lore.TabularAdapter):
+        raise ValueError(
+            f"The adapter for the input Artifact(s) must be a TabularAdapter, "
+            f"but got {type(adapter)}."
+        )
 
-    if not source:
+    parsed_records = adapter.parse(source, extension=ext)
+
+    if not parsed_records:
         ctx.logger.warning("Received empty source for sampling. Will propagate empty artifact.")
-        ctx.materialize_content("sampled_data", adapter.serialize([], extension=ext), ext, inherited_type)
+        ctx.materialize_content("sampled_data", adapter.serialize([], extension=ext), ext)
         if partition:
-            ctx.materialize_content("remainder", adapter.serialize([], extension=ext), ext, inherited_type)
+            ctx.materialize_content("remainder", adapter.serialize([], extension=ext), ext)
         return
 
     # 4. Adapt to DataFrame
-    adapted_records = adapter.adapt(source)
+    adapted_records = adapter.adapt(parsed_records, extension=ext)
     df = pd.DataFrame(adapted_records)
 
     if df.empty:
-        raise ValueError("The adapted DataFrame is empty. Check the input data and adapter schema.")
+        raise ValueError(
+            "The adapted DataFrame is empty. Check the input data and adapter schema."
+        )
 
     # 5. Validation
     sample_cols = []
@@ -211,19 +206,16 @@ def sample_handler(
             raise ValueError(f"Cannot sample by {missing}. Valid options: {df.columns.tolist()}")
 
     # 6. Sampling
-    sampled_df = pd.DataFrame()
     pulled_indices = []
 
     if strategy == SamplingStrategy.RANDOM:
-        if sample_size is None or sample_size <= 0:
-            ctx.logger.warning("No sample_size provided for random sampling. Shuffling dataset.")
-            actual_n = len(df)
-        else:
-            actual_n = min(sample_size, len(df))
-
-        # Simple random sample of the whole dataset
+        actual_n = (
+            len(df)
+            if (sample_size is None or sample_size <= 0)
+            else min(sample_size, len(df))
+        )
         if sample_size and actual_n < sample_size:
-            ctx.logger.warning("Requested %s > available %s. Shuffling all.", sample_size, len(df))
+            ctx.logger.warning("Request %s > available %s. Shuffling all.", sample_size, len(df))
 
         sampled_df = df.sample(n=actual_n, random_state=seed)  # that was easy
         pulled_indices = sampled_df.index.tolist()
@@ -251,28 +243,26 @@ def sample_handler(
             sampled_df.groupby(by=sample_cols, dropna=False).ngroups,
         )
 
-    # 7. De-adapt: Map back to original structure
+    # 7. De-adapt: Map back to original structure (parsed, not adapted)
     pulled_set = set(pulled_indices)  # in case of sample with replacement
-    final_records = [source[i] for i in pulled_indices]
+    final_records = [parsed_records[i] for i in pulled_indices]
 
     if not final_records and not partition:
         raise ValueError("Sampling resulted in 0 records. Check your sampling strategy.")
 
     if partition:
-        remainder_records = [rec for i, rec in enumerate(source) if i not in pulled_set]
+        remainder_records = [rec for i, rec in enumerate(parsed_records) if i not in pulled_set]
 
     # 8. Materialization (sample)
     ctx.materialize_content(
         output_key="sampled_data",
-        content=adapter.serialize(final_records, extension=ext, header=df.columns),
+        content=adapter.serialize(final_records, extension=ext),
         extension=ext,
-        data_type=inherited_type,  # could append ".sampled" to be explicit
     )
 
     if partition:
         ctx.materialize_content(
             output_key="remainder",
-            content=adapter.serialize(remainder_records, extension=ext, header=df.columns),
+            content=adapter.serialize(remainder_records, extension=ext),
             extension=ext,
-            data_type=inherited_type,  # could append ".sampled" to be explicit
-    )
+        )

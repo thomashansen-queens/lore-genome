@@ -113,7 +113,7 @@ class TaskDefinition:
         _, meta = self.field_meta(output_key, is_output=True)
         data_type = meta.get("data_type", "unknown")
 
-        return adapter_registry.get_adapters_by_type(data_type=data_type, extension="*")
+        return adapter_registry.get_for_type(data_type=data_type, extension="*")
 
 
 # --- Task execution ---

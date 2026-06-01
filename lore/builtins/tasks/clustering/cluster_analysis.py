@@ -4,7 +4,7 @@ Synthesizing and anaylzing protein clusters
 import pandas as pd
 
 # from lore.core.adapters import adapter_registry, TableAdapter
-import lore.dsl as lore
+import lore.core.dsl as lore
 from lore.core.utils.parse import fasta_lookup
 
 # --- Helpers ----

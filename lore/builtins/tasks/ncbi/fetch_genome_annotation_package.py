@@ -16,7 +16,7 @@ import logging
 
 import httpx
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 from lore.builtins.tasks.ncbi.client import ncbi_client, retry
 
 # --- NCBI Enums ---

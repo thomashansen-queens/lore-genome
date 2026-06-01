@@ -5,7 +5,7 @@ import base64
 from pathlib import Path
 from typing import ClassVar
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 @lore.adapter()

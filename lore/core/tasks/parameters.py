@@ -4,7 +4,7 @@ LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import Enum, StrEnum
 import types
 from typing import Any, get_args, get_origin, Type, Union
 from pydantic import BaseModel, Field
@@ -18,7 +18,7 @@ from lore.core.utils.pydantic import get_base_type
 # --- Data handling ---
 
 
-class Widget(str, Enum):
+class Widget(StrEnum):
     """
     Defines the type of UI widget to render for a TaskInput. Will be inferred
     unless manually overridden (e.g. for Enums)

@@ -1,12 +1,17 @@
 """
-Task for filtering a list of records based on a pandas query string.
+Task for filtering a list of records based on a pandas query string (in memory).
+
+Interprets queries in a three-tiered approach:
+1. If regex mode is enabled, treat the query as a regular expression pattern
+2. Otherwise, attempt to apply the query as a pandas query string
+3. If pandas cannot parse the query, treat it as a simple case-insensitive sub-
+string search across all columns
 """
 import re
-
+from typing import Any
 import pandas as pd
 
-from lore.core.adapters import TableAdapter
-import lore.dsl as lore
+import lore
 
 
 class QueryInputs:
@@ -50,30 +55,32 @@ class QueryOutputs:
 @lore.memoize(prefix="filter_query_adapter", ignore=["source", "adapter"])
 def _load_dataframe(
     ctx: lore.ExecutionContext,
-    source: list[dict],
-    adapter: TableAdapter,
+    parsed_records: list[dict],
+    adapter: lore.TabularAdapter,
     cache_key: str,
+    ext: str,
 ) -> pd.DataFrame:
     """Helper function to allow use of memoization for loading."""
-    adapted_records = adapter.adapt(source)
+    adapted_records = adapter.adapt(parsed_records, extension=ext)
     df = pd.DataFrame(adapted_records).reset_index(drop=True)
     return df
 
 
 def _make_query_pattern(query_string: str) -> str:
-    """Convert a simple query string into a case-insensitive substring search pattern."""
-    new_query = query_string.strip()
-    new_query = new_query.replace('"', '').replace("'", "")
+    """
+    Convert a simple query string into a case-insensitive substring search pattern.
+    """
+    cleaned = query_string.strip().replace('"', '').replace("'", "")
 
     # Turn list into | separated for regex search
-    if "," in new_query:
-        parts = [re.escape(p.strip()) for p in new_query.split(",") if p.strip()]
-        new_query = "|".join(parts)
-    return re.escape(new_query)
+    if "," in cleaned:
+        parts = [re.escape(p.strip()) for p in cleaned.split(",") if p.strip()]
+        return "|".join(parts)
+    return re.escape(cleaned)
 
 
 @lore.task(
-    'filter.query',
+    "filter.query",
     inputs=QueryInputs,
     outputs=QueryOutputs,
     name="Filter by query",
@@ -83,7 +90,7 @@ def _make_query_pattern(query_string: str) -> str:
 )
 def filter_query_handler(
     ctx: lore.ExecutionContext,
-    source: list,
+    source: Any,
     regex: bool = False,
     query_string: str | None = None,
 ):
@@ -95,23 +102,25 @@ def filter_query_handler(
     adapter = ctx.get_input_adapter("source")
     if adapter is None:
         raise ValueError("No adapter found for the input Artifact(s).")
-    if not isinstance(adapter, TableAdapter):
-        raise ValueError(f"The adapter for the input Artifact(s) must be a TableAdapter, but got {type(adapter)}.")
+    if not isinstance(adapter, lore.TabularAdapter):
+        raise ValueError(f"The adapter for the input Artifact(s) must be a TabularAdapter, but got {type(adapter)}.")
 
     source_artifacts = ctx.input_artifacts.get("source", [])
-    inherited_type = source_artifacts[0].data_type if source_artifacts else "unknown"
     ext = source_artifacts[0].extension if source_artifacts else "json"
 
-    # 2. Adapt to DataFrame
+    # 2. Parsed the raw data into records
+    parsed_records = adapter.parse(source, extension=ext)
+
+    # 3. Adapt to DataFrame
     artifact_ids = "_".join(sorted(a.id for a in source_artifacts))
     cache_key = f"{adapter.name}_{artifact_ids}"
 
-    df = _load_dataframe(ctx, source, adapter, cache_key)
+    df = _load_dataframe(ctx, parsed_records, adapter, cache_key, ext)
 
     if df.empty:
         raise ValueError("The adapted DataFrame is empty. Check the input data and adapter schema.")
 
-    # 3. Apply filter via pandas query
+    # 4. Apply filter via pandas query
     if not query_string or not str(query_string).strip():
         surviving_indices = df.index.tolist()
         query_metadata = "True (no filtering applied)"
@@ -140,8 +149,8 @@ def filter_query_handler(
                     f"Query: {query_string}"
                 ) from query_err
             else:
-                ctx.logger.warning(
-                    "Pandas query failed (%s). Falling back to substring search for: %s", 
+                ctx.logger.info(
+                    "Invalid pandas query (%s). Falling back to substring search for: %s", 
                     query_err, query_string
                 )
             try:
@@ -157,17 +166,15 @@ def filter_query_handler(
 
     ctx.logger.info("Query matched %s out of %s records.", len(surviving_indices), len(df))
 
-    # 4. Map back to RAW data for preservation of provenance
-    final_records = [source[i] for i in surviving_indices]
+    # 5. Map back to parsed (but unadapted) data for preservation of provenance
+    final_records = [parsed_records[i] for i in surviving_indices]
     content = adapter.serialize(final_records, extension=ext)
 
-
-    # 5. Materialize
+    # 6. Materialize
     ctx.materialize_content(
         output_key="filtered_data",
         content=content,
         extension=ext,
-        data_type=inherited_type,
         metadata={
             "query": query_string,
             "count": len(surviving_indices),

@@ -305,7 +305,7 @@ def memoize(prefix: str | None = None, ignore: str | list[str] | None = None):
     Usage:
         @memoize(prefix="my_helper", ignore="arg2")
         def my_helper(ctx, arg1, arg2):
-            # Scary expensive calculation here
+            ## Scary expensive calculation here
             return result
     """
     def decorator(func):

@@ -47,7 +47,7 @@ class BaseArtifact(BaseModel, ABC):
         Convenience accessor for valid Adapters for this Artifact.
         """
         from lore.core.adapters import adapter_registry
-        return adapter_registry.get_adapters_by_type(self.data_type, self.extension)
+        return adapter_registry.get_for_type(self.data_type, self.extension)
 
     def resolvable_types(self) -> set[str]:
         """

@@ -11,3 +11,10 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 __app_name__ = "LoRē Genome"
+
+# Public API is defined in core/dsl.py, a façade module that collects and 
+# re-exports all the core components of the LoRē framework.
+from .core.dsl import *
+from .core.dsl import __all__ as _dsl_all
+
+__all__ = ["__version__", "__app_name__"] + _dsl_all  # pyright: ignore[reportUnsupportedDunderAll]

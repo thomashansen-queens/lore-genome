@@ -9,7 +9,7 @@ to give them broader meaning in the matching engine.
 
 from abc import ABC, abstractmethod
 
-from lore.core.adapters import BaseAdapter, TableAdapter
+from lore.core.adapters import BaseAdapter
 
 
 class DataTrait(ABC):
@@ -39,20 +39,24 @@ class AnyTrait(DataTrait):
 
 class TabularTrait(DataTrait):
     """Accepts native tables or anything that can be adapted to a table."""
+    TARGET_TYPES = {"table", "tabular", "dataframe"}
+    NATIVE_TYPES = {"table", "tabular", "dataframe", "csv", "tsv"}
+
     def is_satisfied_by(self, provided_type: str, adapters: list[BaseAdapter]) -> bool:
         # 1. Native match - is the provided type already a table?
-        if provided_type in ["table", "tabular", "dataframe", "csv", "tsv"]:
+        if provided_type in self.NATIVE_TYPES:
             return True
 
         # 2. Adapter match - can any adapter convert this type to a table?
         for adapter in (adapters or []):
-            # Adapter class with a provides() method
-            if isinstance(adapter, type):
-                if issubclass(adapter, TableAdapter):
-                    return True
+            # Adapter class with a provides() method (uninstantiated)
+            if isinstance(adapter, type) and issubclass(adapter, BaseAdapter):
+                instance = adapter()
+            else:
+                instance = adapter
 
-            # Instantiated TableAdapter
-            elif isinstance(adapter, TableAdapter):
+            # Instantiated adapter
+            if any(instance.provides(t) for t in self.TARGET_TYPES):
                 return True
 
         return False

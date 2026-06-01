@@ -1,10 +1,11 @@
 """
-Task for merging a list of records into a single file.
+Task for merging a list of records into a single file. Can deduplicate based on
+adapted values. Optionally uses 'group by' logic to selectively deduplicate.
 """
 import pandas as pd
 from typing import Any
 
-import lore.dsl as lore
+import lore
 
 
 class MergeInputs:
@@ -41,7 +42,7 @@ class MergeOutputs:
 
 
 @lore.task(
-    'merge',
+    "merge",
     inputs=MergeInputs,
     outputs=MergeOutputs,
     name="Merge Artifacts",
@@ -51,7 +52,7 @@ class MergeOutputs:
 )
 def merge_handler(
     ctx: lore.ExecutionContext,
-    source: list[Any],
+    source: Any,
     deduplicate: bool = False,
     group_by: list[str] | None = None,
 ):
@@ -69,6 +70,10 @@ def merge_handler(
 
     inherited_type = source_artifacts[0].data_type
     ext = source_artifacts[0].extension
+
+    if group_by and not deduplicate:
+        ctx.logger.warning("Group by keys provided but no deduplication not requested!")
+        group_by = None
 
     # TODO: --- Ultrafast shortcut for live previews of huge data ---
     # if getattr(ctx, "is_preview", False) or ctx.__class__.__name__ == "PreviewContext":
@@ -98,61 +103,68 @@ def merge_handler(
     #     )
     #     return
 
-    # 2. Deduplicate
-    final_records = source
+    # 1. Parse into records/table through the Adapter layer
+    parsed_records = []
+    for file_content in source:
+        parsed = adapter.parse(file_content, extension=ext)
 
-    if group_by and not deduplicate:
-        ctx.logger.warning(
-            "Group by keys provided but no deduplication not requested!"
-        )
-        group_by = None
+        # Distinguish between single-record (text) and multi-record (tabular)
+        if isinstance(parsed, list):
+            parsed_records.extend(parsed)
+        else:
+            parsed_records.append(parsed)
 
+    if not parsed_records:
+        raise ValueError("No records found in the input data.")
+
+    # 2. Process records
     if not deduplicate:
-        # Fast path: skip deduplication and just concatenate if requested.
         ctx.logger.info("Deduplication disabled. Performing high-speed raw concatenation.")
-
-        # Join files, ensuring they are separated by a newline
-        merged_content = "\n".join(s.strip() for s in source if s.strip()) + "\n"
-        record_count = "unknown (raw merge)"
+        surviving_records = parsed_records
+        record_count = len(surviving_records)
 
     else:
-        # Slow path: Parse and deduplicate records in-memory.
-        ctx.logger.info("Deduplication enabled. Parsing data into memory...")
+        ctx.logger.info(
+            "Deduplication enabled. Building DataFrame for %s records...",
+            format(len(parsed_records), ",")
+        )
+        adapted_records = adapter.adapt(parsed_records, extension=ext)
+        df = pd.DataFrame(adapted_records)
 
-        # 1. Parse into records/table through the Adapter layer
-        all_records = []
-        for file_content in source:
-            all_records.extend(adapter.adapt(file_content))
-
-        df = pd.DataFrame(all_records)
-        if df.empty:
-            raise ValueError("No records found in the input data.")
-
-        # 2. Drop duplicates
+        # 3. Drop duplicates
         if group_by:
             missing = [k for k in group_by if k not in df.columns]
             if missing:
                 group_by = [k for k in group_by if k in df.columns]
 
                 if not group_by:
-                    ctx.logger.warning("Group by key %s not found. No valid keys remain.", missing)
+                    ctx.logger.warning(
+                        "Group by key %s not found. Defaulting to full-row deduplication.",
+                        missing
+                    )
                     df = df.drop_duplicates()
                 else:
-                    ctx.logger.warning("Group by keys %s not found. Proceeding with valid keys.", missing)
+                    ctx.logger.warning(
+                        "Group by keys %s not found. Proceeding with valid keys.",
+                        missing
+                    )
                     df = df.drop_duplicates(subset=group_by)
             else:
                 df = df.drop_duplicates(subset=group_by)
 
-        # 3. Serialize back to original format
-        final_records = df.to_dict(orient="records")
-        record_count = len(final_records)
+        # 4. Serialize back to original format
+        surviving_indices = df.index.tolist()
+        record_count = len(surviving_indices)
 
         ctx.logger.info("Deduplicated %s -> %s records.",
-                        format(len(all_records), ","), format(record_count, ","))
+                        format(len(parsed_records), ","), format(record_count, ","))
 
-        merged_content = adapter.serialize(final_records, extension=ext)
+        merged_content = adapter.serialize(
+            [parsed_records[i] for i in surviving_indices],
+            extension=ext,
+        )
 
-    # 3. Materialize the merged data and log the count of surviving records
+    # 5. Materialize the merged data and log the count of surviving records
     ctx.materialize_content(
         output_key="merged_data",
         content=merged_content,
@@ -162,5 +174,6 @@ def merge_handler(
             "group_by": group_by,
             "original_count": len(source),
             "count": record_count,
+            "deduplicated": deduplicate,
         },
     )
