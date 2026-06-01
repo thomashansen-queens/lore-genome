@@ -22,7 +22,7 @@ class SpaghettiAdapter(TabularAdapter):
 
 def test_spaghetti_extraction():
     """
-    Tests that TableAdapter can successfully navigate complex nested dictionaries 
+    Tests that TabularAdapter can successfully navigate complex nested dictionaries 
     using all supported schema declaration methods.
     """
     adapter = SpaghettiAdapter()

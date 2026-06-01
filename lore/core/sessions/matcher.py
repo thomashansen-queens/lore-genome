@@ -20,7 +20,7 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
     """
     Returns a list of Artifacts able to satisfy an input field's data type requirements.
     """
-    from lore.core.adapters import TableAdapter
+    from lore.core.adapters import TabularAdapter
     from lore.core.topology.traits import DataTrait
 
     if not field_extra.get("is_artifact"):
@@ -54,7 +54,7 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
         provided_types = set(artifact.resolvable_types())
 
         # 4. Does a slice of a table-like artifact match?
-        table_adapters = [a for a in art_adapters if isinstance(a, TableAdapter)]
+        table_adapters = [a for a in art_adapters if isinstance(a, TabularAdapter)]
         if table_adapters:
             # A. Dynamic schema: Columns (e.g. from arbitrary CSVs)
             provided_types.update(artifact.metadata.get("columns", []))

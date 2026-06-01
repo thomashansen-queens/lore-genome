@@ -209,7 +209,7 @@ def _materialize_single_artifact(
     if m == Materialization.ADAPTED:
         raw_data = reader.read_full()
 
-        # A. Try to provide a series (only for TableAdapters)
+        # A. Try to provide a series (only for TabularAdapters)
         for adapter in adapters:
             for accepted in accepted_data:
                 series = adapter.get_series(raw_data, accepted)
