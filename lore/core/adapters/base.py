@@ -129,7 +129,11 @@ class BaseAdapter(ABC):
         return str(records)
 
     def preview(
-        self, raw_data: Any, io_metadata: dict, config: dict | None = None, **kwargs,
+        self,
+        raw_data: Any,
+        io_metadata: dict,
+        config: dict | None = None,
+        **kwargs,
     ) -> AdapterPreview:
         """
         Packages data and IO metadata into UI-friendly format.

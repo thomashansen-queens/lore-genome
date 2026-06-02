@@ -161,6 +161,9 @@ document.addEventListener("DOMContentLoaded", function() {
             abortController.abort();
         }
         abortController = new AbortController();
+        
+        // abortController is scoped to this function call
+        const currentSignal = abortController.signal;
 
         const inputs = gatherInputs(form);
         const { name, task_id, ...taskInputs } = inputs;  // Separate metadata
@@ -179,7 +182,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         }
                     }
                 }),
-                signal: abortController.signal
+                signal: currentSignal
             });
             
             const data = await response.json();
@@ -197,7 +200,7 @@ document.addEventListener("DOMContentLoaded", function() {
             console.error("Preview failed:", error);
             target.innerHTML = `<div class="alert error">${error.message}</div>`;
         } finally {
-            if (!abortController.signal.aborted) {
+            if (!currentSignal.aborted) {
                 loader.style.display = 'none';
             }
         }

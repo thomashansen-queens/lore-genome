@@ -1,7 +1,7 @@
 """
-Utility functions for serving the LoRe Genome web application.
+Main functions to serve the LoRē Genome web application.
 """
-
+import logging
 import os
 import socket
 
@@ -10,6 +10,10 @@ import uvicorn
 from lore.core.runtime import Runtime
 from lore.web.api import create_app
 from lore.web.asgi import create_app_factory  # dev tool
+
+# Chatty middleware from FastAPI
+logging.getLogger("python_multipart").setLevel(logging.WARNING)
+logging.getLogger("multipart").setLevel(logging.WARNING)
 
 
 def pick_free_port(host: str, port: int | None) -> int:

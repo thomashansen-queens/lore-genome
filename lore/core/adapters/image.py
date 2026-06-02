@@ -18,7 +18,7 @@ class ImageAdapter(BaseAdapter):
     def provided_types(self) -> set[str]:
         return {"image"}
 
-    def adapt(self, raw_data: Any, config: dict | None = None) -> Any:
+    def adapt(self, raw_data: Any, config: dict | None = None, **kwargs) -> Any:
         """
         Defaults to raw payload (e.g. SVG string or PNG bytes). Subclasses can 
         override to perform transformations or optimizations (e.g. resizing)

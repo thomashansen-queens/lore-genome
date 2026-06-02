@@ -173,8 +173,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (payloadStr === lastPayloadStr) return;
         lastPayloadStr = payloadStr;
 
+        // Abort in-flight request before starting a new one
         if (abortController) abortController.abort();
         abortController = new AbortController();
+
+        // abortController is scoped to this function call
+        const currentSignal = abortController.signal;
 
         loader.style.display = 'block';
         viewerTarget.style.opacity = '0.5';
@@ -184,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(getPayload()),
-                signal: abortController.signal,
+                signal: currentSignal,
             });
 
             const result = await response.json();
@@ -202,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (error.name === 'AbortError') return;
             viewerTarget.innerHTML = `<div class="alert error">${error.message}</div>`;
         } finally {
-            if (!abortController.signal.aborted) {
+            if (!currentSignal.aborted) {
                 loader.style.display = 'none';
                 viewerTarget.style.opacity = '1';
             }
@@ -261,8 +265,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Fire off an initial fetch on page load
-    fetchData();
+    // Fire off an initial fetch on page load (commented out for now)
+    // fetchData();
 });
 </script>
 {% endif %}

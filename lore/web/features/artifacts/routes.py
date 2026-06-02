@@ -5,6 +5,7 @@ Routes for managing individual artifacts within a Session.
 import json
 from pydantic import BaseModel, Field
 import pandas as pd
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
@@ -14,6 +15,11 @@ from lore.core.io import get_reader_for
 from lore.core.utils import filter_and_sort
 from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.forms import get_form_str
+
+if TYPE_CHECKING:
+    from lore.core.artifacts.models import Artifact
+    from lore.core.adapters.base import BaseAdapter
+
 
 _DEFAULT_EXPLORE_DISPLAY_LIMIT = 1000
 
@@ -167,7 +173,9 @@ async def view_artifact_explore(
     ctx: PageContext = Depends(),
 ):
     """
-    View the adapted data for an Artifact
+    View the adapted data for an Artifact. For tabular data, this is just a shell:
+    the first 100 lines by default. The frontend can then make AJAX calls to 
+    explore the full data with sorting and filtering as needed.
     """
     artifact = s.get_artifact(artifact_id)
     if not artifact:
@@ -191,7 +199,9 @@ async def view_artifact_explore(
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
     data, io_metadata = reader.preview(100)
-    preview_result = adapter.preview(data, io_metadata)
+    config = {**(artifact.metadata or {}), "ext": artifact.extension}
+
+    preview_result = adapter.preview(data, io_metadata, config=config)
 
     ctx.generate_breadcrumbs({
         s.id: s.name,
@@ -214,7 +224,12 @@ async def view_artifact_explore(
 
 # --- Explore AJAX ---
 
-def _get_explore_df(s: ReadOnlySession, artifact, adapter) -> pd.DataFrame:
+def _get_explore_df(
+    s: ReadOnlySession,
+    artifact: "Artifact",
+    adapter: "BaseAdapter",
+    config: dict | None = None,
+) -> pd.DataFrame:
     """
     Loads, adapts, and (importantly) caches the full DataFrame for an artifact.
     Uses a private function to leverage LoRe's runtime caching system.
@@ -223,13 +238,19 @@ def _get_explore_df(s: ReadOnlySession, artifact, adapter) -> pd.DataFrame:
     reader = get_reader_for(path)
 
     def _compute():
-        records = adapter.adapt(reader.read_full())
+        base_config = {**(artifact.metadata or {}), "ext": artifact.extension}
+        final_config = {**base_config, **(config or {})}
+
+        records = adapter.adapt(reader.read_full(), config=final_config)
+
         df = pd.DataFrame(records)
         if not df.empty:
-            df = df.apply(lambda col: pd.to_numeric(col, errors="coerce")
+            df = df.apply(
+                lambda col: pd.to_numeric(col, errors="coerce")
                 .fillna(col)
                 .infer_objects()
-                if col.dtype == object else col)
+                if col.dtype == object else col
+            )
             df = df.convert_dtypes()
         return df
 
@@ -281,7 +302,7 @@ def api_explore_data(
         reader = get_reader_for(path)
 
         # 1. Load and adapt the full dataset
-        df = _get_explore_df(s, artifact, adapter)
+        df = _get_explore_df(s, artifact, adapter, config=payload.adapter_config.model_dump())
         total_rows = len(df)
 
         # 2. 3-tier filtering
@@ -373,7 +394,7 @@ def api_explore_export(
     view_state = payload.adapter_config.view_state
 
     # 1. Fetch (probably from cache)
-    df = _get_explore_df(s, artifact, adapter)
+    df = _get_explore_df(s, artifact, adapter, config=payload.adapter_config.model_dump())
 
     # 2. Filter and sort
     try:
