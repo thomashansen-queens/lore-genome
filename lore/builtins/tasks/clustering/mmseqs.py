@@ -273,6 +273,10 @@ def mmseqs2_handler(
         source_path=tsv_path,
         output_key="cluster_tsv",
         data_type="mmseqs2_cluster_map",
+        metadata={
+            "header": False,
+            "fieldnames": ["cluster_rep", "cluster_member"],
+        }
     )
 
     if keep_representative_fasta:

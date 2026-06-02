@@ -185,7 +185,7 @@ def _filter_stream(
     "filter.query_streamed",
     inputs=QueryInputs,
     outputs=QueryOutputs,
-    name="Filter by query",
+    name="Filter by query (streamed)",
     category="Data processing",
     icon="🔍︎",
     live_preview=False,  # TODO: Can we/should we preview streamed tasks?
@@ -198,7 +198,8 @@ def filter_query_handler(
 ):
     """
     Non-desctructively filter a list of records using a pandas query string on
-    the adapted DataFrame.
+    the adapted DataFrame. This is a streaming version of the task for very
+    large files and/or low-memory systems.
     """
     # 1. Get adapter and input artifact metadata
     adapter = ctx.get_input_adapter("source")

@@ -58,10 +58,10 @@ def _load_dataframe(
     parsed_records: list[dict],
     adapter: lore.TabularAdapter,
     cache_key: str,
-    ext: str,
+    config: dict,
 ) -> pd.DataFrame:
     """Helper function to allow use of memoization for loading."""
-    adapted_records = adapter.adapt(parsed_records, extension=ext)
+    adapted_records = adapter.adapt(parsed_records, config=config)
     df = pd.DataFrame(adapted_records).reset_index(drop=True)
     return df
 
@@ -105,17 +105,19 @@ def filter_query_handler(
     if not isinstance(adapter, lore.TabularAdapter):
         raise ValueError(f"The adapter for the input Artifact(s) must be a TabularAdapter, but got {type(adapter)}.")
 
+    # Because this task loads as RAW, we manually package config from metadata
     source_artifacts = ctx.input_artifacts.get("source", [])
     ext = source_artifacts[0].extension if source_artifacts else "json"
+    config = {**(source_artifacts[0].metadata or {}), "ext": ext}
 
     # 2. Parsed the raw data into records
-    parsed_records = adapter.parse(source, extension=ext)
+    parsed_records = adapter.parse(source, config=config)
 
     # 3. Adapt to DataFrame
     artifact_ids = "_".join(sorted(a.id for a in source_artifacts))
     cache_key = f"{adapter.name}_{artifact_ids}"
 
-    df = _load_dataframe(ctx, parsed_records, adapter, cache_key, ext)
+    df = _load_dataframe(ctx, parsed_records, adapter, cache_key, config)
 
     if df.empty:
         raise ValueError("The adapted DataFrame is empty. Check the input data and adapter schema.")
@@ -168,7 +170,7 @@ def filter_query_handler(
 
     # 5. Map back to parsed (but unadapted) data for preservation of provenance
     final_records = [parsed_records[i] for i in surviving_indices]
-    content = adapter.serialize(final_records, extension=ext)
+    content = adapter.serialize(final_records, config=config)
 
     # 6. Materialize
     ctx.materialize_content(

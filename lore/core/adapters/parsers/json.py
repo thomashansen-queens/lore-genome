@@ -38,7 +38,7 @@ class JsonAdapter(TabularAdapter):
                 raw_data = json.loads(raw_data)
 
         # 3. Already a list of dicts, no special handling
-        return super().adapt(raw_data, kwconfig)
+        return super().parse(raw_data, kwconfig)
 
     def parse_stream(
         self,

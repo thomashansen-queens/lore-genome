@@ -28,7 +28,11 @@ class CsvAdapter(TabularAdapter):
         kwargs = {}
         # Default delimiter fallback based on extension
         kwargs["delimiter"] = "\t" if extension in ("tsv", "txt") else ","
-        
+
+        # Alias for columns -> fieldnames (will be overridden by explicit fieldnames if both)
+        if "columns" in config:
+            kwargs["fieldnames"] = config.get("columns")
+
         # Override with explicit config kwargs
         for key in self.CSV_KWARGS:
             if key in config:
@@ -46,7 +50,7 @@ class CsvAdapter(TabularAdapter):
 
         # 1a. Monolithic file reads
         if isinstance(raw_data, bytes):
-            raw_data = raw_data.decode("utf-8")
+            raw_data = raw_data.decode("utf-8-sig")
         if isinstance(raw_data, str):
             raw_data = raw_data.strip().splitlines()
 
@@ -57,6 +61,12 @@ class CsvAdapter(TabularAdapter):
         # 2. Instructions from config to DictReader
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
+
+        # 3. Header handling
+        if kwconfig.get("header", True) in (False, None) and "fieldnames" not in csv_kwargs:
+            # Peek at first row to count columns
+            first_row = next(csv.reader([raw_data[0]], **csv_kwargs))
+            csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
 
         dict_reader = csv.DictReader(raw_data, **csv_kwargs)
         return list(dict_reader)
@@ -70,9 +80,23 @@ class CsvAdapter(TabularAdapter):
         """
         Yields parsed CSV records from an input text stream
         """
+        # TODO: Should I decide with utf-8-sig here as well to handle BOM in streaming cases?
+        # It would add complexity to already-expensive streaming handling
         kwconfig = self._prepare_config(config, **kwargs)
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
+
+        # Header handling
+        if kwconfig.get("header", True) in (False, None) and "fieldnames" not in csv_kwargs:
+            import itertools
+            stream_peek, raw_stream = itertools.tee(raw_stream)
+            try:
+                first_line = next(stream_peek)
+                first_row = next(csv.reader([first_line], **csv_kwargs))
+                csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
+            except StopIteration:
+                # Empty stream, return without yielding
+                return
 
         dict_reader = csv.DictReader(raw_stream, **csv_kwargs)
         yield from dict_reader

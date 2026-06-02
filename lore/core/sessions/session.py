@@ -438,7 +438,11 @@ class Session(AbstractContextManager):
         # 1. Perform file operations
         disk_stats = self.artifacts.ingest(source, name=name, transfer_mode=transfer_mode)
 
-        # 2. Build state model
+        # 2. Merge metadata
+        default_metadata = disk_stats.get("metadata", {})
+        final_metadata = {**default_metadata, **(metadata or {})}
+
+        # 3. Build state model
         artifact = Artifact(
             id=disk_stats["id"],
             name=name or Path(source).stem,
@@ -450,7 +454,7 @@ class Session(AbstractContextManager):
             created_by_output_key=created_by_output_key,
             parent_artifact_ids=parent_artifact_ids or [],
             created_at=disk_stats["created_at"],
-            metadata=metadata or {},
+            metadata=final_metadata,
         )
 
         self.manifest.add_artifact(artifact)

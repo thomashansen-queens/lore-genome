@@ -75,7 +75,7 @@ async def api_ingest_artifacts(
             with tempfile.NamedTemporaryFile(delete=False, suffix=f"{original_ext}") as tmp_out:
                 shutil.copyfileobj(upload.file, tmp_out)
                 tmp_path = Path(tmp_out.name)
-            
+
             try:
                 s.register_artifact(
                     source=tmp_path,
@@ -455,3 +455,29 @@ def delete_artifact_action(
         message="Artifact deleted",
         message_type="success",
     )
+
+# --- HTMX routes (just header toggle for now) ---
+
+@router.post("/{artifact_id}/toggle-header")
+async def toggle_artifact_header(
+    artifact_id: str,
+    s: ActiveSession,
+    has_header: str = Form(default="false"),
+):
+    """HTMX endpoint to toggle the header on/off of a tabular artifact"""
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        raise HTTPException(404, "Artifact not found")
+
+    # 1. Determine new header state
+    toggle_to = has_header.lower() == "true"
+
+    # 2. Set new header
+    if artifact.metadata is None:
+        artifact.metadata = {}
+
+    artifact.metadata["header"] = toggle_to
+    s.mark_dirty()
+
+    # 3. 204 'No Content' response since no change is needed on the page
+    return Response(status_code=204)

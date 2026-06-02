@@ -56,14 +56,6 @@ class BaseAdapter(ABC):
             requirement in self.accepted_types
         )
 
-    def get_series(self, raw_data: Any, series_type: str) -> list[Any] | None:
-        """
-        Extracts a 1D series of data (e.g. a column) if such slicing is supported.
-        Returns None if the adapter doesn't support this type of extraction or if
-        the series_type doesn't exist in the data. Override in subclasses.
-        """
-        return None
-
     # --- Config helper ---
 
     def _prepare_config(self, config: dict | None = None, **kwargs) -> dict:
@@ -117,6 +109,20 @@ class BaseAdapter(ABC):
         return (self.adapt_record(r, config, **kwargs) for r in raw_stream)
 
     # --- Render and output methods ---
+
+    def get_series(
+        self,
+        raw_data: Any,
+        series_type: str,
+        config: dict | None = None,
+        **kwargs,
+    ) -> list[Any] | None:
+        """
+        Extracts a 1D series of data (e.g. a column) if such slicing is supported.
+        Returns None if the adapter doesn't support this type of extraction or if
+        the series_type doesn't exist in the data. Override in subclasses.
+        """
+        return None
 
     def serialize(self, records: Any, config: dict | None = None, **kwargs) -> str:
         """Turns adapted data into raw string format. Override as needed."""
