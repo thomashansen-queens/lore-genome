@@ -77,7 +77,11 @@
             </label>
             
             <div id="row-counter" class="badge small muted">
-                {{ metadata.get('total_rows', data | length) }} rows
+                {% if metadata.get('total_rows') is not none %}
+                    {{ metadata.get('total_rows') }} rows
+                {% else %}
+                    {{ data | length }} rows (preview)
+                {% endif %}
             </div>
         </div>
         {% endif %}

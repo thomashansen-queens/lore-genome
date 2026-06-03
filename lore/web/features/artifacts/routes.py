@@ -176,6 +176,13 @@ async def view_artifact_explore(
     View the adapted data for an Artifact. For tabular data, this is just a shell:
     the first 100 lines by default. The frontend can then make AJAX calls to 
     explore the full data with sorting and filtering as needed.
+
+    Metadata used in the explore view:
+      file_eof_reached (bool): Indicates if the preview reached the end of the file
+      total_rows (int | None): Total number of rows in dataset (None if unknown/streamed)
+      is_truncated (bool): If the preview is limited to avoid crashing the browser's DOM
+      columns (list[str]): The keys available in the adapted records (for tabular data)
+      header (bool): Whether the first row of the dataset is a header (if applicable)
     """
     artifact = s.get_artifact(artifact_id)
     if not artifact:
@@ -199,8 +206,8 @@ async def view_artifact_explore(
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
     data, io_metadata = reader.preview(100)
-    config = {**(artifact.metadata or {}), "ext": artifact.extension}
 
+    config = {**(artifact.metadata or {}), "ext": artifact.extension}
     preview_result = adapter.preview(data, io_metadata, config=config)
 
     ctx.generate_breadcrumbs({

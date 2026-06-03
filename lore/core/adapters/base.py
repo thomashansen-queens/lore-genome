@@ -137,6 +137,7 @@ class BaseAdapter(ABC):
     ) -> AdapterPreview:
         """
         Packages data and IO metadata into UI-friendly format.
+        io_metadata comes from the Reader (io layer)
         """
         adapted_data = self.adapt(raw_data, config, **kwargs)
 
@@ -147,7 +148,8 @@ class BaseAdapter(ABC):
         }
 
         if final_metadata.get("total_rows") is None and isinstance(adapted_data, list):
-            final_metadata["total_rows"] = len(adapted_data)
+            if io_metadata.get("file_eof_reached", True):
+                final_metadata["total_rows"] = len(adapted_data)
 
         return AdapterPreview(
             data=adapted_data,
