@@ -87,5 +87,6 @@ def filter_and_sort(
             df[sort_by] = pd.to_numeric(df[sort_by])
         except:
             pass
-        df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last")
+        # Use stable (mergesort) to preserve old sort order when breaking ties
+        df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last", kind="stable")
     return df
