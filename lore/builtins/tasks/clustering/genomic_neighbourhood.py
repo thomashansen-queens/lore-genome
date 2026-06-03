@@ -4,7 +4,7 @@ Analyzes syntenic neighbourhood of a given gene across a set of genome.
 import pandas as pd
 from typing import Any, Literal
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 from lore import viz as v
 
 

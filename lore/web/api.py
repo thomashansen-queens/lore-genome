@@ -1,5 +1,5 @@
 """
-FastAPI app instructions and entry point for LoRe Genome web UI.
+FastAPI app instructions and entry point for LoRē Genome web UI.
 """
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(rt: Runtime) -> FastAPI:
-    """Create and configure the FastAPI app for a LoRe Genome Runtime."""
+    """Create and configure the FastAPI app for a LoRē Genome Runtime."""
     app = FastAPI(title="LoRē Genome", lifespan=lifespan)
     app.state.rt = rt
     app.mount("/static", StaticFiles(

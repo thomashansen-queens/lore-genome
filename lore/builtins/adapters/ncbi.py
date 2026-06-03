@@ -2,11 +2,11 @@
 Adapter definition for NCBI data.
 """
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 @lore.adapter()
-class NcbiGenomeReportsAdapter(lore.TableAdapter):
+class NcbiGenomeReportsAdapter(lore.JsonAdapter):
     """
     Adapter for NCBI Genome Reports JSON data. Transforms the nested, complex JSON
     into a flat list of dictionaries with consistent keys for easier use in LoRe.
@@ -68,7 +68,7 @@ class NcbiGenomeReportsAdapter(lore.TableAdapter):
 
 
 @lore.adapter()
-class NcbiGenomeAnnotationsAdapter(lore.TableAdapter):
+class NcbiGenomeAnnotationsAdapter(lore.JsonAdapter):
     """
     Adapter for NCBI Genome Reports JSON data. Transforms the nested, complex JSON
     into a flat list of dictionaries with consistent keys for easier use in LoRe.

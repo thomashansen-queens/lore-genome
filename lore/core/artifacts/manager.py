@@ -34,6 +34,10 @@ class ArtifactManager:
 
     def _generate_path(self, artifact_id: str, name: str, extension: str) -> Path:
         """Generates a filesystem path for an artifact based on its ID and name."""
+        # Allow double-extensions like .csv.gz, but avoid doubling all
+        if name.lower().endswith(f".{extension.lower()}"):
+            name = name[: -len(extension) - 1]
+
         safe_name = slugify(name)
         id_prefix = artifact_id[:8]
         filename = f"{id_prefix}_{safe_name}.{extension}"
@@ -89,6 +93,12 @@ class ArtifactManager:
         clean_path = urlparse(uri).path
         filename_part = posixpath.basename(clean_path)
         ext = filename_part.split(".")[-1] if "." in filename_part else "data"
+
+        default_metadata = {}
+        if ext in ("csv", "tsv", "txt"):
+            # Assume headers present unless otherwise indicated in metadata
+            default_metadata["header"] = True
+
         return {
             "id": artifact_id,
             "hash": artifact_hash,
@@ -96,6 +106,7 @@ class ArtifactManager:
             "relative_path": uri,  # Store URI in path for resolution
             "extension": ext,
             "created_at": datetime.now(timezone.utc),
+            "metadata": default_metadata,
         }
 
     def _ingest_local_symlink(self, source_path: Path, name: str | None) -> dict[str, Any]:
@@ -153,9 +164,14 @@ class ArtifactManager:
         return self._build_stats_dict(artifact_id, artifact_hash, target_path, ext)
 
     def _build_stats_dict(
-        self, artifact_id: str, artifact_hash: str, target_path: Path, ext: str
+        self, artifact_id: str, artifact_hash: str, target_path: Path, ext: str,
     ) -> dict[str, Any]:
         """Populate Artifact metadata."""
+        default_metadata = {}
+        if ext in ("csv", "tsv", "txt"):
+            # Assume headers present unless otherwise indicated in metadata
+            default_metadata["header"] = True
+
         return {
             "id": artifact_id,
             "hash": artifact_hash,
@@ -166,6 +182,7 @@ class ArtifactManager:
                 else target_path.resolve()
             ),
             "extension": ext,
+            "metadata": default_metadata,
             "created_at": datetime.fromtimestamp(target_path.stat().st_mtime, tz=timezone.utc),
         }
 

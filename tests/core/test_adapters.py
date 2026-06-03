@@ -1,11 +1,11 @@
 """
-Tests for the TableAdapter class in lore.core.adapters
+Tests for the TabularAdapter class in lore.core.adapters
 """
-from lore.core.adapters import AdapterRegistry, TableAdapter
+from lore.core.adapters import AdapterRegistry, TabularAdapter
 
 # --- Adapter data transformation tests ---
 
-class SpaghettiAdapter(TableAdapter):
+class SpaghettiAdapter(TabularAdapter):
     """A dummy adapter specifically built to test the extraction engine."""
     @property
     def schema(self):
@@ -22,7 +22,7 @@ class SpaghettiAdapter(TableAdapter):
 
 def test_spaghetti_extraction():
     """
-    Tests that TableAdapter can successfully navigate complex nested dictionaries 
+    Tests that TabularAdapter can successfully navigate complex nested dictionaries 
     using all supported schema declaration methods.
     """
     adapter = SpaghettiAdapter()
@@ -97,16 +97,16 @@ def test_adapter_registry_resolution(populated_registry: AdapterRegistry):
     registry = populated_registry
 
     # Test that a highly specific adapter is chosen when both type and format match
-    ncbi_adapters = registry.get_adapters_by_type("ncbi_genome_reports", "json")
+    ncbi_adapters = registry.get_for_type("ncbi_genome_reports", "json")
 
     # Test that a format-specific adapter is chosen when type is generic
-    generic_adapters = registry.get_adapters_by_type("some_generic_type", "json")
+    generic_adapters = registry.get_for_type("some_generic_type", "json")
 
     # Test that a semantic type-specific adapter is chosen even if format is generic
-    fasta_adapters = registry.get_adapters_by_type("protein_fasta", "some_fasta_format")
+    fasta_adapters = registry.get_for_type("protein_fasta", "some_fasta_format")
 
     # Test that no adapter is found for unsupported types/formats
-    unsupported_adapters = registry.get_adapters_by_type("unsupported_type", "unsupported_format")
+    unsupported_adapters = registry.get_for_type("unsupported_type", "unsupported_format")
 
     assert len(ncbi_adapters) == 2
     assert len(generic_adapters) == 1

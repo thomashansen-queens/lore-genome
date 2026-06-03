@@ -12,7 +12,7 @@ from time import sleep
 import logging
 import httpx
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 NCBI_DATASETS_BASE_URL = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha"

@@ -8,8 +8,8 @@ import logging
 
 import httpx
 
-import lore.dsl as lore
-from lore.builtins.tasks.ncbi.client import ncbi_client, retry
+import lore
+from .client import ncbi_client, retry
 
 
 # --- Enums for Dropdowns (copied from NCBI Open API) ---
@@ -50,27 +50,11 @@ class TypeMaterial(str, Enum):
 
 # --- Genome assembly reports ---
 
-class NcbiGenomeReportsInputs:
-    """Inputs for fetching genome reports from NCBI."""
-    taxons = lore.ValueInput(
-        list[str],
-        description="NCBI Taxonomy ID or name (common or scientific) at any rank",
-        label="Taxa",
-        examples=["Vibrio cholerae", "28901"],
-    )
-    search_terms = lore.ValueInput(
-        list[str] | None,
-        default=None,
-        description="Search term groups. Inner lists are AND, outer list is OR. Looks in all fields.",
-        label="Search Terms",
-        examples=["Canada AND hot springs", "nanopore"],
-    )
-    fetch_limit = lore.ValueInput(
-        int | None,
-        default=None,
-        description="Maximum number of genome reports to fetch. Stop fetching after this number. If None, fetch all available.",
-        label="Fetch limit",
-    )
+class NcbiFilterOptions:
+    """
+    Shared filter options for NCBI genome reports.
+    Used here and by the post-hoc filter task to ensure consistency.
+    """
     # Boolean Toggles (UI: Checkboxes)
     filters_reference_only = lore.ValueInput(bool, label="Reference only", default=False, description="If true, only return reference and representative (GCF_ and GCA_) genome assemblies.")
     filters_has_annotation = lore.ValueInput(bool, label="Has annotation", default=True, description="Return only annotated genome assemblies")
@@ -127,6 +111,29 @@ class NcbiGenomeReportsInputs:
         default=None,
         label="Released before",
         description="Only return assemblies released before this date",
+    )
+
+
+class NcbiGenomeReportsInputs(NcbiFilterOptions):
+    """Inputs for fetching genome reports from NCBI."""
+    taxons = lore.ValueInput(
+        list[str],
+        description="NCBI Taxonomy ID or name (common or scientific) at any rank",
+        label="Taxa",
+        examples=["Vibrio cholerae", "28901"],
+    )
+    search_terms = lore.ValueInput(
+        list[str] | None,
+        default=None,
+        description="Search term groups. Inner lists are AND, outer list is OR. Looks in all fields.",
+        label="Search Terms",
+        examples=["Canada AND hot springs", "nanopore"],
+    )
+    fetch_limit = lore.ValueInput(
+        int | None,
+        default=None,
+        description="Maximum number of genome reports to fetch. Stop fetching after this number. If None, fetch all available.",
+        label="Fetch limit",
     )
 
 

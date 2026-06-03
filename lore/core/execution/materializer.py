@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, get_origin
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
-from lore.core.adapters import TableAdapter
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.io import get_reader_for
 from lore.core.tasks import Materialization, Cardinality, TaskDefinition
@@ -193,41 +192,33 @@ def _materialize_single_artifact(
     if m == Materialization.RAW_STREAM:
         return reader.stream()
 
-    # 4. Adapt the data for the handler
+    # 4. Adapt the data for the handler - metadata is passed as config
     adapters = artifact.get_adapters()
     adapter = adapters[0] if adapters else None
+    config = {**(artifact.metadata or {}), "ext": artifact.extension}
 
     if m == Materialization.ADAPTED_STREAM:
         raw_generator = reader.stream()
-        return adapter.adapt_stream(raw_generator) if adapter else raw_generator
+        return adapter.adapt_stream(raw_generator, config=config) if adapter else raw_generator
 
     if m == Materialization.PREVIEW:
         raw_data, metadata = reader.preview(limit=100)
         if adapter:
-            return adapter.adapt(raw_data)
+            return adapter.adapt(raw_data, config=config)
         return raw_data
 
     if m == Materialization.ADAPTED:
         raw_data = reader.read_full()
 
-        # A. Try to provide a series (only for TableAdapters)
+        # A. Try to provide a series (only for TabularAdapters)
         for adapter in adapters:
-            adapted_data = adapter.adapt(raw_data)
-            if not adapted_data:
-                continue
-
-            if (
-                isinstance(adapter, TableAdapter)
-                and isinstance(adapted_data, list)
-                and isinstance(adapted_data[0], dict)
-            ):
-                actual_columns = adapted_data[0].keys()  # dynamically generated
-
-                for accepted in accepted_data:
-                    if accepted in actual_columns:
-                        return [row[accepted] for row in adapted_data if accepted in row]
+            for accepted in accepted_data:
+                series = adapter.get_series(raw_data, accepted, config=config)
+                if series is not None:
+                    return series
 
             # B. If no series, try adapting the entire payload
+            adapted_data = adapter.adapt(raw_data, config=config)
             return adapted_data
 
         # C. Fallback to raw content if no adapters worked

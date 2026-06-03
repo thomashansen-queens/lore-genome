@@ -245,7 +245,7 @@ def find_valid_upstream_tasks(
             if is_target_artifact:
                 out_adapters = []
                 if isinstance(data_type, str):
-                    out_adapters = adapter_registry.get_adapters_by_type(
+                    out_adapters = adapter_registry.get_for_type(
                         data_type=data_type,
                         extension=source_extra.get("format", "*"),
                     )

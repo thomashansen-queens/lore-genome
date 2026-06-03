@@ -488,10 +488,9 @@ def build_runtime(
     # 6. Load plugins
     from lore.core.plugins import discover_plugins
 
-    built_in_tasks_dir = Path(__file__).parent.parent / "builtins" / "tasks"
-    discover_plugins(built_in_tasks_dir)
-    built_in_adapters_dir = Path(__file__).parent.parent / "builtins" / "adapters"
-    discover_plugins(built_in_adapters_dir)
+    # Discover built-in plugins (defers to explicit imports via __init__.py)
+    import lore.builtins.tasks
+    import lore.builtins.adapters
 
     # External plugins
     user_plugins_dir = rt.settings.active_plugins_dir

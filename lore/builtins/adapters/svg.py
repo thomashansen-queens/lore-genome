@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import ClassVar
 
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 @lore.adapter()

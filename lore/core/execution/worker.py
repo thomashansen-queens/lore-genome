@@ -179,9 +179,6 @@ def run_preview_worker(
             task_def,
             ephemeral_task.inputs,
         )
-    rt.logger.info("PREVIEW BINDINGS: %s", ephemeral_task.inputs)
-    rt.logger.info("PREVIEW RESOLVED ARTIFACTS: %s", input_artifacts.keys())
-    rt.logger.info("PREVIEW KWARGS: %s", resolved_inputs.keys())
 
     # 4. Execute handler
     ctx = None

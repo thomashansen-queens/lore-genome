@@ -1,6 +1,7 @@
 """
-LoRe Genome Public DSL (Domain Specific Language).
-This is the single import point for all plugin authors writing Tasks or Adapters.
+LoRē Genome Public DSL (Domain Specific Language).
+This is the single import point for all plugin authors writing Tasks 
+or Adapters. Workflows do not have any DSL-specific imports (yet).
 """
 # 1. Task Inputs & Configuration
 from lore.core.tasks.parameters import (
@@ -30,12 +31,15 @@ from lore.core.adapters import (
     adapter_registry,
     AdapterPreview,
     BaseAdapter,
-    ImageAdapter,
-    TableAdapter,
+    # ImageAdapter,
+    TabularAdapter,
+    CsvAdapter,
+    JsonAdapter,
+    TextAdapter,
 )
 
-# 5. Aliases
-adapter = adapter_registry
+# 5. Decorators
+adapter = adapter_registry.register
 task = task_registry.register
 config = config_registry.register
 
@@ -55,26 +59,8 @@ RAW_STREAM = Materialization.RAW_STREAM
 ADAPTED_STREAM = Materialization.ADAPTED_STREAM
 PREVIEW = Materialization.PREVIEW
 
-# Widgets for GUI
-ARTIFACT_MULTI = Widget.ARTIFACT_MULTI
-ARTIFACT_SINGLE = Widget.ARTIFACT_SINGLE
-CHECKBOX = Widget.CHECKBOX
-CHECKBOX_GROUP = Widget.CHECKBOX_GROUP
-DATE = Widget.DATE
-DATETIME = Widget.DATETIME
-FLOAT = Widget.FLOAT
-INTEGER = Widget.INTEGER
-RADIO = Widget.RADIO
-SEGMENTED_RADIO = Widget.SEGMENTED_RADIO
-SELECT = Widget.SELECT
-SLIDER = Widget.SLIDER
-TEXT = Widget.TEXT
-TEXTAREA = Widget.TEXTAREA
-
-
 # Public API
 __all__ = [
-    "task_registry",
     "TaskInput",
     "ValueInput",
     "ArtifactInput",
@@ -91,16 +77,15 @@ __all__ = [
     # Adapter layer
     "AdapterPreview",
     "BaseAdapter",
-    "ImageAdapter",
-    "TableAdapter",
+    "TabularAdapter",
+    "CsvAdapter",
+    "JsonAdapter",
+    "TextAdapter",
     # Decorator aliases
     "adapter",
     "task",
     "config",
-    # Enums
+    # Input configuration Enums (cardinality/'select', materliaziation/'load_as')
     "OPTIONAL", "SINGLE", "MULTIPLE", "OPTIONAL_MULTIPLE",
     "ARTIFACT", "PATH", "RAW", "ADAPTED", "RAW_STREAM", "ADAPTED_STREAM", "PREVIEW",
-    # Widgets
-    "ARTIFACT_MULTI", "ARTIFACT_SINGLE", "CHECKBOX", "CHECKBOX_GROUP", "DATE", "DATETIME",
-    "FLOAT", "INTEGER", "RADIO", "SEGMENTED_RADIO", "SELECT", "SLIDER", "TEXT", "TEXTAREA",
 ]

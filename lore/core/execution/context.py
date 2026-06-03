@@ -5,7 +5,7 @@ Allows long-running tasks to run without holding locks on the session manifest.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import Any, Iterator, TYPE_CHECKING
 from pathlib import Path
 import logging
 import tempfile
@@ -222,6 +222,54 @@ class ExecutionContext:
                         "Failed to clean up temporary file: %s, (%s)", tmp_path, str(e)
                     )
 
+    def materialize_stream(
+        self,
+        stream: Iterator[str | bytes],
+        name: str | None = None,
+        output_key: str | None = None,
+        data_type: str | None = None,
+        extension: str = "txt",
+        metadata: dict | None = None,
+        **kwargs,
+    ) -> "Artifact":
+        """
+        Consumes an iterator stream of content, writing chunk-by-chunk to a tempfile,
+        then registers it as an Artifact. Useful for streaming very large outputs
+        without holding them in memory.
+        Note that this is an atomic write, so the full stream must be consumed before
+        the Artifact is registered and visible to other Tasks. Also, if the Task
+        fails mid-stream, the temp file will be cleaned up and no Artifact will be 
+        visible.
+        """
+        output_key = self._resolve_output_key(output_key)
+        data_type = self._resolve_data_type(output_key, data_type)
+        ext = f".{extension.lstrip('.')}"
+
+        tmp_path = self.get_temp_path(f"streamed_content_{output_key}{ext}")
+
+        with open(tmp_path, "wb") as f:
+            for chunk in stream:
+                byte_chunk = chunk.encode("utf-8") if isinstance(chunk, str) else chunk
+                f.write(byte_chunk)
+
+        try:
+            return self.materialize_file(
+                source_path=tmp_path,
+                name=name,
+                output_key=output_key,
+                data_type=data_type,
+                metadata=metadata,
+                move=True,
+                **kwargs,
+            )
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()  # Clean up temp file on failure
+                except OSError as e:
+                    self.logger.warning(
+                        "Failed to clean up temporary file: %s, (%s)", tmp_path, str(e)
+                    )
 
 # --- Preview execution for the Workbench ---
 
@@ -276,7 +324,7 @@ class PreviewContext(ExecutionContext):
         """Logic to find adapter and prepare preview payload"""
         from lore.core.adapters import adapter_registry
 
-        adapters = adapter_registry.get_adapters_by_type(data_type, source_path.suffix.lstrip("."))
+        adapters = adapter_registry.get_for_type(data_type, source_path.suffix.lstrip("."))
         adapter = adapters[0] if adapters else None
 
         if not adapter:

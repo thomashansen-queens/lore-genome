@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from lore.builtins.adapters.fasta import FastaAdapter
-import lore.dsl as lore
+import lore.core.dsl as lore
 
 
 @lore.config(key="mmseqs2", title="MMseqs2 suite")
@@ -273,6 +273,10 @@ def mmseqs2_handler(
         source_path=tsv_path,
         output_key="cluster_tsv",
         data_type="mmseqs2_cluster_map",
+        metadata={
+            "header": False,
+            "fieldnames": ["cluster_rep", "cluster_member"],
+        }
     )
 
     if keep_representative_fasta:

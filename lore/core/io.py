@@ -197,7 +197,7 @@ class TableReader(DataReader):
         metadata.update(
             {
                 "strategy_used": strategy,
-                "is_truncated": not hit_eof,
+                "file_eof_reached": hit_eof,
                 "preview_limit": limit,
                 "total_rows": total_rows,  # Will be None if streamed, which is correct!
                 "columns": columns,
@@ -251,7 +251,7 @@ class ImageReader(DataReader):
         meta.update(
             {
                 "strategy_used": "read_full",
-                "is_truncated": False,
+                "file_eof_reached": False,
             }
         )
 
@@ -297,7 +297,7 @@ class TextReader(DataReader):
         metadata.update(
             {
                 "strategy_used": "streamed lines",
-                "is_truncated": not hit_eof,
+                "file_eof_reached": hit_eof,
                 "preview_limit": limit,
                 "total_lines_previewed": len(lines),
             }
