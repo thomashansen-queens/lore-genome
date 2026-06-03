@@ -10,14 +10,22 @@
         </p>
         <p>
             {{ metadata.columns | count | default('?') }} cols ×
-            {% if metadata.get('total_rows') %}
+            {% if metadata.get('total_rows') is not none %}
                 {{ '{:,}'.format(metadata.get('total_rows')) }} rows
             {% else %}
                 <em>many</em> rows (streamed)
             {% endif %}
         </p>
-        {% if metadata.get('is_truncated') %}
-            <span class="badge small info push-right">preview</span>
+
+        {% if metadata.get('total_rows') is none %}
+            {# Peek preview #}
+            <button id="btn-load-full" class="badge secondary small push-right">
+                PREVIEW (Click to load full)
+            </button>
+        
+        {% elif metadata.get('is_truncated') %}
+            {# DOM-truncated preview #}
+            <span class="badge small info push-right">Showing top {{ '{:,}'.format(data|length) }}</span>
         {% endif %}
     </div>
 
@@ -54,10 +62,10 @@
                         {% if is_num and col_max %}
                             {% set pct = (value / col_max * 100) if col_max else 0 %}
                             {% set bar_color = "color-mix(in srgb, var(--bg-primary) 50%, transparent)" %}
-                            {% set bg = 'background: linear-gradient(90deg, ' ~ bar_color ~ ' ' ~ pct ~ '%, transparent 0);' %}
+                            {% set bg = 'background: linear-gradient(90deg, ' ~ bar_color ~ ' ' ~ pct ~ '%, transparent 0)' %}
                         {% endif %}
                         <td class="mono"
-                            style="text-align: {{ align }}; {{ bg }}">
+                            style="text-align: {{ align }}; {{ bg }};">
                             {% if value is none %}
                                 <span class="muted">null</span>
                             {% elif value is float %}

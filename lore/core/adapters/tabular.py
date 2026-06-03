@@ -3,7 +3,7 @@ Tabular data adapter.
 Used by the Materializer to convert raw file contents into structured data
 and optionally extract specific series/columns for use in tasks.
 """
-from typing import Any, Callable, Iterator, TYPE_CHECKING
+from typing import Any, Callable, ClassVar, Iterator, TYPE_CHECKING
 
 from lore.core.adapters.base import BaseAdapter
 
@@ -19,6 +19,7 @@ class TabularAdapter(BaseAdapter):
     """
     Adapts data into a list of dictionaries (records) for tabular display.
     """
+    view_mode: ClassVar[str] = "table"
 
     @property
     def provided_types(self) -> set[str]:

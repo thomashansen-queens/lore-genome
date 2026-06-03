@@ -1,5 +1,5 @@
 """
-Plugin management for LoRe Genome.
+Plugin management for LoRē Genome.
 """
 import importlib.util
 from pathlib import Path

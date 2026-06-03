@@ -5,10 +5,11 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterator
 
-from lore.core.adapters import adapter_registry, TableAdapter
+import lore
 
 
-class Mmseqs2ClusterAdapter(TableAdapter):
+@lore.adapter()
+class Mmseqs2ClusterAdapter(lore.TabularAdapter):
     """
     Adapter for parsing MMseqs2 cluster output in TSV format.
     Two columns: representative sequence and cluster member. No header row!
@@ -103,6 +104,3 @@ class Mmseqs2ClusterAdapter(TableAdapter):
                         "protein_accession": member,
                         "cluster_size": cluster_counts[rep],
                     }
-
-
-adapter_registry.register(Mmseqs2ClusterAdapter())

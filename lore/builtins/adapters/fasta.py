@@ -9,8 +9,18 @@ import numpy as np
 
 @lore.adapter()
 class FastaAdapter(lore.TabularAdapter):
-    """Adapter for FASTA files"""
-    accepted_formats = {"fasta", "faa", "fa"}
+    """
+    Adapter for NCBI-style FASTA files with three part headers:
+    >accession description sequence
+    For example:
+    ...
+
+    kwargs:
+    - line_length (int | None): Wraps sequences to a specified line length
+
+    TODO: Support other FASTA header formats (e.g. UniProt's pipe-separated)
+    """
+    accepted_formats = {"fasta", "faa", "fa", "fna", "ffn"}
     accepted_types = {"protein_fasta", "nucleotide_fasta", "fasta"}
     version = "1.0.0"
 
@@ -18,47 +28,57 @@ class FastaAdapter(lore.TabularAdapter):
     def schema(self):
         return {
             "accession": "accession",
-            "name": "name",
+            "description": "description",
             "sequence": "sequence",
         }
 
-    def adapt_record(self, raw_record: dict) -> dict:
-        """Dynamically applies the schema (including lambdas) to a parsed record."""
-        adapted = {}
-        for target_key, mapping in self.schema.items():
-            if callable(mapping):
-                # Execute the lambda function (e.g., mw_da, length)
-                try:
-                    adapted[target_key] = mapping(raw_record)
-                except Exception:
-                    adapted[target_key] = None
-            elif isinstance(mapping, str):
-                # Simple string key lookup
-                adapted[target_key] = raw_record.get(mapping)
-            else:
-                adapted[target_key] = mapping
-        return adapted
-
-    def adapt(self, raw_data: Any, config: dict | None = None) -> list[dict]:
+    def parse(self, raw_data: Any, config: dict | None = None, **kwargs) -> list[dict]:
         """
-        Handles blocks of text i.e. from a preview or a full read
+        Parses raw FASTA data into a list of records with 'accession', 'description',
+        and 'sequence' fields.
         """
-        if isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], str):
-            # Use built-in stream adapter method for DRYness
-            return list(self.adapt_stream(iter(raw_data), config))
+        if not raw_data:
+            return []
+        kwconfig = self._prepare_config(config, **kwargs)
 
+        # 1. Decode and read as lines
+        if isinstance(raw_data, bytes):
+            raw_data = raw_data.decode("utf-8-sig")
         if isinstance(raw_data, str):
-            return list(self.adapt_stream(iter(raw_data.splitlines()), config))
+            return list(self.parse_stream(iter(raw_data.splitlines()), kwconfig))
 
-        return super().adapt(raw_data, config)
+        # 2. Preview mode: Peeks at first n lines
+        if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], str):
+            return list(self.parse_stream(iter(raw_data), kwconfig))
 
-    def adapt_stream(self, raw_stream: Iterator[str], config: dict | None = None) -> Iterator[dict]:
+        # 3. Already parsed? Return as-is
+        if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], dict):
+            return raw_data
+
+        return []
+
+    # --- Lossless parser ---
+
+    def parse_stream(
+        self,
+        raw_stream: Iterator[str],
+        config: dict | None = None,
+        **kwargs,
+    ) -> Iterator[dict]:
         """
-        Memory-efficient FASTA parser. Yields one record dict at a time so
-        callers can handle files too large to load at once.
+        Memory-efficient FASTA parser. Yields one dict record at a time, with
+        'accession', 'description', and 'sequence' fields. Suitable for large
+        files.
         """
-        current: dict = {"accession": None, "name": None, "sequence": []}
+        kwconfig = self._prepare_config(config, **kwargs)
 
+        # 1. Initialize state for schema
+        # TODO: Accept other schemas and dynamically adapt?
+        current_accession = None
+        current_desc = None
+        seq_buffer = []
+
+        # 2. Stream through lines, concatenating sequence until next header or EOF
         for line in raw_stream:
             line = line.strip()
             if not line:
@@ -66,36 +86,88 @@ class FastaAdapter(lore.TabularAdapter):
 
             if line.startswith(">"):
                 # write then clear buffer
-                if current["accession"] is not None:
-                    parsed_rec = {**current, "sequence": "".join(current["sequence"])}
-                    yield self.adapt_record(parsed_rec)
+                if current_accession is not None:
+                    yield {
+                        "accession": current_accession,
+                        "description": current_desc,
+                        "sequence": "".join(seq_buffer),
+                    }
 
+                # Parse new header
                 parts = line[1:].split(None, 1)
-                if not parts:
-                    parts = ["unknown_entry"]
-                current = {
-                    "accession": parts[0],
-                    "name": parts[1] if len(parts) > 1 else None,
-                    "sequence": [],
-                }
+                current_accession = parts[0] if parts else "unknown_entry"
+                current_desc = parts[1] if len(parts) > 1 else None
+                seq_buffer = []
             else:
-                current["sequence"].append(line)
+                seq_buffer.append(line)
 
-        # dump final buffer
-        if current["accession"] is not None:
-            parsed_rec = {**current, "sequence": "".join(current["sequence"])}
-            yield self.adapt_record(parsed_rec)
+        # Yield the final buffer on EOF
+        if current_accession is not None:
+            yield {
+                "accession": current_accession,
+                "description": current_desc,
+                "sequence": "".join(seq_buffer),
+            }
 
-    def serialize(self, records: list[dict], **kwargs) -> str:
+    # --- Lossless serialization ---
+
+    def serialize(self, records: list[dict], config: dict | None = None, **kwargs) -> str:
         """Converts parsed records back into a FASTA string."""
+        if not records:
+            return ""
+
+        kwconfig = self._prepare_config(config, **kwargs)
+        line_length = kwconfig.get("line_length", 80)
+
         lines = []
         for r in records:
-            header = f">{r['accession']}"
-            if r.get("name"):
-                header += f" {r['name']}"
+            # 1. Rebuild header
+            header = f">{r.get('accession', 'unknown_entry')}"
+            description = r.get("description")
+            if description:
+                header += f" {description}"
             lines.append(header)
-            lines.append(r["sequence"])
-        return "\n".join(lines) + "\n"
+
+            # 2. Rebuild sequence with optional line wrapping
+            seq = r.get("sequence", "")
+            if line_length and line_length > 0:
+                lines.extend(seq[i:i+line_length] for i in range(0, len(seq), line_length))
+            else:
+                lines.append(seq)
+
+        return "\n".join(lines)
+
+    def serialize_stream(
+        self,
+        records_stream: Iterator[dict],
+        config: dict | None = None,
+        **kwargs,
+    ) -> Iterator[str]:
+        """
+        Memory-efficient serializer. Yields one record at a time. Suitable for
+        very large files.
+        """
+        kwconfig = self._prepare_config(config, **kwargs)
+        line_length = kwconfig.get("line_length", 80)
+
+        for r in records_stream:
+            # 1. Rebuild header
+            header = f">{r.get('accession', 'unknown_entry')}"
+            description = r.get("description")
+            if description:
+                header += f" {description}"
+
+            # 2. Rebuild sequence with optional line wrapping
+            seq = r.get("sequence", "")
+            if line_length and line_length > 0:
+                wrapped_seq = "\n".join(
+                    seq[i:i+line_length] for i in range(0, len(seq), line_length)
+                )
+            else:
+                wrapped_seq = seq
+
+            # 3. Yield the entire block at once
+            yield f"{header}\n{wrapped_seq}\n"
 
 # --- Specialized FASTA adapter for computations ---
 # This essentially applies ExPASy's ProtParam calculations on the fly to a 
@@ -113,15 +185,15 @@ _AA_MW = {
 }
 _WATER = 18.02
 
+
 def _molecular_weight(seq: str) -> float | None:
     """Calculate peptide MW, subtracting one H2O per peptide bond."""
     try:
-        return round(
-            sum(_AA_MW[aa] for aa in seq.upper() if aa in _AA_MW) - _WATER * (len(seq) - 1),
-            2,
-        )
+        hydrated_mass = sum(seq.count(aa) * mass for aa, mass in _AA_MW.items())
+        return round(hydrated_mass - _WATER * (len(seq) - 1), 2)
     except Exception:
         return None
+
 
 # Isoelectric point (pI) calculations
 _PKA_TOSELAND = {
@@ -137,47 +209,12 @@ _PKA_BJELLQVIST = {
 _ACIDIC = {"D", "E", "C", "Y"}
 _BASIC  = {"H", "K", "R"}
 
-def _net_charge_from_seq(seq: str, pH: float, pka: dict) -> float:
-    """Uses Henderson-Hasselbalch equation to calculate net charge of a peptide at a given pH."""
-    charge = 0.0
-    # N-terminus
-    charge += 1.0 / (1.0 + 10 ** (pH - pka["n"]))
-    # C-terminus
-    charge -= 1.0 / (1.0 + 10 ** (pka["c"] - pH))
-    
-    for aa in seq:
-        if aa in _ACIDIC and aa in pka:
-            charge -= 1.0 / (1.0 + 10 ** (pka[aa] - pH))
-        elif aa in _BASIC and aa in pka:
-            charge += 1.0 / (1.0 + 10 ** (pH - pka[aa]))
-    return charge
-
-def _net_charge(aa_vec: list[int], pH: float, pka: dict) -> float:
-    """
-    Uses Henderson-Hasselbalch equation to calculate net charge of a peptide at a given pH.
-    aa_vec must contain a list of the number of occurences of the amino acids in the peptide in the given order:
-    [D, E, C, Y, H, K, R]
-    """
-    charge = 0.0
-    # N-terminus
-    charge += 1.0 / (1.0 + 10 ** (pH - pka["n"]))
-    # C-terminus
-    charge -= 1.0 / (1.0 + 10 ** (pka["c"] - pH))
-    # Internal residues
-    
-    charge_vec = []
-    for aa in ['D', 'E', 'C', 'Y']:
-        charge_vec.append(-1 / (1 + 10 ** (pka[aa] - pH)))
-    for aa in ['H', 'K', 'R']:
-        charge_vec.append(1 / (1 + 10 ** (pH - pka[aa])))
-    
-    charge += np.dot(aa_vec, charge_vec)
-    return charge
-
 
 def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     """
     Binary search for the pH at which net charge is zero (isoelectric point).
+    Uses Henderson-Hasselbalch equation to calculate net charge of a peptide
+    at a given pH. Returns early on convergence.
 
     Uses values from:
     Toseland et al. 2006 (https://doi.org/10.1093/nar/gkj035) which is the most accurate pKa
@@ -187,13 +224,8 @@ def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     Bjellqvist et al. 1993 (https://doi.org/10.1002/elps.11501401163) and Bjellqvist et al. 1994 
     (https://doi.org/10.1002/elps.1150150171), which is also what ExPaSy uses.
     """
-    seq = seq.upper()
-    charged_aa_counts = {'D': 0, 'E': 0, 'C': 0, 'Y': 0, 'H': 0, 'K': 0, 'R': 0}
-    for aa in seq:
-        if aa in charged_aa_counts: 
-            charged_aa_counts[aa] += 1
-    aa_vec = list(charged_aa_counts.values())
-    
+    counts = {aa: seq.count(aa) for aa in _ACIDIC | _BASIC}
+
     lo, hi = 0.0, 14.0
 
     # Reaches 14 / 2^i precision after i iterations
@@ -202,17 +234,31 @@ def _isoelectric_point(seq: str, pka: dict = _PKA_TOSELAND) -> float | None:
     # coincidence and is not related to the pH range of 0-14.
     prev = -1
     for _ in range(14):
-        mid = (lo + hi) / 2
-        if _net_charge(aa_vec, mid, pka) > 0:
-            lo = mid
+        ph = (lo + hi) / 2.0
+
+        charge = 0.0
+        charge += 1.0 / (1.0 + 10 ** (ph - pka["n"]))  # N-terminus
+        charge -= 1.0 / (1.0 + 10 ** (pka["c"] - ph))  # C-terminus
+
+        for aa in _ACIDIC:
+            if counts[aa]:
+                charge -= counts[aa] / (1.0 + 10 ** (pka[aa] - ph))
+        for aa in _BASIC:
+            if counts[aa]:
+                charge += counts[aa] / (1.0 + 10 ** (ph - pka[aa]))
+
+        # Update binary search bounds
+        if charge > 0:
+            lo = ph
         else:
-            hi = mid
+            hi = ph
 
-        if abs(mid - prev) < 0.001:
+        # Early stop on convergence
+        if abs(ph - prev) < 0.001:
             break
-        prev = mid
+        prev = ph
 
-    return round(mid, 4)
+    return round(ph, 4)
 
 
 # Extinction coefficient calculations
@@ -223,7 +269,6 @@ def _extinction_coefficient(seq: str, reduced: bool = True) -> float | None:
     https://doi.org/10.1002/pro.5560041120
     ε280 M-1cm-1 = (W x 5500) + (Y x 1490) + (C x 125)
     """
-    seq = seq.upper()
     return round(
         seq.count("W") * 5500 + 
         seq.count("Y") * 1490 + 
@@ -247,8 +292,10 @@ def _gravy(seq: str) -> float | None:
     lower is hydrophilic.
     """
     try:
-        scores = [_KD[aa] for aa in seq.upper() if aa in _KD]
-        return round(sum(scores) / len(scores), 4) if scores else None
+        score = sum(seq.count(aa) * val for aa, val in _KD.items())
+        valid_aas = sum(seq.count(aa) for aa in _KD)  # Excludes unknown AA codes
+
+        return round(score / valid_aas, 4) if valid_aas > 0 else None
     except Exception:
         return None
 
@@ -258,9 +305,9 @@ _AROMATIC = {"F", "W", "Y"}
 
 def _aromaticity(seq: str) -> float | None:
     """Calculate the proportion of aromatic residues in a peptide sequence."""
+    aromatics = sum(seq.count(aa) for aa in _AROMATIC)
     try:
-        s = seq.upper()
-        return round(sum(1 for aa in s if aa in _AROMATIC) / len(s), 3)
+        return round(aromatics / len(seq), 3)
     except Exception:
         return None
 
@@ -286,12 +333,12 @@ class ProtParamAdapter(FastaAdapter):
     def schema(self):
         return {
             "accession": "accession",
-            "name": "name",
+            "description": "description",
             "length": lambda x: len(x["sequence"]),
-            "mw_da": lambda x: _molecular_weight(x["sequence"]),
-            "isoelectric_point": lambda x: _isoelectric_point(x["sequence"]),
-            "extinction_coefficient": lambda x: _extinction_coefficient(x["sequence"]),
-            "gravy": lambda x: _gravy(x["sequence"]),
+            "mw_da": lambda x: _molecular_weight(x["sequence"].upper()),
+            "isoelectric_point": lambda x: _isoelectric_point(x["sequence"].upper()),
+            "extinction_coefficient": lambda x: _extinction_coefficient(x["sequence"].upper()),
+            "gravy": lambda x: _gravy(x["sequence"].upper()),
             "cysteines": lambda x: x["sequence"].count("C"),
-            "aromaticity": lambda x: _aromaticity(x["sequence"]),
+            "aromaticity": lambda x: _aromaticity(x["sequence"].upper()),
         }
