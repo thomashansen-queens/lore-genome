@@ -329,6 +329,7 @@ class PreviewContext(ExecutionContext):
         """Logic to find adapter and prepare preview payload"""
         from lore.core.adapters import adapter_registry
 
+        # 1. Resolve adapter
         extension = source_path.suffix.lstrip(".") or "*"
         adapters = adapter_registry.get_for_type(data_type, extension)
         adapter = adapters[0] if adapters else None
@@ -347,11 +348,20 @@ class PreviewContext(ExecutionContext):
                 "metadata": {"strategy_used": "system_fallback"},
             }
 
+        # 2. Read raw data and apply adapter
         try:
-            reader = get_reader_for(source_path)
-            raw_data, io_metadata = reader.preview(limit=100)
-
             adapter_config = self.task.exec_config.get("adapter", {})
+            strategy = adapter_config.get("strategy", "peek")
+
+            reader = get_reader_for(source_path)
+
+            # Only load all data for a preview if explicitly requested
+            if strategy in ("full", "eager"):
+                raw_data = reader.read_full()
+                io_metadata = {"file_eof_reached": True}
+            else:
+                raw_data, io_metadata = reader.preview(limit=100)
+
             adapter_result = adapter.preview(raw_data, io_metadata, config=adapter_config)
 
             return {

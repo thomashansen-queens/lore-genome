@@ -437,15 +437,27 @@ def api_task_preview(
             actual_length = len(output_data)
             display_limit = rt.settings.explore_display_limit or _DEFAULT_EXPLORE_DISPLAY_LIMIT
 
+            # Check if we know how many total records there are
             if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
                 metadata["total_rows"] = actual_length
-            else:
-                metadata["total_rows"] = None  # unknown for streaming or lazy adapters
 
-            if actual_length > display_limit:
-                output_data = output_data[:display_limit]
-                metadata["is_truncated"] = True
+                if actual_length > display_limit:
+                    output_data = output_data[:display_limit]
+                    metadata["is_truncated"] = True
+                else:
+                    metadata["is_truncated"] = False
+
+            # If not loaded in full, did we hit EOF?
             else:
+                peek_limit = metadata.get("preview_limit", 100)
+
+                # If the output is exactly the peek limit, assume this is a truncated preview
+                if actual_length >= peek_limit:
+                    metadata["total_rows"] = None
+                else:
+                    inferred_total = metadata.get("total_rows")
+                    metadata["total_rows"] = inferred_total or None
+
                 metadata["is_truncated"] = False
 
             metadata["columns"] = list(output_data[0].keys()) if output_data else []
