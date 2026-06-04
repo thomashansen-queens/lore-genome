@@ -112,12 +112,17 @@ class ExecutionContext:
         if data_type is not None:
             return data_type
 
-        field_info = self.task_def.output_model.model_fields.get(output_key, None)
-        if field_info is not None and field_info.json_schema_extra is not None:
-            dt = field_info.json_schema_extra.get("data_type")
-            if isinstance(dt, str):
-                return dt
+        with self.runtime.open_session(self.session_id, read_only=True) as s:
+            resolved_extra = self.task.resolve_output_type(output_key, s)
 
+        data_type = resolved_extra.get("data_type")
+        if isinstance(data_type, str):
+            return data_type
+
+        self.logger.warning(
+            "Failed to resolve data type for output '%s'. Defaulting to 'unknown',",
+            output_key
+        )
         return "unknown"
 
     def _get_inferred_parents(self) -> list[str]:
@@ -324,7 +329,8 @@ class PreviewContext(ExecutionContext):
         """Logic to find adapter and prepare preview payload"""
         from lore.core.adapters import adapter_registry
 
-        adapters = adapter_registry.get_for_type(data_type, source_path.suffix.lstrip("."))
+        extension = source_path.suffix.lstrip(".") or "*"
+        adapters = adapter_registry.get_for_type(data_type, extension)
         adapter = adapters[0] if adapters else None
 
         if not adapter:

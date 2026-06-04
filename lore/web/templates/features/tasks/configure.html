@@ -106,9 +106,8 @@ document.addEventListener("DOMContentLoaded", function() {
     let abortController = null;
 
     // --- State ---
-    let currentViewState = {
-        sort_asc: true // Default to ascending sort
-    };
+    let currentViewState = { sort_asc: true };
+    let isFullPreview = false;
 
     // --- Input triggers ---
     // Prevent the form from submitting normally on "Enter"
@@ -119,6 +118,8 @@ document.addEventListener("DOMContentLoaded", function() {
         form.addEventListener('input', function() {
             // 1. Debounce: If they are sliding a slider, don't fire 100 requests. Wait until they pause for 400ms.
             currentViewState = { sort_asc: true };  // Reset view_state when inputs change
+            isFullPreview = false;  // reset to fast preview when inputs change
+
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => fetchPreview(), 400);
         });
@@ -126,7 +127,15 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // --- UI triggers: Listens to clicks in preview canvas ---
     target.addEventListener('click', function(e) {
-        const sortElement = e.target.closest('[data-workbench-action="sort"]');
+        // Check if the user has requested to load the full preview
+        if (e.target.closest('#btn-load-full')) {
+            isFullPreview = true;
+            fetchPreview();
+            return;
+        }
+
+        // Sort by column (automatically loads full preview too)
+        const sortElement = e.target.closest('[data-table-action="sort"]');
         if (sortElement) {
             const sortKey = sortElement.dataset.sortKey;
 
@@ -138,12 +147,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 currentViewState.sort_asc = true; // Ascending sort: default
             }
 
-            // Re-fetch preview with new view_state
+            isFullPreview = true;
             fetchPreview();
+            return;
         }
-
-        // TODO: Add more UI triggers here (e.g. pagination buttons, filter toggles, etc.)
-    })
+    });
 
     // --- PREVIEW ENGINE ---
     if (previewBtn) {
@@ -178,7 +186,8 @@ document.addEventListener("DOMContentLoaded", function() {
                     inputs: taskInputs,
                     exec_config: {
                         adapter: {
-                            view_state: currentViewState
+                            view_state: currentViewState,
+                            strategy: isFullPreview ? 'full' : 'peek'
                         }
                     }
                 }),

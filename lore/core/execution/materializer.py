@@ -1,6 +1,10 @@
 """
-Inputs materialization logic for Task execution. Turns Artifact references into
-real data based on TaskDefinition instructions and available Adapters.
+The LoRē magic materializer: Transforms raw input references (artifact IDs)
+into real, usable data for Task handlers based on instruction from the Task
+Definition and available Adapters. This is where the "magic" happens: no
+data transformation, ETL, or heavy lifting should be done in Task handlers.
+Slicing and dicing of data are done here according to DSL instructions and
+semantic types.
 """
 
 import io
@@ -12,7 +16,7 @@ from pydantic.fields import FieldInfo
 
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.io import get_reader_for
-from lore.core.tasks import Materialization, Cardinality, TaskDefinition
+from lore.core.tasks import AdapterStrategy, Materialization, Cardinality, TaskDefinition
 from lore.core.utils.pydantic import is_collection_type
 
 
@@ -25,6 +29,7 @@ def materialize_task_inputs(
     s: "Session",
     task_def: "TaskDefinition",
     bindings: dict[str, list[Binding]],
+    strategy: AdapterStrategy = AdapterStrategy.AUTO,
 ) -> tuple[dict, dict]:
     """
     Resolves raw input references (i.e. Artifacts) to actual data based on the
@@ -128,7 +133,13 @@ def materialize_task_inputs(
         # Prepare for auto-concatenate if multiple items are provided.
         processed_artifacts = []
         for a in artifacts:
-            item_data = _materialize_single_artifact(s, a, materialization, accepted_data)
+            item_data = _materialize_single_artifact(
+                session=s,
+                artifact=a,
+                materialization=materialization,
+                accepted_data=accepted_data,
+                strategy=strategy,
+            )
             processed_artifacts.append(item_data)
 
         # 6. Handle packaging & concatenation
@@ -161,10 +172,11 @@ def materialize_task_inputs(
 
 
 def _materialize_single_artifact(
-    s: "Session",
+    session: "Session",
     artifact: "Artifact",
     materialization: str,
     accepted_data: list[str],
+    strategy: AdapterStrategy,
 ) -> Any:
     """
     Helper to Materialize an Artifact into real data per DSL instructions
@@ -172,14 +184,37 @@ def _materialize_single_artifact(
     i.e. Series > Adapted > Raw
     """
     m = Materialization(materialization)
+    path = session.get_artifact_path(artifact.id)
+
+    # --- Adapter can override Task contract ---
+
+    if strategy == AdapterStrategy.PEEK:
+        if m in (Materialization.ADAPTED, Materialization.ADAPTED_STREAM):
+            m = Materialization.PREVIEW
+        elif m in (Materialization.RAW, Materialization.RAW_STREAM):
+            reader = get_reader_for(path)
+            raw_data, _ = reader.preview(limit=100)
+            return raw_data
+
+    elif strategy == AdapterStrategy.LAZY:
+        if m == Materialization.ADAPTED:
+            m = Materialization.ADAPTED_STREAM
+        elif m == Materialization.RAW:
+            m = Materialization.RAW_STREAM
+
+    elif strategy == AdapterStrategy.EAGER:
+        if m == Materialization.ADAPTED_STREAM:
+            m = Materialization.ADAPTED
+        elif m == Materialization.RAW_STREAM:
+            m = Materialization.RAW
+
+    # --- Post-override: Follow DSL instructions ---
 
     # 1. Pure Manifest lookup
     if m == Materialization.ARTIFACT:
         return artifact
 
     # 2. The handler will access the filepath directly
-    path = s.get_artifact_path(artifact.id)
-
     if m == Materialization.PATH:
         return str(path)
 

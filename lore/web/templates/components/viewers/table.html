@@ -19,7 +19,7 @@
 
         {% if metadata.get('total_rows') is none %}
             {# Peek preview #}
-            <button id="btn-load-full" class="badge secondary small push-right">
+            <button id="btn-load-full" class="badge primary small push-right">
                 PREVIEW (Click to load full)
             </button>
         
@@ -36,7 +36,7 @@
                     {% for key in keys %}
                         {% set is_numeric_col = key in metadata.get('numeric_maxes', {}) %}
                         <th style="cursor: pointer; text-align: {{ 'right' if is_numeric_col else 'left' }};"
-                            data-explore-action="sort"
+                            data-table-action="sort"
                             data-sort-key="{{ key }}">
                             {{ key | replace('_', ' ') | title }}
                             {% if view_state.get('sort_by') == key %}

@@ -113,8 +113,8 @@ class AdapterRegistry:
         self, data_type: str, extension: str, must_provide: "str | DataTrait" = "*",
     ) -> list[BaseAdapter]:
         """
-        Finds all adapters that can bridge the gap between this
-        physical Artifact and the Task's Logical Requirement.
+        Finds all adapters that can bridge the gap between this physical
+        Artifact and the Task's Logical Requirement.
         """
 
         matches = []

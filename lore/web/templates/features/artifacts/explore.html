@@ -77,11 +77,7 @@
             </label>
             
             <div id="row-counter" class="badge small muted">
-                {% if metadata.get('total_rows') is not none %}
-                    {{ metadata.get('total_rows') }} rows
-                {% else %}
-                    {{ data | length }} rows (preview)
-                {% endif %}
+                {# Gets updated with filtered row count by JavaScript #}
             </div>
         </div>
         {% endif %}
@@ -147,9 +143,16 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // --- Sort: click on table header ---
+    // --- Sort and load: click on table header ---
     viewerTarget.addEventListener('click', function(e) {
-        const sortEl = e.target.closest('[data-explore-action="sort"]');
+        // Check if the user has requested to load the full preview
+        if (e.target.closest('#btn-load-full')) {
+            fetchData();
+            return;
+        }
+
+        // Sort by column (automatically loads full preview too)
+        const sortEl = e.target.closest('[data-table-action="sort"]');
         if (!sortEl) return;
         const key = sortEl.dataset.sortKey;
         if (viewState.sort_by === key) {
@@ -187,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
         loader.style.display = 'block';
         viewerTarget.style.opacity = '0.5';
 
+        // Get the preview data from the server per current view state/filters
         try {
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -199,9 +203,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (result.status === 'success') {
                 viewerTarget.innerHTML = result.html;
-                rowCounter.textContent = result.row_count !== result.total_rows
-                    ? `${result.row_count} / ${result.total_rows} rows`
-                    : `${result.total_rows} rows`;
+                
+                // Show filtered row count
+                if (result.row_count !== result.total_rows) {
+                    rowCounter.textContent = `${result.row_count.toLocaleString()} / ${result.total_rows.toLocaleString()}`;
+                }
+
             } else {
                 viewerTarget.innerHTML = `<div class="alert error">${result.message}</div>`;
             }

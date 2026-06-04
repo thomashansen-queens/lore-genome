@@ -9,8 +9,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
 from lore.core.sessions import resolve_task_outputs
-from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding
-from lore.core.tasks.models import TaskConfig
+from lore.core.tasks.models import AdapterStrategy, TaskConfig
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
@@ -386,7 +385,8 @@ def api_task_preview(
     ctx: PageContext = Depends(),
 ):
     """
-    AJAX endpoint for the Workbench. Runs the task in memory and returns JSON.
+    AJAX endpoint for the Task preview. Runs the task in memory and returns
+    rendered HTML of the results.
     """
     try:
         task_def = task_registry.get(task_key)
@@ -407,9 +407,9 @@ def api_task_preview(
 
         # 3. Ephemeral preview task
         results = rt.preview_task(
-            session_id,
-            task_key,
-            inferred_bindings,
+            session_id=session_id,
+            task_key=task_key,
+            raw_inputs=inferred_bindings,
             exec_config=payload.exec_config.model_dump(mode="json"),
         )
         primary_results = results.primary_data
@@ -426,22 +426,46 @@ def api_task_preview(
         metadata = primary_result.get("metadata", {})
         adapter_name = primary_result.get("adapter_name", "unknown")
 
+        # 5. Extract strategy used to determine UI state
+        exec_config = payload.exec_config
+        strategy = exec_config.adapter.strategy
+
+        # 6. Apply DOM truncation for large datasets (avoid browser crashes)
+        # TODO: Centralize this logic? It also exists in Artifact Explore
+        _DEFAULT_EXPLORE_DISPLAY_LIMIT: int = 1000
+        if isinstance(output_data, list):
+            actual_length = len(output_data)
+            display_limit = rt.settings.explore_display_limit or _DEFAULT_EXPLORE_DISPLAY_LIMIT
+
+            if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
+                metadata["total_rows"] = actual_length
+            else:
+                metadata["total_rows"] = None  # unknown for streaming or lazy adapters
+
+            if actual_length > display_limit:
+                output_data = output_data[:display_limit]
+                metadata["is_truncated"] = True
+            else:
+                metadata["is_truncated"] = False
+
+            metadata["columns"] = list(output_data[0].keys()) if output_data else []
+
+        else:
+            # Non-tabular data (non-list)
+            metadata["is_truncated"] = False
+            metadata["columns"] = []
+
+        # 7. Prepare the HTML component
         render_context = {
             "request": ctx.request,
             "data": output_data,
             "view_state": payload.exec_config.adapter.view_state,
             "metadata": metadata,
             "adapter_name": adapter_name,
+            "view_mode": view_mode,
+            "keys": metadata.get("columns"),
         }
 
-        if view_mode == "table":
-            keys = list(output_data[0].keys()) if output_data else []
-            render_context["keys"] = keys
-
-        elif view_mode == "svg":
-            pass  # placeholder
-
-        # 5. Render the HTML on the Server
         response = templates.TemplateResponse(
             request=ctx.request,
             name=f"components/viewers/{view_mode}.html",
@@ -449,7 +473,7 @@ def api_task_preview(
         )
         html_content = bytes(response.body).decode("utf-8")
 
-        # 6. Send the compiled HTML to frontend for display
+        # 7. Send the compiled HTML to frontend for display
         return JSONResponse(content={
             "status": "success",
             "html": html_content,

@@ -421,7 +421,7 @@ class Runtime:
         )
 
     def preview_task(
-        self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None
+        self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None,
     ) -> "TaskResults":
         """
         Executes a Task in a special preview mode that does not mutate the Session or its data.

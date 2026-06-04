@@ -27,7 +27,7 @@ def staged_artifact(temp_session, dummy_jsonl_file):
 def test_materialization_path(temp_session, staged_artifact):
     """Proves PATH materialization returns a raw string."""
     result = _materialize_single_artifact(
-        s=temp_session,
+        session=temp_session,
         artifact=staged_artifact,
         materialization=Materialization.PATH,
         accepted_data=["*"],
@@ -40,7 +40,7 @@ def test_materialization_path(temp_session, staged_artifact):
 def test_materialization_raw(temp_session, staged_artifact):
     """Proves RAW materialization eagerly loads the full native Python objects."""
     result = _materialize_single_artifact(
-        s=temp_session,
+        session=temp_session,
         artifact=staged_artifact,
         materialization=Materialization.RAW,
         accepted_data=["*"],
@@ -54,7 +54,7 @@ def test_materialization_raw(temp_session, staged_artifact):
 def test_materialization_raw_stream(temp_session, staged_artifact):
     """Proves RAW_STREAM returns a lazy generator, not a list"""
     result = _materialize_single_artifact(
-        s=temp_session,
+        session=temp_session,
         artifact=staged_artifact,
         materialization=Materialization.RAW_STREAM,
         accepted_data=["*"],
@@ -70,7 +70,7 @@ def test_materialization_raw_stream(temp_session, staged_artifact):
 def test_materialization_artifact_record(temp_session, staged_artifact):
     """Proves ARTIFACT materialization bypasses IO and returns the database record."""
     result = _materialize_single_artifact(
-        s=temp_session,
+        session=temp_session,
         artifact=staged_artifact,
         materialization=Materialization.ARTIFACT,
         accepted_data=["*"],

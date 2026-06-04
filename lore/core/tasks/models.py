@@ -165,14 +165,23 @@ class TaskIntegrity(StrEnum):
     UNKNOWN = "unknown"
 
 
+class AdapterStrategy(StrEnum):
+    """Defines how the materializer and adapter should load the data for a task."""
+    AUTO = "auto"
+    LAZY = "lazy"  # Force streaming if possible (O(1) memory)
+    EAGER = "eager"  # Force full loading into memory
+    PEEK = "peek"  # UI mode: Fast, 100-row limit
+    FULL = "full"  # UI mode: full execution preview (may be slow)
+
+
 class AdapterConfig(BaseModel):
     """Task config for the Adapter and UI presentation layer"""
 
     view_state: dict[str, Any] = Field(
         default_factory=dict, description="UI view state (e.g. {'sort_by': 'score'})"
     )
-    strategy: str = Field(
-        default="auto",
+    strategy: AdapterStrategy = Field(
+        default=AdapterStrategy.AUTO,
         description="How the Adapter should load the data for the Task. 'auto' streams if possible, 'lazy' forces streaming, 'eager' loads everything",
     )
     # FUTURE: UI settings can go here too (e.g. whether to show a table with pagination, or a simple list of results)

@@ -10,7 +10,7 @@ from uuid import uuid4
 import logging
 import sys
 
-from lore.core.tasks import task_registry, TaskResults, Task, TaskStatus
+from lore.core.tasks import AdapterStrategy, task_registry, TaskResults, Task, TaskStatus
 from lore.core.execution.context import ExecutionContext, PreviewContext
 from lore.core.execution.materializer import materialize_task_inputs
 
@@ -155,10 +155,7 @@ def run_preview_worker(
     if not task_def.live_preview:
         rt.logger.info("Generating preview for '%s'", task_key)
 
-    # 1. Auto-wrap primitives into LiteralBindings for ergonomics
-    # binding_inputs = wrap_in_bindings(raw_inputs)
-
-    # 2. Create ephemeral Task
+    # 1. Create ephemeral Task
     ephemeral_task = Task(
         id=f"preview_{uuid4().hex[:8]}",
         registry_key=task_key,
@@ -167,20 +164,24 @@ def run_preview_worker(
     )
     ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
 
+    adapter_config = ephemeral_task.exec_config.get("adapter", {})
+    strategy = adapter_config.get("strategy", AdapterStrategy.AUTO)
+
     try:
         ephemeral_task.validate_and_serialize()
     except Exception as e:
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
-    # 3. Resolve inputs
+    # 2. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
         resolved_inputs, input_artifacts = materialize_task_inputs(
-            s,
-            task_def,
-            ephemeral_task.inputs,
+            s=s,
+            task_def=task_def,
+            bindings=ephemeral_task.inputs,
+            strategy=strategy,
         )
 
-    # 4. Execute handler
+    # 3. Execute handler
     ctx = None
     try:
         ctx = PreviewContext(
