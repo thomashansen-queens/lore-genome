@@ -11,6 +11,7 @@ To define an adapter, use the decorator provided by the registry:
         ...
 """
 from .base import BaseAdapter, AdapterPreview
+from .svg import SvgAdapter
 from .tabular import TabularAdapter
 from .registry import AdapterRegistry
 from .parsers.csv import CsvAdapter
@@ -22,7 +23,9 @@ adapter_registry = AdapterRegistry()
 
 adapter_registry.add(CsvAdapter())
 adapter_registry.add(JsonAdapter())
+adapter_registry.add(SvgAdapter())
 adapter_registry.add(TextAdapter())
+
 
 __all__ = [
     # Adapter classes
@@ -34,7 +37,8 @@ __all__ = [
     "AdapterRegistry",
     "adapter_registry",
     # Built-in base type adapters
-    "JsonAdapter",
-    "TextAdapter",
     "CsvAdapter",
+    "JsonAdapter",
+    "SvgAdapter",
+    "TextAdapter",
 ]
