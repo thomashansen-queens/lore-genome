@@ -162,16 +162,20 @@ class TaskRegistry:
             final_name = name or key.split(".")[-1].replace("_", " ").capitalize()
             final_category = category or (key.split(".")[0] if "." in key else "General")
             final_icon = icon or "⚡"
+            
+            if func.__doc__ is not None:
+                task_desc = " ".join(
+                        [line.strip() for line in func.__doc__.split("\n") if line.strip()]
+                    ) or ""
+            else:
+                task_desc = ""
 
             task_def = TaskDefinition(
                 key=key,
                 handler=func,
                 input_model=final_input_model,
                 output_model=final_output_model,
-                description=" ".join(
-                    [line.strip() for line in func.__doc__.split("\n") if line.strip()]
-                )
-                or "",
+                description=task_desc,
                 name=final_name,
                 category=final_category,
                 icon=final_icon,
