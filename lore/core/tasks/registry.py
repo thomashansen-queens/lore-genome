@@ -77,9 +77,14 @@ class TaskRegistry:
             """
             fields = {}
 
+            # Compile an ordered dictionary of all the TaskInput fields
+            attributes = {}
+            # Using __mro__ to walk the Method Resolution Order, allowing inheritance
+            for base_class in reversed(input_model.__mro__):
+                attributes.update(base_class.__dict__)
+            
             # Iterate to convert TaskInput fields to Pydantic field definitions
-            # Using dir() to walk the Method Resolution Order, allowing inheritance
-            for attr_name in dir(input_model):
+            for attr_name in attributes.keys():
                 if attr_name.startswith("__") or callable(getattr(input_model, attr_name)):
                     continue  # Skip dunder methods and attributes
                 attr_value = getattr(input_model, attr_name)
@@ -106,7 +111,13 @@ class TaskRegistry:
             documentation and validation.
             """
             fields = {}
-            for attr_name in dir(dsl_outputs):
+            # Compile an ordered dictionary of all the TaskOutput fields
+            attributes = {}
+            # Using __mro__ to walk the Method Resolution Order, allowing inheritance
+            for base_class in reversed(dsl_outputs.__mro__):
+                attributes.update(base_class.__dict__)
+                
+            for attr_name in attributes.keys():
                 if attr_name.startswith("__") or callable(getattr(dsl_outputs, attr_name)):
                     continue
                 attr_value = getattr(dsl_outputs, attr_name)
@@ -140,9 +151,16 @@ class TaskRegistry:
                 raise ValueError(f"Task with key '{key}' is already registered.")
 
             # 1. Check if LoRe TaskInput fields are in input model (including inherited)
+            
+            # Compile an ordered dictionary of all the TaskInput fields
+            attributes = {}
+            # Using __mro__ to walk the Method Resolution Order, allowing inheritance
+            for base_class in reversed(inputs.__mro__):
+                attributes.update(base_class.__dict__)
+            
             is_dsl = any(
                 isinstance(getattr(inputs, attr), TaskInput)
-                for attr in dir(inputs)
+                for attr in attributes.keys()
                 if not attr.startswith("__")
             )
 
@@ -162,16 +180,20 @@ class TaskRegistry:
             final_name = name or key.split(".")[-1].replace("_", " ").capitalize()
             final_category = category or (key.split(".")[0] if "." in key else "General")
             final_icon = icon or "⚡"
+            
+            if func.__doc__ is not None:
+                task_desc = " ".join(
+                        [line.strip() for line in func.__doc__.split("\n") if line.strip()]
+                    ) or ""
+            else:
+                task_desc = ""
 
             task_def = TaskDefinition(
                 key=key,
                 handler=func,
                 input_model=final_input_model,
                 output_model=final_output_model,
-                description=" ".join(
-                    [line.strip() for line in func.__doc__.split("\n") if line.strip()]
-                )
-                or "",
+                description=task_desc,
                 name=final_name,
                 category=final_category,
                 icon=final_icon,

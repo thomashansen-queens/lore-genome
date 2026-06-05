@@ -25,9 +25,14 @@ class ConfigRegistry:
         """Decorator to compile a DSL config class into a Pydantic schema."""
         def wrapper(cls: type) -> type:
             fields = {}
-
-            # 1. Use dir() so MRO is respected, allowing inherited fields
-            for attr_name in dir(cls):
+            
+            # Compile an ordered dictionary of all the class fields
+            attributes = {}
+            # 1. Using __mro__ to walk the Method Resolution Order, allowing inheritance
+            for base_class in reversed(cls.__mro__):
+                attributes.update(base_class.__dict__)
+            
+            for attr_name in attributes.keys():
                 # Skip dunder methods and callables
                 if attr_name.startswith("__") or callable(getattr(cls, attr_name)):
                     continue
