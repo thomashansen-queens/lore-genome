@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, create_model
 
 from lore.core.tasks.parameters import TaskInput, TaskOutput
 from lore.core.tasks.models import TaskDefinition
+from lore.core.utils.meta import iter_dsl_attrs, has_dsl_fields
 
 
 class TaskRegistry:
@@ -68,7 +69,7 @@ class TaskRegistry:
         Internally compiles LoRē TaskInput DSL to Pydantic model for validation
         and UI generation. Also allows for raw Pydantic models for power users.
         """
-        def _compile_inputs_to_pydantic(task_key: str, input_model: Type[Any]) -> Type[BaseModel]:
+        def _compile_inputs_to_pydantic(task_key: str, input_model: type) -> type[BaseModel]:
             """
             Compiles a LoRē TaskInput DSL class to a Pydantic BaseModel.
             Inspects the fields of the provided dataclass, converts TaskInput
@@ -84,14 +85,15 @@ class TaskRegistry:
                 attributes.update(base_class.__dict__)
             
             # Iterate to convert TaskInput fields to Pydantic field definitions
-            for attr_name in attributes.keys():
-                if attr_name.startswith("__") or callable(getattr(input_model, attr_name)):
-                    continue  # Skip dunder methods and attributes
-                attr_value = getattr(input_model, attr_name)
+            # Using dir() to walk the Method Resolution Order, allowing inheritance
+            for attr_name, attr_value in iter_dsl_attrs(input_model):
+                if callable(attr_value):
+                    continue  # Skip methods
+                
                 if isinstance(attr_value, TaskInput):
-                    py_type = attr_value.get_type_annotation()
+                    field_type = attr_value.get_type_annotation()
                     field_info = attr_value.to_field_info()
-                    fields[attr_name] = (py_type, field_info)
+                    fields[attr_name] = (field_type, field_info)
                 else:
                     raise ValueError(
                         f"Attribute '{attr_name}' in {input_model.__name__} is not a TaskInput."
@@ -105,22 +107,16 @@ class TaskRegistry:
 
             return model
 
-        def _compile_outputs_to_pydantic(task_key: str, dsl_outputs: Type[Any]) -> Type[BaseModel]:
+        def _compile_outputs_to_pydantic(task_key: str, dsl_outputs: type) -> Type["BaseModel"]:
             """
             Turns a list of TaskOutput definitions into a Pydantic model for
             documentation and validation.
             """
             fields = {}
-            # Compile an ordered dictionary of all the TaskOutput fields
-            attributes = {}
-            # Using __mro__ to walk the Method Resolution Order, allowing inheritance
-            for base_class in reversed(dsl_outputs.__mro__):
-                attributes.update(base_class.__dict__)
-                
-            for attr_name in attributes.keys():
-                if attr_name.startswith("__") or callable(getattr(dsl_outputs, attr_name)):
+            for attr_name, attr_value in iter_dsl_attrs(dsl_outputs):
+                if attr_name.startswith("__") or callable(attr_value):
                     continue
-                attr_value = getattr(dsl_outputs, attr_name)
+
                 if isinstance(attr_value, TaskOutput):
                     fields[attr_name] = (
                         str,
@@ -153,25 +149,18 @@ class TaskRegistry:
             # 1. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
             if isinstance(inputs, type) and issubclass(inputs, BaseModel):
                 final_input_model = inputs
+            elif has_dsl_fields(inputs, TaskInput):
+                final_input_model = _compile_inputs_to_pydantic(key, inputs)
             else:
-                is_dsl = any(
-                    isinstance(v, TaskInput)
-                    for cls in type.mro(inputs)
-                    if cls is not object
-                    for v in cls.__dict__.values()
+                raise ValueError(
+                    f"Inputs for {key} must be a Class of TaskInput objects or a "
+                    f"Pydantic BaseModel."
                 )
 
-                if is_dsl:
-                    final_input_model = _compile_inputs_to_pydantic(key, inputs)
-                else:
-                    raise ValueError(
-                        f"Inputs for {key} must be a Class of TaskInput objects or a "
-                        f"Pydantic BaseModel."
-                    )
-
             # 2. Similar logic for outputs
-            is_output_dsl = any(isinstance(v, TaskOutput) for v in outputs.__dict__.values())
-            if is_output_dsl:
+            if isinstance(outputs, type) and issubclass(outputs, BaseModel):
+                final_output_model = outputs
+            elif has_dsl_fields(outputs, TaskOutput):
                 final_output_model = _compile_outputs_to_pydantic(key, outputs)
             else:
                 raise ValueError(f"Outputs for {key} must be a Class of TaskOutput objects.")
