@@ -12,7 +12,7 @@ class CsvAdapter(TabularAdapter):
     """
     Adapter for CSV/TSV files. Uses Python's built-in csv library for parsing.
     """
-    accepted_formats: ClassVar[set[str]] = {"csv", "tsv", "txt"}
+    accepted_formats: ClassVar[set[str]] = {"csv", "tsv"}
     accepted_types: ClassVar[set[str]] = {"*"}
     view_mode: ClassVar[str] = "table"
     version: ClassVar[str] = "1.0.0"
@@ -27,7 +27,7 @@ class CsvAdapter(TabularAdapter):
         """Helper to extract valid csv formatting kwargs from a config dict."""
         kwargs = {}
         # Default delimiter fallback based on extension
-        kwargs["delimiter"] = "\t" if extension in ("tsv", "txt") else ","
+        kwargs["delimiter"] = "\t" if extension in ("tsv") else ","
 
         # Alias for columns -> fieldnames (will be overridden by explicit fieldnames if both)
         if "columns" in config:
