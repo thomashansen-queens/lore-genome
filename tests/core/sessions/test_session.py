@@ -3,26 +3,26 @@ Tests for core Session orchestrator class
 """
 
 
-def test_session_init(temp_session):
+def test_session_init(closed_session):
     """
     Tests that the Session bootstraps correctly
     """
-    assert (temp_session.dir / "manifest.json").exists()
-    assert (temp_session.dir / "artifacts").is_dir()
-    assert len(temp_session.list_artifacts()) == 0
+    assert (closed_session.dir / "manifest.json").exists()
+    assert (closed_session.dir / "artifacts").is_dir()
+    assert len(closed_session.list_artifacts()) == 0
 
 
-def test_artifact_registration(temp_session, dummy_json_file):
+def test_artifact_registration(closed_session, dummy_json_file):
     """
     Tests that artifacts can be registered with the Session
     """
-    artifact = temp_session.register_artifact(
+    artifact = closed_session.register_artifact(
         dummy_json_file,
         name="test_artifact",
         data_type="json",
         metadata={"source": "generated", "format": "json"},
     )
-    assert len(temp_session.list_artifacts()) == 1
+    assert len(closed_session.list_artifacts()) == 1
     assert artifact.name == "test_artifact"
     assert artifact.data_type == "json"
 
