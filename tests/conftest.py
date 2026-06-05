@@ -1,22 +1,19 @@
 """
-Fixtures for tests.
+Global fixtures for LoRē unit tests.
 """
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from uuid import uuid4
 from pydantic import BaseModel
 import pytest
 
-from lore.core.adapters import JsonAdapter, TabularAdapter
+from lore.core.adapters import BaseAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
-from lore.core.tasks import task_registry
+from lore.core.tasks import task_registry, Task, TaskDefinition, TaskStatus
+from lore.core.execution.context import PreviewContext
 
-from logging import Logger
-from lore.core.execution import ExecutionContext
-from lore.core.tasks import Task 
-
-# --- Data fixtures ---
+# --- DATA FACTORIES & WORKSPACE FIXTURES ---
 
 @pytest.fixture
 def spaghetti_records() -> list[dict]:
@@ -47,8 +44,7 @@ def spaghetti_records() -> list[dict]:
 def dummy_json_file(tmp_path: Path, spaghetti_records: list[dict]) -> Path:
     """Creates a temporary JSON array file."""
     json_path = tmp_path / "test_data.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(spaghetti_records, indent=2))
+    json_path.write_text(json.dumps(spaghetti_records), encoding="utf-8")
     return json_path
 
 
@@ -58,12 +54,11 @@ def dummy_jsonl_file(tmp_path: Path, spaghetti_records: list[dict]) -> Path:
     Creates a temporary JSONL file on the hard drive for IO testing.
     """
     jsonl_path = tmp_path / "test_data.jsonl"
-    with open(jsonl_path, "w", encoding="utf-8") as f:
-        for record in spaghetti_records:
-            f.write(json.dumps(record) + "\n")
+    lines = [json.dumps(record) for record in spaghetti_records]
+    jsonl_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return jsonl_path
 
-# --- Runtime/Session fixtures ---
+# --- ENGINE RUNTIME & RENVIRONMENT FIXTURES ---
 
 @pytest.fixture(scope="session")
 def temp_runtime(tmp_path_factory: pytest.TempPathFactory) -> Runtime:
@@ -81,9 +76,10 @@ def temp_runtime(tmp_path_factory: pytest.TempPathFactory) -> Runtime:
 @pytest.fixture
 def temp_session(temp_runtime: Runtime):
     """
-    Creates and yields an active Session tied to our temporary runtime.
+    Creates and yields an active, open Session context manager tied to
+    our temporary runtime.
     """
-    session = temp_runtime.create_session(name="Test Session")
+    session = temp_runtime.create_session(name="Test Active Session")
 
     # Enter the ContextManager for setup and teardown of the Session
     with session:
@@ -93,63 +89,41 @@ def temp_session(temp_runtime: Runtime):
 @pytest.fixture
 def closed_session(temp_runtime: Runtime) -> Session:
     """
-    Creates and yields an active Session tied to our temporary runtime.
+    Creates and yields a closed Session tied to our temporary runtime.
     """
-    session = temp_runtime.create_session(name="Test Session")
+    session = temp_runtime.create_session(name="Test Closed Session")
 
     # Enter the ContextManager for setup and teardown of the Session
     with session:
         pass  # Immediately exit to close the session
     return session
 
-# --- Task registry fixtures ---
-
-@pytest.fixture
-def isolated_task_registry(monkeypatch: pytest.MonkeyPatch):
-    """
-    Creates a sandboxed TaskRegistry.
-    """
-    # shallow copy of built-in tasks
-    pristine_tasks = task_registry.all.copy()
-
-    # force global registry to become this temporary dict for the duration of the test
-    monkeypatch.setattr(task_registry, "_tasks", pristine_tasks)
-    return task_registry
-
-# --- Semantic Matching Adapter Fixtures ---
+# --- ADAPTER/SEMANTIC MATCHING FIXTURES ---
 
 @pytest.fixture
 def semantic_registry():
-    """Provides a pristine AdapterRegistry for testing matching logic."""
+    """A clean, test-specific AdapterRegistry for testing matching logic."""
     from lore.core.adapters import AdapterRegistry
     return AdapterRegistry()
 
 
 @pytest.fixture
-def populated_registry(semantic_registry):
+def populated_adapter_registry(semantic_registry):
     """A registry populated with highly specific dummy adapters to test resolution."""
-
-    class MockNcbiAdapter(JsonAdapter):
-        # Semantic type *and* format-specific adapter
+    class MockNcbiAdapter(BaseAdapter):
         accepted_types = {"ncbi_genome_reports"}
         accepted_formats = {"json"}
+        view_mode = "table"
 
-        @property
-        def schema(self):
-            return {"genome_accession": "accession"}
-
-        def to_dataframe(self, raw_data, metadata, config):
-            pass
-
-    class GenericJsonAdapter(JsonAdapter):
-        # File format-specific adapter
-        # accepted_types = {"*"}
+    class GenericJsonAdapter(BaseAdapter):
+        accepted_types = {"*"}
         accepted_formats = {"json", "jsonl"}
+        view_mode = "table"
 
-    class ProteinFastaAdapter(TabularAdapter):
-        # Semantic type-specific adapter (any format e.g. fa, faa, fasta, txt)
+    class ProteinFastaAdapter(BaseAdapter):
         accepted_types = {"protein_fasta"}
         accepted_formats = {"*"}
+        view_mode = "table"
 
     semantic_registry.register(MockNcbiAdapter())
     semantic_registry.register(GenericJsonAdapter())
@@ -157,12 +131,40 @@ def populated_registry(semantic_registry):
 
     return semantic_registry
 
+# --- LIVE EXECUTION FIXTURES ---
+
 @pytest.fixture
-def fake_ctx(temp_runtime):
-    with patch('lore.core.execution.ExecutionContext') as ctx:
-        ctx = MagicMock()
-        ctx.runtime = temp_runtime
-        ctx.get_config.return_value = None
-        ctx.logger = Logger("Fake Context Debug Logger")  
-        return ctx  
-    
+def ephemeral_task() -> Task:
+    """An initialized, valid Ephemeral Task model for Context testing."""
+    return Task(
+        id=f"test_preview_{uuid4().hex[:8]}",
+        registry_key="test.diagnostic_task",
+        status=TaskStatus.RUNNING,
+        inputs={},
+        exec_config={"adapter": {"strategy": "peek", "view_state": {}}},
+    )
+
+
+@pytest.fixture
+def real_preview_context(temp_runtime, closed_session, ephemeral_task) -> PreviewContext:
+    """
+    A fully integrated PreviewContext with a live Task and Session.
+    """
+    class EmptySchema(BaseModel):
+        pass
+
+    diagnostic_def = TaskDefinition(
+        key="test.diagnostic_task",
+        name="Diagnostic Task",
+        handler=lambda ctx, **kwargs: None,  # No-op handler for testing
+        input_model=EmptySchema,
+        output_model=EmptySchema,
+    )
+
+    return PreviewContext(
+        runtime=temp_runtime,
+        session_id=closed_session.id,
+        task=ephemeral_task,
+        task_def=diagnostic_def,
+        input_artifacts={},
+    )

@@ -10,7 +10,6 @@ from pathlib import Path
 import logging
 import logging.handlers
 import shutil
-import sys
 import tempfile
 from typing import TYPE_CHECKING, Any
 
@@ -36,7 +35,6 @@ if TYPE_CHECKING:
 @dataclass
 class SessionSummary:
     """Typed summary information about a Session."""
-
     id: str
     name: str
     path: Path
@@ -166,11 +164,12 @@ class Runtime:
             session.name = name
         return session
 
-    def import_session(self, zip_path: Path) -> str:
+    def import_session(self, zip_path: Path) -> "Session":
         """
         Packs a Session into a .zip archive
-        TODO: Improve functionality (e.g. dehydrated session)
         """
+        imported_id = None
+
         # 1. Unpack as temp file to be imported
         with tempfile.TemporaryDirectory() as temp_dir:
             staging_path = Path(temp_dir)
@@ -205,9 +204,10 @@ class Runtime:
                 manifest_data.get("session_name", "Unnamed"),
                 imported_id,
             )
-            return imported_id
 
-    def clone_session(self, *, session_id: str) -> "Session":
+        return self.open_session(imported_id)
+
+    def clone_session(self, *, session_id: str, new_name: str | None = None) -> "Session":
         """
         Clone an existing Session for reuse. Performs a deep copy of the Session
         directory, then sanitizes the Manifest for reuse.
@@ -236,6 +236,8 @@ class Runtime:
         manifest_path = dest_path / "manifest.json"
         manifest = Manifest.load(manifest_path)
         manifest.rebrand(new_id)
+        if new_name:
+            manifest.session_name = new_name
         if manifest.session_name:
             manifest.session_name = auto_increment(manifest.session_name, existing_names)
 
@@ -254,21 +256,20 @@ class Runtime:
 
         ses_path = self.find_session_dir(session_id)
         if not ses_path:
-            raise FileNotFoundError(f"Session directory for ID '{session_id}' not found.")
+            raise ValueError(f"Session directory for ID '{session_id}' not found.")
 
         return Session(path=ses_path, session_id=session_id, runtime=self, read_only=read_only)
 
-    def export_session(self, session_id: str, output_dir: Path) -> Path:
+    def export_session(self, session_id: str, dest_path: Path) -> Path:
         """
-        Exports a session as a .zip archive.
-        TODO: Add functionality here (e.g. dehydrated)
+        Exports a session as a .zip archive to a specified destination path.
         """
         session_dir = self.find_session_dir(session_id)
         if not session_dir:
-            raise FileNotFoundError(f"Session '{session_id}' not found for export.")
+            raise ValueError(f"Session '{session_id}' not found for export.")
 
-        target_base = output_dir / f"lore_session_{session_id}"
-        archive_path = shutil.make_archive(str(target_base), "zip", str(session_dir))
+        base_name = str(dest_path.with_suffix("").absolute())
+        archive_path = shutil.make_archive(base_name, format="zip", root_dir=session_dir)
 
         return Path(archive_path)
 
@@ -285,7 +286,7 @@ class Runtime:
 
         path = self.find_session_dir(session_id)
         if path is None:
-            raise FileNotFoundError(
+            raise ValueError(
                 f"Session directory for ID '{session_id}' vanished after rename!"
             )
         return path
@@ -400,14 +401,33 @@ class Runtime:
             stderr=subprocess.DEVNULL,
         )
 
-    def execute_task(self, session_id: str, task_id: str) -> None:
+    def execute_task(self, session_id: str, task_id: str, force: bool = False) -> None:
         """
         Spawn a background process to execute a single Task by its ID.
         Returns immediately (non-blocking).
         """
         import subprocess
         import sys
+        from lore.core.tasks import TaskStatus
 
+        # 1. Guards (mutate session only if 'force' is True)
+        with self.open_session(session_id, read_only=not force) as session:
+            task = session.get_task(task_id)
+            if not task:
+                raise ValueError(f"Task '{task_id}' not found in session '{session_id}'.")
+            if not task.status.is_runnable:
+                if force:
+                    self.logger.warning(
+                        "Force-running task '%s' in session '%s' with status '%s'.",
+                        task_id, session_id, task.status,
+                    )
+                    task.status = TaskStatus.READY
+                    task.error = None
+                    session.mark_dirty()
+                else:
+                    raise ValueError(f"Task '{task_id}' in session '{session_id}' is not runnable.")
+
+        # 2. Route through CLI to spawn a new process
         command = [
             sys.executable, "-m", "lore", "run-task",
             "--session", session_id,
@@ -428,6 +448,13 @@ class Runtime:
         Useful for quick iterations during development and debugging.
         """
         from lore.core.execution.worker import run_preview_worker
+        from lore.core.tasks import task_registry
+
+        if not self.find_session_dir(session_id):
+            raise ValueError(f"Session '{session_id}' not found for task preview.")
+        task_def = task_registry.get(task_key)
+        if not task_def:
+            raise ValueError(f"Task '{task_key}' not found.")
 
         return run_preview_worker(self, session_id, task_key, raw_inputs, exec_config)
 
@@ -440,8 +467,10 @@ def build_runtime(
     data_root: Path | None = None,
     verbose: bool = False,
 ) -> Runtime:
-    """Factory builds and returns a Runtime object for LoRe Genome."""
-
+    """
+    Factory builds and returns a Runtime object for LoRe Genome.
+    TODO: Make 'verbose' just a CLI arg, and make this function accept logging.Config level (str | int)
+    """
     # 1. Logging
     logger = logging.getLogger("lore")
     if not logging.getLogger().hasHandlers():

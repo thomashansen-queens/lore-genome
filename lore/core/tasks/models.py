@@ -143,14 +143,12 @@ class TaskStatus(StrEnum):
 
     @property
     def is_runnable(self) -> bool:
-        """User can try to run this task. TODO: Once engine is locked in, uncomment"""
-        return True
-        # return self in (
-        #     TaskStatus.READY,
-        #     TaskStatus.COMPLETED,
-        #     TaskStatus.FAILED,
-        #     TaskStatus.CANCELLED,
-        # )
+        """User can try to run this task."""
+        return self in (
+            TaskStatus.READY,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        )
 
 
 class TaskIntegrity(StrEnum):
