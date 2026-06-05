@@ -55,9 +55,10 @@ class TaskRegistry:
     def register(
         self,
         key: str,
-        inputs: Type[BaseModel] | Type[Any],
-        outputs: Type[BaseModel] | Type[Any],
+        inputs: type["BaseModel"] | type,
+        outputs: type["BaseModel"] | type,
         name: str | None = None,
+        description: str | None = None,
         category: str | None = None,
         icon: str | None = None,
         live_preview: bool = False,
@@ -67,7 +68,6 @@ class TaskRegistry:
         Internally compiles LoRē TaskInput DSL to Pydantic model for validation
         and UI generation. Also allows for raw Pydantic models for power users.
         """
-
         def _compile_inputs_to_pydantic(task_key: str, input_model: Type[Any]) -> Type[BaseModel]:
             """
             Compiles a LoRē TaskInput DSL class to a Pydantic BaseModel.
@@ -139,17 +139,24 @@ class TaskRegistry:
             if key in self._tasks:
                 raise ValueError(f"Task with key '{key}' is already registered.")
 
-            # 1. Check if LoRe TaskInput fields are in input model (including inherited)
-            is_dsl = any(
-                isinstance(getattr(inputs, attr), TaskInput)
-                for attr in dir(inputs)
-                if not attr.startswith("__")
-            )
-
-            if is_dsl:
-                final_input_model = _compile_inputs_to_pydantic(key, inputs)
+            # 1. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
+            if isinstance(inputs, type) and issubclass(inputs, BaseModel):
+                final_input_model = inputs
             else:
-                raise ValueError(f"Inputs for {key} must be a Class of TaskInput objects.")
+                is_dsl = any(
+                    isinstance(v, TaskInput)
+                    for cls in type.mro(inputs)
+                    if cls is not object
+                    for v in cls.__dict__.values()
+                )
+
+                if is_dsl:
+                    final_input_model = _compile_inputs_to_pydantic(key, inputs)
+                else:
+                    raise ValueError(
+                        f"Inputs for {key} must be a Class of TaskInput objects or a "
+                        f"Pydantic BaseModel."
+                    )
 
             # 2. Similar logic for outputs
             is_output_dsl = any(isinstance(v, TaskOutput) for v in outputs.__dict__.values())
@@ -162,16 +169,17 @@ class TaskRegistry:
             final_name = name or key.split(".")[-1].replace("_", " ").capitalize()
             final_category = category or (key.split(".")[0] if "." in key else "General")
             final_icon = icon or "⚡"
+            docstring = func.__doc__ or ""
+            final_description = description or " ".join(
+                [line.strip() for line in docstring.split("\n") if line.strip()]
+            )
 
             task_def = TaskDefinition(
                 key=key,
                 handler=func,
                 input_model=final_input_model,
                 output_model=final_output_model,
-                description=" ".join(
-                    [line.strip() for line in func.__doc__.split("\n") if line.strip()]
-                )
-                or "",
+                description=final_description,
                 name=final_name,
                 category=final_category,
                 icon=final_icon,

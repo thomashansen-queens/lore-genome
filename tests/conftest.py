@@ -10,8 +10,9 @@ import pytest
 from lore.core.adapters import BaseAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
-from lore.core.tasks import task_registry, Task, TaskDefinition, TaskStatus
+from lore.core.tasks import Task, TaskDefinition, TaskStatus
 from lore.core.execution.context import PreviewContext
+from lore.core.tasks.registry import TaskRegistry
 
 # --- DATA FACTORIES & WORKSPACE FIXTURES ---
 
@@ -131,7 +132,7 @@ def populated_adapter_registry(semantic_registry):
 
     return semantic_registry
 
-# --- LIVE EXECUTION FIXTURES ---
+# --- TASK FIXTURES ---
 
 @pytest.fixture
 def ephemeral_task() -> Task:
@@ -144,6 +145,24 @@ def ephemeral_task() -> Task:
         exec_config={"adapter": {"strategy": "peek", "view_state": {}}},
     )
 
+
+@pytest.fixture
+def isolated_task_registry(monkeypatch: pytest.MonkeyPatch) -> TaskRegistry:
+    """
+    A sandboxed TaskRegistry to prevent test dummy-tasks from polluting
+    the global registry.
+    """
+    from lore.core.tasks import task_registry
+
+    # shallow copy of the registry contents
+    pristine_tasks = task_registry.all.copy()
+
+    # Put the dict back as a monkeypatch to avoid leaking test tasks into runtime
+    monkeypatch.setattr(task_registry, "_tasks", pristine_tasks)
+
+    return task_registry
+
+# --- LIVE EXECUTION FIXTURES ---
 
 @pytest.fixture
 def real_preview_context(temp_runtime, closed_session, ephemeral_task) -> PreviewContext:
