@@ -198,6 +198,20 @@ document.addEventListener("DOMContentLoaded", function() {
             
             if (data.status === 'success') {
                 target.innerHTML = data.html;  // Inject the rendered HTML from the server
+                
+                // Inject the scripts from the HTML
+                target.querySelectorAll("script").forEach(oldScript => {
+                    const newScript = document.createElement("script");
+
+                    // Copy attributes
+                    [...oldScript.attributes].forEach(attr => {
+                        newScript.setAttribute(attr.name, attr.value);
+                    });
+
+                    newScript.textContent = oldScript.textContent;
+
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
             } else {
                 target.innerHTML = `<div class="alert error">${data.message}</div>`;
             }
