@@ -203,6 +203,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (result.status === 'success') {
                 viewerTarget.innerHTML = result.html;
+
+                // Inject the scripts from the HTML
+                target.querySelectorAll("script").forEach(oldScript => {
+                    const newScript = document.createElement("script");
+
+                    // Copy attributes
+                    [...oldScript.attributes].forEach(attr => {
+                        newScript.setAttribute(attr.name, attr.value);
+                    });
+
+                    newScript.textContent = oldScript.textContent;
+
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
                 
                 // Show filtered row count
                 if (result.row_count !== result.total_rows) {
