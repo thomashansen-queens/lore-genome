@@ -43,6 +43,7 @@ def test_executor_submit_tracks_processes(tmp_path: Path):
     with patch("subprocess.Popen") as mock_popen:
         mock_proc = MagicMock()
         mock_proc.pid = 9999
+        mock_proc.poll.return_value = None  # Simulate a running process
         mock_popen.return_value = mock_proc
 
         executor.submit(session_id="sess_123", task_id="task_abc", log_path=dummy_log)
@@ -64,5 +65,5 @@ def test_executor_submit_tracks_processes(tmp_path: Path):
         assert log_handle is not None
         assert not log_handle.closed
 
-        executor.cancel("task_abc")
+        assert executor.cancel("task_abc") is True
         assert log_handle.closed
