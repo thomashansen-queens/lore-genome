@@ -19,29 +19,8 @@ class DummyOutputs:
 # --- DUMMY TASK PLUGINS ---
 
 @pytest.fixture
-def dummy_task_plugin(isolated_task_registry) -> str:
-    """A perfectly behaved worker task for testing successful execution"""
-    @isolated_task_registry.register(
-        key="test.dummy_worker",
-        inputs=DummyInputs,
-        outputs=DummyOutputs,
-        name="Dummy Worker Task",
-    )
-    def handler(ctx: ExecutionContext, text_to_write: str):
-        out_path = ctx.get_temp_path("output.txt")
-        out_path.write_text(f"Processed: {text_to_write}")
-        ctx.materialize_file(
-            source_path=out_path,
-            output_key="greeting_file",
-            name="test_greeting",
-        )
-
-    return "test.dummy_worker"
-
-
-@pytest.fixture
 def failing_task_plugin(isolated_task_registry) -> str:
-    """A perfectly behaved worker task for testing successful execution"""
+    """A task guaranteed to raise an exception for testing error handling"""
     @isolated_task_registry.register(
         key="test.failing_worker",
         inputs=DummyInputs,
@@ -52,28 +31,6 @@ def failing_task_plugin(isolated_task_registry) -> str:
         raise RuntimeError("Simulated catastrophic crash!")
 
     return "test.failing_worker"
-
-
-@pytest.fixture
-def dummy_preview_plugin(isolated_task_registry) -> str:
-    """A perfectly behaved preview task."""
-    @isolated_task_registry.register(
-        key="test.dummy_preview",
-        inputs=DummyInputs,
-        outputs=DummyOutputs,
-        name="Dummy Preview Task",
-    )
-    def handler(ctx: PreviewContext, text_to_write: str):
-        out_path = ctx.get_temp_path("output.txt")
-        out_path.write_text(f"Processed: {text_to_write}")
-
-        ctx.materialize_file(
-            source_path=out_path,
-            output_key="greeting_file",
-            name="test_greeting",
-        )
-
-    return "test.dummy_preview"
 
 # --- Tests ---
 
@@ -133,7 +90,7 @@ def test_run_task_worker_graceful_failure(temp_runtime, closed_session, failing_
 
 # --- Preview tests ---
 
-def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_preview_plugin):
+def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_task_plugin):
     """Ensure preview runs the handler and returns outputs without saving a Task."""
     with closed_session as s:
         initial_task_count = len(s.list_tasks())
@@ -144,7 +101,7 @@ def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_previe
     results = run_preview_worker(
         rt=temp_runtime,
         session_id=closed_session.id,
-        task_key=dummy_preview_plugin,
+        task_key=dummy_task_plugin,
         raw_inputs=raw_inputs,
     )
 

@@ -1,81 +1,115 @@
 """
 Tests for ExecutionContext
 """
-from types import GeneratorType
 import pytest
 
-from lore.core.execution.materializer import _materialize_single_artifact
-from lore.core.tasks import Materialization
+from lore.core.execution.context import ExecutionContext, PreviewContext
+from lore.core.tasks import Task
+from lore.core.tasks.models import TaskStatus
 
 
-@pytest.fixture
-def staged_artifact(closed_session, dummy_jsonl_file):
+def test_context_temp_directory_lifecycle(
+    temp_runtime,
+    closed_session,
+    dummy_task_plugin,
+    isolated_task_registry,
+):
     """
-    Registers the dummy JSONL file into the temporary session 
-    and returns the Artifact record.
+    Ensures ExecutionContext lazy-loads its temp directory and that it
+    cleans up after itself
     """
-    closed_session.register_artifact(
-        dummy_jsonl_file,
-        name="materialization_test",
-        data_type="jsonl",
-        metadata={"source": "pytest"},
-    )
-    # Fetch the newly created artifact record
-    return closed_session.list_artifacts()[0]
+    with closed_session as s:
+        task = s.add_task(dummy_task_plugin, name="Test Task", inputs={})
 
-
-def test_materialization_path(closed_session, staged_artifact):
-    """Proves PATH materialization returns a raw string."""
-    result = _materialize_single_artifact(
-        session=closed_session,
-        artifact=staged_artifact,
-        materialization=Materialization.PATH,
-        accepted_data=["*"],
+    ctx = ExecutionContext(
+        runtime=temp_runtime,
+        session_id=closed_session.id,
+        task=task,
+        task_def=isolated_task_registry.get(dummy_task_plugin),
     )
 
-    assert isinstance(result, str)
-    assert "materialization_test.jsonl" in result
+    assert ctx._temp_dir is None
+
+    temp_file = ctx.get_temp_path("my_output.csv")
+
+    assert ctx._temp_dir is not None
+    assert temp_file.parent.exists()
+
+    ctx.cleanup()
+
+    assert not temp_file.parent.exists()
 
 
-def test_materialization_raw(closed_session, staged_artifact):
-    """Proves RAW materialization eagerly loads the full native Python objects."""
-    result = _materialize_single_artifact(
-        session=closed_session,
-        artifact=staged_artifact,
-        materialization=Materialization.RAW,
-        accepted_data=["*"],
+def test_context_output_tracking(
+    temp_runtime,
+    closed_session,
+    dummy_task_plugin,
+    isolated_task_registry,
+):
+    """
+    Ensures ExecutionContext correctly delegates materialize_file to its
+    internal TaskResults object, maintaining the facade.
+    """
+    with closed_session as s:
+        task = s.add_task(dummy_task_plugin, name="Test Task", inputs={})
+
+    ctx = ExecutionContext(
+        runtime=temp_runtime,
+        session_id=closed_session.id,
+        task=task,
+        task_def=isolated_task_registry.get(dummy_task_plugin),
     )
 
-    assert isinstance(result, list)
-    assert len(result) == 3
-    assert result[0]["id"] == 1
+    output_path = ctx.get_temp_path("test_output.txt")
+    output_path.write_text("Hello, world!")
 
-
-def test_materialization_raw_stream(closed_session, staged_artifact):
-    """Proves RAW_STREAM returns a lazy generator, not a list"""
-    result = _materialize_single_artifact(
-        session=closed_session,
-        artifact=staged_artifact,
-        materialization=Materialization.RAW_STREAM,
-        accepted_data=["*"],
+    ctx.materialize_file(
+        source_path=output_path,
+        output_key="greeting_file",
+        name="test_greeting",
     )
 
-    assert isinstance(result, GeneratorType)
+    assert "greeting_file" in ctx.results
+    output_artifact = ctx.results["greeting_file"][0]
 
-    # Exhaust the generator to prove it holds the data
-    streamed_data = list(result)
-    assert len(streamed_data) == 3
+    assert output_artifact.name == "test_greeting"
+    assert output_artifact.data_type == "text"
+
+    with temp_runtime.open_session(closed_session.id) as s:
+        assert s.get_artifact_path(output_artifact.id) is not None
+        assert s.get_artifact_path(output_artifact.id).exists()
 
 
-def test_materialization_artifact_record(closed_session, staged_artifact):
-    """Proves ARTIFACT materialization bypasses IO and returns the database record."""
-    result = _materialize_single_artifact(
-        session=closed_session,
-        artifact=staged_artifact,
-        materialization=Materialization.ARTIFACT,
-        accepted_data=["*"],
+def test_preview_context_interception(
+    temp_runtime, closed_session, dummy_task_plugin, isolated_task_registry,
+):
+    """
+    Ensures PreviewContext correctly intercepts and handles preview-specific logic.
+    """
+    preview_task = Task(
+        id="preview_test_123",
+        registry_key=dummy_task_plugin,
+        status=TaskStatus.RUNNING,
+        inputs={},
+        exec_config={"adapter": {"strategy": "peek"}} 
     )
 
-    # We should get the actual Artifact object back
-    assert result.id == staged_artifact.id
-    assert result.name == "materialization_test"
+    ctx = PreviewContext(
+        runtime=temp_runtime,
+        session_id=closed_session.id,
+        task=preview_task,  # carries exec_config with adapter.strategy = 'peek'
+        task_def=isolated_task_registry.get(dummy_task_plugin),
+    )
+
+    dummy_file = ctx.get_temp_path("test_preview.txt")
+    dummy_file.write_text("This is a preview.")
+
+    ctx.materialize_file(
+        source_path=dummy_file,
+        output_key="greeting_file",
+        name="preview_greeting",
+    )
+
+    assert len(ctx.results.primary_data) == 1
+    assert ctx.results.primary_data[0].get("is_preview") is True
+    assert "This is a preview." in ctx.results.primary_data[0].get("data", "")
