@@ -1,5 +1,5 @@
 """
-Docstring for lore.settings
+Global settings management for LoRē.
 """
 import os
 from pathlib import Path
@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, create_model, field_validator
 from typing import Any, Callable, Type
 
 from lore.core.paths import default_data_root
+from lore.core.tasks.parameters import TaskInput
+from lore.core.utils.meta import iter_dsl_attrs
 
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
@@ -26,16 +28,15 @@ class ConfigRegistry:
         def wrapper(cls: type) -> type:
             fields = {}
 
-            # 1. Use dir() so MRO is respected, allowing inherited fields
-            for attr_name in dir(cls):
+            # 1. Check MRO for TaskInput attributes, which are converted to Pydantic fields
+            # TODO: There is currently no way to use 'global' Artifacts... e.g. an AlphaFold db
+            for attr_name, attr_value in iter_dsl_attrs(cls):
                 # Skip dunder methods and callables
-                if attr_name.startswith("__") or callable(getattr(cls, attr_name)):
+                if callable(getattr(cls, attr_name)):
                     continue
 
-                attr_value = getattr(cls, attr_name)
-
                 # 2. Duck-typing checks to avoid circular imports with DSL
-                if hasattr(attr_value, "to_field_info") and hasattr(attr_value, "get_type_annotation"):
+                if isinstance(attr_value, TaskInput):
                     field_type = attr_value.get_type_annotation()
                     field_info = attr_value.to_field_info()
                     fields[attr_name] = (field_type, field_info)
@@ -67,12 +68,12 @@ config_registry = ConfigRegistry()
 # --- Global settings ---
 
 class Settings(BaseModel):
-    """Configuration settings for LoRe Genome."""
+    """Configuration settings for LoRē Genome."""
     # --- Paths ---
     data_root: Path = Field(
         default_factory=default_data_root,
         title="Data Root",
-        description="Root directory for all LoRe Genome data (sessions, outputs, etc).",
+        description="Root directory for all LoRē Genome data (sessions, outputs, etc).",
         json_schema_extra={"widget": "text"},
         examples=[str(default_data_root())],
     )

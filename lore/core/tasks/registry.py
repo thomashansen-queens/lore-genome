@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, create_model
 
 from lore.core.tasks.parameters import TaskInput, TaskOutput
 from lore.core.tasks.models import TaskDefinition
-from lore.core.utils.meta import iter_dsl_attrs, has_dsl_fields
+from lore.core.utils.meta import iter_dsl_attrs, has_field_type
 
 
 class TaskRegistry:
@@ -83,7 +83,7 @@ class TaskRegistry:
             for attr_name, attr_value in iter_dsl_attrs(input_model):
                 if callable(attr_value):
                     continue  # Skip methods
-                
+
                 if isinstance(attr_value, TaskInput):
                     field_type = attr_value.get_type_annotation()
                     field_info = attr_value.to_field_info()
@@ -108,7 +108,7 @@ class TaskRegistry:
             """
             fields = {}
             for attr_name, attr_value in iter_dsl_attrs(dsl_outputs):
-                if attr_name.startswith("__") or callable(attr_value):
+                if callable(attr_value):
                     continue
 
                 if isinstance(attr_value, TaskOutput):
@@ -116,7 +116,8 @@ class TaskRegistry:
                         str,
                         Field(
                             description=attr_value.description,
-                            json_schema_extra={
+                            # Pydantic will serialize Enums at runtime; ignoring JsonDict type req
+                            json_schema_extra={  # pyright: ignore[reportArgumentType]
                                 "data_type": attr_value.data_type,
                                 "description": attr_value.description,
                                 "is_primary": attr_value.is_primary,
@@ -143,7 +144,7 @@ class TaskRegistry:
             # 1. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
             if isinstance(inputs, type) and issubclass(inputs, BaseModel):
                 final_input_model = inputs
-            elif has_dsl_fields(inputs, TaskInput):
+            elif has_field_type(inputs, TaskInput):
                 final_input_model = _compile_inputs_to_pydantic(key, inputs)
             else:
                 raise ValueError(
@@ -154,7 +155,7 @@ class TaskRegistry:
             # 2. Similar logic for outputs
             if isinstance(outputs, type) and issubclass(outputs, BaseModel):
                 final_output_model = outputs
-            elif has_dsl_fields(outputs, TaskOutput):
+            elif has_field_type(outputs, TaskOutput):
                 final_output_model = _compile_outputs_to_pydantic(key, outputs)
             else:
                 raise ValueError(f"Outputs for {key} must be a Class of TaskOutput objects.")
