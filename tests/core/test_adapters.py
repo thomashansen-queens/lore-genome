@@ -38,10 +38,8 @@ def test_spaghetti_extraction():
         ],
     }
 
-    # ACT
     adapted = adapter.adapt_record(raw_record)
 
-    # ASSERT
     assert adapted["record_id"] == 2
     assert adapted["nested_value"] == "B"
     assert adapted["first_gene"] == "BRCA1"
@@ -89,32 +87,30 @@ def test_table_adapter_missing_keys():
 
 # --- Adapter semantic matching tests ---
 
-def test_adapter_registry_resolution(populated_registry: AdapterRegistry):
+def test_adapter_registry_resolution(populated_adapter_registry: AdapterRegistry):
     """
     Tests that the AdapterRegistry correctly resolves the most specific adapter 
     based on the accepted_types and accepted_formats of registered adapters.
     """
-    registry = populated_registry
-
     # Test that a highly specific adapter is chosen when both type and format match
-    ncbi_adapters = registry.get_for_type("ncbi_genome_reports", "json")
+    ncbi_adapters = populated_adapter_registry.get_for_type("ncbi_genome_reports", "json")
 
     # Test that a format-specific adapter is chosen when type is generic
-    generic_adapters = registry.get_for_type("some_generic_type", "json")
+    generic_adapters = populated_adapter_registry.get_for_type("some_generic_type", "json")
 
     # Test that a semantic type-specific adapter is chosen even if format is generic
-    fasta_adapters = registry.get_for_type("protein_fasta", "some_fasta_format")
+    fasta_adapters = populated_adapter_registry.get_for_type("protein_fasta", "some_fasta_format")
 
     # Test that no adapter is found for unsupported types/formats
-    unsupported_adapters = registry.get_for_type("unsupported_type", "unsupported_format")
+    unsupported_adapters = populated_adapter_registry.get_for_type(
+        "unsupported_type", "unsupported_format",
+    )
 
     assert len(ncbi_adapters) == 2
     assert len(generic_adapters) == 1
     assert len(fasta_adapters) == 1
     assert len(unsupported_adapters) == 0
 
-    assert ncbi_adapters[0] == registry["MockNcbiAdapter"]
-    assert generic_adapters[0] == registry["GenericJsonAdapter"]
-    assert fasta_adapters[0] == registry["ProteinFastaAdapter"]
-
-
+    assert ncbi_adapters[0] == populated_adapter_registry["MockNcbiAdapter"]
+    assert generic_adapters[0] == populated_adapter_registry["GenericJsonAdapter"]
+    assert fasta_adapters[0] == populated_adapter_registry["ProteinFastaAdapter"]

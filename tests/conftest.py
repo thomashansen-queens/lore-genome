@@ -127,9 +127,9 @@ def populated_adapter_registry(semantic_registry):
         accepted_formats = {"*"}
         view_mode = "table"
 
-    semantic_registry.register(MockNcbiAdapter())
-    semantic_registry.register(GenericJsonAdapter())
-    semantic_registry.register(ProteinFastaAdapter())
+    semantic_registry.register(MockNcbiAdapter)
+    semantic_registry.register(GenericJsonAdapter)
+    semantic_registry.register(ProteinFastaAdapter)
 
     return semantic_registry
 

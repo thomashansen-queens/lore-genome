@@ -63,14 +63,14 @@ def test_find_artifacts_for_field_semantic():
 
 def test_find_artifacts_for_field_structural():
     """Test duck-typing for required columns."""
-    from lore.core.adapters import TableAdapter
+    from lore.core.adapters import TabularAdapter
 
     mock_session = MagicMock()
     art_table_good = create_mock_artifact("1", {"table"}, columns=["gene", "p_value"])
     art_table_bad = create_mock_artifact("2", {"table"}, columns=["gene", "fold_change"])
     
-    art_table_good.get_adapters.return_value = [MagicMock(spec=TableAdapter)]
-    art_table_bad.get_adapters.return_value = [MagicMock(spec=TableAdapter)]
+    art_table_good.get_adapters.return_value = [MagicMock(spec=TabularAdapter)]
+    art_table_bad.get_adapters.return_value = [MagicMock(spec=TabularAdapter)]
 
     mock_session.list_artifacts.return_value = [art_table_good, art_table_bad]
 
