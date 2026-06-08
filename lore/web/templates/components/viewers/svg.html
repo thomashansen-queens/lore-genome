@@ -1,6 +1,28 @@
 {% set data = data | default({}) %}
 {% set metadata = metadata | default({}) %}
 
+<style>
+    /* Tooltips */
+    #tooltip {
+        position: fixed;
+        display: none;
+        color: var(--text-muted);
+        font-family: var(--font-sans);
+        font-size: medium;
+        background: var(--bg-subtle);
+        border: 1px solid black;
+        padding: 8px;
+        white-space: pre-wrap;
+        user-select: text;
+        pointer-events: auto;
+        z-index: 1000;
+    }
+    
+    .gene-container:hover {
+        filter: brightness(0.85);
+    }
+</style>
+
 <div class="column">
     <div class="row muted small" style="flex-shrink: 0;">
         <p>
@@ -13,5 +35,34 @@
     
     <div class="scroll-area">
         {{ data | safe }}
+        <div id="tooltip"></div>    
     </div>
 </div>
+
+<script>    
+    (() => {  // This is neccessary to maintain local scope so that the script can be re-injected in the same page
+
+        // Tooltip rendering on click
+        const tooltip = document.getElementById("tooltip");  // Get template tooltip off of page to work with
+        const svg = document.querySelector("svg");  
+        let activeTooltip = null;
+
+        if (svg) {
+            svg.addEventListener("click", event => {
+                const polygon = event.target.closest(".gene-container");  // Get the clicked-on gene
+                if (polygon && activeTooltip !== polygon){  
+                    activeTooltip = polygon;
+                    const gene = polygon.querySelector(".gene-arrow");
+                    tooltip.textContent = gene.dataset.title;
+                    tooltip.style.display = "block";
+                    tooltip.style.left = `${event.clientX + 10}px`;
+                    tooltip.style.top = `${event.clientY + 10}px`;
+                } else {
+                    // Hide the tooltip if the gene is clicked on again
+                    activeTooltip = null;
+                    tooltip.style.display = "none";
+                }
+            });
+        }
+    })();
+</script>
