@@ -11,7 +11,8 @@ from lore.core.adapters import BaseAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
 from lore.core.tasks import Task, TaskDefinition, TaskStatus
-from lore.core.execution.context import PreviewContext
+from lore.core.execution.context import ExecutionContext, PreviewContext
+from lore.core.tasks.parameters import TaskOutput, ValueInput
 from lore.core.tasks.registry import TaskRegistry
 
 # --- DATA FACTORIES & WORKSPACE FIXTURES ---
@@ -161,6 +162,35 @@ def isolated_task_registry(monkeypatch: pytest.MonkeyPatch) -> TaskRegistry:
     monkeypatch.setattr(task_registry, "_tasks", pristine_tasks)
 
     return task_registry
+
+
+class DummyInputs:
+    text_to_write = ValueInput(str, default="Default text")
+
+
+class DummyOutputs:
+    greeting_file = TaskOutput(data_type="text", label="some_output", is_primary=True)
+
+
+@pytest.fixture
+def dummy_task_plugin(isolated_task_registry) -> str:
+    """A perfectly behaved worker task for testing successful execution"""
+    @isolated_task_registry.register(
+        key="test.dummy_worker",
+        inputs=DummyInputs,
+        outputs=DummyOutputs,
+        name="Dummy Worker Task",
+    )
+    def handler(ctx: ExecutionContext, text_to_write: str):
+        out_path = ctx.get_temp_path("output.txt")
+        out_path.write_text(f"Processed: {text_to_write}")
+        ctx.materialize_file(
+            source_path=out_path,
+            output_key="greeting_file",
+            name="test_greeting",
+        )
+
+    return "test.dummy_worker"
 
 # --- LIVE EXECUTION FIXTURES ---
 

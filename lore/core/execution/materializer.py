@@ -176,7 +176,7 @@ def _materialize_single_artifact(
     artifact: "Artifact",
     materialization: str,
     accepted_data: list[str],
-    strategy: AdapterStrategy,
+    strategy: AdapterStrategy = AdapterStrategy.AUTO,
 ) -> Any:
     """
     Helper to Materialize an Artifact into real data per DSL instructions

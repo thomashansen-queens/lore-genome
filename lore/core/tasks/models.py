@@ -418,7 +418,6 @@ class TaskResults:
     A strict container for Task outputs. All slots are lists to simplify engine
     logic, but cardinality rules are enforced at the time of adding results.
     """
-
     _primary_key: str | None
     _allows_multiple: dict[str, bool]
 

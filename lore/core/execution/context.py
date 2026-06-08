@@ -282,7 +282,6 @@ class ExecutionContext:
 @dataclass
 class DummyPreviewArtifact:
     """A mock Artifact to prevent AttributeErrors in Handlers during preview."""
-
     id: str = "preview_artifact_id"
     name: str = "preview_data"
     data_type: str = "unknown"
