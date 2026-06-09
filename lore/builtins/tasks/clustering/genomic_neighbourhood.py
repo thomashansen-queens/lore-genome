@@ -298,7 +298,10 @@ def _build_master_df(ctx: lore.ExecutionContext, annotations: list[dict], cache_
     IDs of input annotation artifacts to avoid repeated processing.
     """
     df = pd.DataFrame(annotations)
-    df[["begin", "end", "protein_length"]] = df[["begin", "end", "protein_length"]].astype("Int64")
+    try:
+        df[["begin", "end", "protein_length"]] = df[["begin", "end", "protein_length"]].astype("Int64")
+    except:
+        raise ValueError("Could not find 'begin', 'end', or 'protein_length' column in 'Genome annotations'. Please ensure you've provided the correct Genome annotations file.")
 
     # 1. Establish replicon ID
     if "contig" in df.columns:

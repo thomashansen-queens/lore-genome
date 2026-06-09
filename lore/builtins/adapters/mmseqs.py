@@ -9,7 +9,7 @@ import lore
 
 
 @lore.adapter()
-class Mmseqs2ClusterAdapter(lore.TabularAdapter):
+class Mmseqs2ClusterAdapter(lore.CsvAdapter):
     """
     Adapter for parsing MMseqs2 cluster output in TSV format.
     Two columns: representative sequence and cluster member. No header row!
@@ -26,8 +26,16 @@ class Mmseqs2ClusterAdapter(lore.TabularAdapter):
             "protein_accession": "protein_accession",
             "cluster_size": "cluster_size",
         }
+        
+    def _prepare_csv_kwargs(self, config: dict, extension: str) -> dict:
+        """Helper to extract valid csv formatting kwargs from a config dict."""
+        kwargs = {}
+        kwargs["delimiter"] = "\t"
+        kwargs["fieldnames"] = list(self.schema.keys())
 
-    def adapt(self, raw_data: Any, config: dict | None = None) -> list[dict]:
+        return kwargs
+
+    def adapt(self, raw_data: Any, config: dict | None = None, **kwargs) -> list[dict]:
         """
         Intercepts the Engine's request to parse raw content into a list of dicts.
         Handles raw strings, string lists, and mangled dictionaries from generic readers.
@@ -54,9 +62,9 @@ class Mmseqs2ClusterAdapter(lore.TabularAdapter):
                     for row in raw_data:
                         lines.append("\t".join(str(v) for v in row.values()))
             else:
-                return super().adapt(raw_data, config)
+                return super().adapt(raw_data, config, **kwargs)
         else:
-            return super().adapt(raw_data, config)
+            return super().adapt(raw_data, config, **kwargs)
 
         # --- 2. Pass 1 & Pass 2 (Safely working with strings now) ---
         cluster_counts = Counter()

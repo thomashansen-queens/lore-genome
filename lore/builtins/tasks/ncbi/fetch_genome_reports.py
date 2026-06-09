@@ -11,6 +11,8 @@ import httpx
 import lore
 from .client import ncbi_client, retry
 
+from time import sleep
+
 
 # --- Enums for Dropdowns (copied from NCBI Open API) ---
 
@@ -191,7 +193,7 @@ def _fetch_genome_reports_page(api: httpx.Client, taxons: list[str], term_set: l
     return json.loads(response.read())
 
 
-def _iter_genome_reports(api: httpx.Client, taxons: list[str], term_set: list[str], fetch_limit: int | None = None, **kwargs):
+def _iter_genome_reports(api: httpx.Client, taxons: list[str], term_set: list[str], fetch_limit: int | None = None, using_api_key = False, **kwargs):
     """
     Generator for paged genome reports results from NCBI Datasets API search.
     """
@@ -215,6 +217,11 @@ def _iter_genome_reports(api: httpx.Client, taxons: list[str], term_set: list[st
         page_token = result.get("next_page_token")
         if not page_token:
             break
+        # Limit requests to 3 per second without an API key and to 10 per second with one.
+        if using_api_key:
+            sleep(0.1)
+        else:
+            sleep(0.34)
 
 
 @lore.memoize(prefix="ncbi_genome_reports")
@@ -234,6 +241,9 @@ def _fetch_all_reports_for_group(
     api_key = ncbi_config.api_key if ncbi_config else None
     if not api_key:
         ctx.logger.warning("No NCBI API key set in Settings! Authentication may be rate-limited.")
+        using_api_key = False
+    else:
+        using_api_key = True
 
     # 2. Generate with generator
     with ncbi_client(api_key) as api:
@@ -242,6 +252,7 @@ def _fetch_all_reports_for_group(
             taxons=taxons,
             term_set=term_set,
             fetch_limit=fetch_limit,
+            using_api_key=using_api_key,
             **kwargs,
         )
 
