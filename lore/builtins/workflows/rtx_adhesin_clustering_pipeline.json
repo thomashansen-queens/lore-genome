@@ -101,7 +101,7 @@
         "search_text": [],
         "fetch_limit": [],
         "annotation_ids": [],
-        "genome_accessions": [
+        "genome_accession": [
           {
             "type": "reference",
             "source_id": "eda60a7d-59ac-4236-8a92-5340510a5f24",
@@ -167,7 +167,7 @@
             "value": "FULLY_HYDRATED"
           }
         ],
-        "genome_accessions": [
+        "genome_accession": [
           {
             "type": "reference",
             "source_id": "eda60a7d-59ac-4236-8a92-5340510a5f24",

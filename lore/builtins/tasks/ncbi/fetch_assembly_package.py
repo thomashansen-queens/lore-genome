@@ -46,7 +46,7 @@ NCBI_TYPE_MAP = {
 
 class NcbiAssemblyPackageInputs:
     """Inputs for fetching assembly packages from NCBI"""
-    genome_accessions = lore.ArtifactInput(
+    genome_accession = lore.ArtifactInput(
         description="List of genome accessions to fetch assembly packages for",
         select=lore.OPTIONAL_MULTIPLE,
         load_as=lore.ADAPTED,
@@ -194,7 +194,7 @@ def _fetch_single_assembly_package(
 )
 def fetch_assembly_package(
     ctx: lore.ExecutionContext,
-    genome_accessions: list[str],
+    genome_accession: list[str],
     fetch_limit: int | None = None,
     extract_catalog: bool = False,
     save_map: bool = False,  # TODO: Maybe implement this if it's useful to users?
@@ -205,8 +205,8 @@ def fetch_assembly_package(
     """
     # 1. Setup and configure
     if fetch_limit:
-        genome_accessions = genome_accessions[:fetch_limit]
-    ctx.logger.info("Fetching NCBI assembly packages for first %s accessions", len(genome_accessions))
+        genome_accession = genome_accession[:fetch_limit]
+    ctx.logger.info("Fetching NCBI assembly packages for first %s accessions", len(genome_accession))
 
     ncbi_config = ctx.get_config("ncbi")
     api_key = ncbi_config.api_key if ncbi_config else None
@@ -229,7 +229,7 @@ def fetch_assembly_package(
     failed_accessions = []
 
     with ncbi_client(api_key) as api:
-        for genome_acc in genome_accessions:
+        for genome_acc in genome_accession:
             try:
                 zip_bytes = _fetch_single_assembly_package(ctx, api, genome_acc, **kwargs)
                 if not zip_bytes:

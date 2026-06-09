@@ -116,7 +116,7 @@ class NcbiFilterOptions:
 
 class NcbiGenomeReportsInputs(NcbiFilterOptions):
     """Inputs for fetching genome reports from NCBI."""
-    taxons = lore.ValueInput(
+    taxon = lore.ValueInput(
         list[str],
         description="NCBI Taxonomy ID or name (common or scientific) at any rank",
         label="Taxa",
@@ -263,7 +263,7 @@ def _fetch_all_reports_for_group(
 )
 def fetch_genome_reports_handler(
     ctx: lore.ExecutionContext,
-    taxons: list[str],
+    taxon: list[str],
     search_terms: list[str] | None = None,
     fetch_limit: int | None = None,
     **kwargs,
@@ -272,7 +272,7 @@ def fetch_genome_reports_handler(
     Task handler to fetch genome reports from NCBI Datasets API based on the provided inputs.
     Outputs a JSON serializable list of genome report dicts.
     """
-    ctx.logger.info("Fetching NCBI genome reports for taxons: %s", taxons)
+    ctx.logger.info("Fetching NCBI genome reports for taxons: %s", taxon)
 
     ncbi_config = ctx.get_config("ncbi")
     if not ncbi_config or not ncbi_config.api_key:
@@ -297,7 +297,7 @@ def fetch_genome_reports_handler(
         ctx.logger.info("Fetching genome reports with terms: %s", ' AND '.join(term_set))
         group_reports = _fetch_all_reports_for_group(
             ctx=ctx,
-            taxons=taxons,
+            taxons=taxon,
             term_set=term_set,
             fetch_limit=fetch_limit,
             **kwargs,
@@ -319,9 +319,9 @@ def fetch_genome_reports_handler(
         raise ValueError("No genome reports found for the given criteria.")
 
     # 3. Materialize Artifact
-    name_from_taxon = taxons[0].replace(" ", "_").replace("/", "-")
-    if len(taxons) > 1:
-        name_from_taxon += f"_and_{len(taxons)-1}_more"
+    name_from_taxon = taxon[0].replace(" ", "_").replace("/", "-")
+    if len(taxon) > 1:
+        name_from_taxon += f"_and_{len(taxon)-1}_more"
 
     ctx.materialize_content(
         output_key="report",
@@ -330,7 +330,7 @@ def fetch_genome_reports_handler(
         extension="json",
         metadata={
             "genome_count": count,
-            "taxa": taxons,  # NCBI API uses `taxons`; we will not be subjugated
+            "taxa": taxon,  # NCBI API uses `taxons`; we will not be subjugated
             "search_terms": search_terms,
         },
     )

@@ -5,7 +5,7 @@ import subprocess
 import shutil
 from pathlib import Path
 
-from lore.builtins.adapters.fasta import FastaAdapter
+from lore.builtins.adapters.fasta import ProteinFastaAdapter
 import lore.core.dsl as lore
 
 
@@ -150,7 +150,7 @@ def _sliced_fasta(
     """
     start, end = _parse_window(cluster_window)
     tmp_out = sandbox_dir / "sliced.fasta"
-    adapter = FastaAdapter()
+    adapter = ProteinFastaAdapter()
 
     with (
         open(source_path, "r", encoding="utf-8") as f_in,

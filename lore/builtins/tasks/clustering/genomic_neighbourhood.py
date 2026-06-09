@@ -10,14 +10,14 @@ from lore import viz as v
 
 class GenomicNeighbourhoodTaskInputs:
     """Inputs for genomic neighbourhood analysis"""
-    protein_accessions = lore.ArtifactInput(
+    protein_accession = lore.ArtifactInput(
         label="Protein accessions",
         description="The protein accession(s) for the gene(s) of interest",
         accepted_data=["protein_accession"],
         select=lore.MULTIPLE,
         load_as=lore.ADAPTED,
     )
-    genome_annotations = lore.ArtifactInput(
+    genome_annotation = lore.ArtifactInput(
         label="Genome annotations",
         accepted_data=["ncbi_annotation_packages", "genome_annotations"],
         select=lore.MULTIPLE,
@@ -443,8 +443,8 @@ def _extract_neighbourhoods(
 )
 def genomic_neighbourhood_analysis(
     ctx: lore.ExecutionContext,
-    protein_accessions: list[str],
-    genome_annotations: list[dict],
+    protein_accession: list[str],
+    genome_annotation: list[dict],
     context_window_str: str | None = None,
     context_window_type: Literal["gene_features", "base_pairs"] = "gene_features",
     save_report: bool = False,
@@ -464,12 +464,12 @@ def genomic_neighbourhood_analysis(
     context_window = _set_window(context_window_str.strip())
 
     cache_key = "_".join(a.id for a in ctx.input_artifacts.get("genome_annotations", []))
-    annotation_df = _build_master_df(ctx, annotations=genome_annotations, cache_key=cache_key)
+    annotation_df = _build_master_df(ctx, annotations=genome_annotation, cache_key=cache_key)
 
     neighbourhoods = _extract_neighbourhoods(
         ctx=ctx,
         annotation_df=annotation_df,
-        accessions=protein_accessions,
+        accessions=protein_accession,
         window=context_window,
         window_type=context_window_type,
         collapse_replicons=collapse_replicons,
