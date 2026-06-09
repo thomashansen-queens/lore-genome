@@ -159,8 +159,10 @@ def _sliced_fasta(
         kept_count = 0
         dropped_count = 0
         for record in adapter.adapt_stream(f_in):
-
-            seq = record["sequence"]
+            if "sequence" in record.keys():
+                seq = record["sequence"]
+            else:
+                seq = record["protein_sequence"]
             sliced = seq[start:end]
             if not sliced:
                 dropped_count += 1
@@ -275,7 +277,7 @@ def mmseqs2_handler(
         data_type="mmseqs2_cluster_map",
         metadata={
             "header": False,
-            "fieldnames": ["cluster_rep", "cluster_member"],
+            # "fieldnames": ["cluster_rep", "cluster_member"],
         }
     )
 
