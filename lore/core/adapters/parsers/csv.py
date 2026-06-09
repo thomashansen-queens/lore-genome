@@ -67,6 +67,8 @@ class CsvAdapter(TabularAdapter):
             # Peek at first row to count columns
             first_row = next(csv.reader([raw_data[0]], **csv_kwargs))
             csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
+        elif "fieldnames" not in csv_kwargs:
+            raw_data = raw_data[1:]
 
         dict_reader = csv.DictReader(raw_data, **csv_kwargs)
         return list(dict_reader)
@@ -82,6 +84,7 @@ class CsvAdapter(TabularAdapter):
         """
         # TODO: Should I decide with utf-8-sig here as well to handle BOM in streaming cases?
         # It would add complexity to already-expensive streaming handling
+        # TODO: strip out the header from the raw stream so it doesn't get incorporated directly in the table
         kwconfig = self._prepare_config(config, **kwargs)
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
