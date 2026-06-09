@@ -205,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 viewerTarget.innerHTML = result.html;
 
                 // Inject the scripts from the HTML
-                target.querySelectorAll("script").forEach(oldScript => {
+                viewerTarget.querySelectorAll("script").forEach(oldScript => {
                     const newScript = document.createElement("script");
 
                     // Copy attributes
