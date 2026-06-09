@@ -27,7 +27,7 @@ class CsvAdapter(TabularAdapter):
         """Helper to extract valid csv formatting kwargs from a config dict."""
         kwargs = {}
         # Default delimiter fallback based on extension
-        kwargs["delimiter"] = "\t" if extension in ("tsv") else ","
+        kwargs["delimiter"] = "\t" if extension in ["tsv"] else ","
 
         # Alias for columns -> fieldnames (will be overridden by explicit fieldnames if both)
         if "columns" in config:
