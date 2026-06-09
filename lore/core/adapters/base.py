@@ -60,10 +60,12 @@ class BaseAdapter(ABC):
 
     def _prepare_config(self, config: dict | None = None, **kwargs) -> dict:
         """
-        Standardizes configuration across all adapters. 
+        Standardizes configuration across all adapters. Flattens 'options' dict.
         Merges explicit config dicts with kwargs and normalizes common aliases.
         """
-        merged = {**(config or {}), **kwargs}
+        config = config or {}
+        options = config.pop("options", {})
+        merged = {**config, **options, **kwargs}
 
         # Normalize aliases (just extension for now)
         if "extension" in merged or "ext" in merged:

@@ -21,8 +21,10 @@ class TextAdapter(BaseAdapter):
     def provided_types(self) -> set[str]:
         return {"raw", "text"}
 
-    def adapt(self, raw_data: Any, config: dict | None = None) -> str:
+    def adapt(self, raw_data: Any, config: dict | None = None, **kwargs) -> str:
         """Ensures the raw data is returned as a string for display."""
+        kwconfig = self._prepare_config(config, **kwargs)
+
         # 1. Bytes or string: return as-is
         if isinstance(raw_data, bytes):
             return raw_data.decode("utf-8", errors="replace")
@@ -53,9 +55,9 @@ class TextAdapter(BaseAdapter):
 
     # --- Output methods ---
 
-    def serialize(self, records: Any, config: dict | None = None) -> str:
+    def serialize(self, records: Any, config: dict | None = None, **kwargs) -> str:
         """Writes adapted text back to a single stirng."""
         if isinstance(records, str):
             return records
 
-        return self.adapt(records, config)
+        return self.adapt(records, config, **kwargs)

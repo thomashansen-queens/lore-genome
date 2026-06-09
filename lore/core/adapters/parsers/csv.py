@@ -63,14 +63,23 @@ class CsvAdapter(TabularAdapter):
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
 
         # 3. Header handling
-        if kwconfig.get("header", True) in (False, None) and "fieldnames" not in csv_kwargs:
+        has_header = kwconfig.get("header", True)
+        if not has_header and "fieldnames" not in csv_kwargs:
             # Peek at first row to count columns
             first_row = next(csv.reader([raw_data[0]], **csv_kwargs))
             csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
         elif "fieldnames" not in csv_kwargs:
             raw_data = raw_data[1:]
 
-        dict_reader = csv.DictReader(raw_data, **csv_kwargs)
+        # 4. Memory-efficient skipping of header line if needed
+        data_iterator = iter(raw_data)
+        if has_header and "fieldnames" in csv_kwargs:
+            try:
+                next(data_iterator)
+            except StopIteration:
+                pass
+
+        dict_reader = csv.DictReader(data_iterator, **csv_kwargs)
         return list(dict_reader)
 
     def parse_stream(
@@ -89,8 +98,9 @@ class CsvAdapter(TabularAdapter):
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
 
-        # Header handling
-        if kwconfig.get("header", True) in (False, None) and "fieldnames" not in csv_kwargs:
+        # 1. Header handling
+        has_header = kwconfig.get("header", True)
+        if has_header in (False, None) and "fieldnames" not in csv_kwargs:
             import itertools
             stream_peek, raw_stream = itertools.tee(raw_stream)
             try:
@@ -99,6 +109,14 @@ class CsvAdapter(TabularAdapter):
                 csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
             except StopIteration:
                 # Empty stream, return without yielding
+                return
+
+        # 2. Skip header line if needed
+        if has_header and "fieldnames" in csv_kwargs:
+            try:
+                next(raw_stream)  # Skip header line
+            except StopIteration:
+                # Stream had only header, return without yielding
                 return
 
         dict_reader = csv.DictReader(raw_stream, **csv_kwargs)

@@ -361,7 +361,12 @@ class PreviewContext(ExecutionContext):
             else:
                 raw_data, io_metadata = reader.preview(limit=100)
 
-            adapter_result = adapter.preview(raw_data, io_metadata, config=adapter_config)
+            adapter_result = adapter.preview(
+                raw_data,
+                io_metadata,
+                config=adapter_config,
+                ext=extension,
+            )
 
             return {
                 "data": adapter_result.data,

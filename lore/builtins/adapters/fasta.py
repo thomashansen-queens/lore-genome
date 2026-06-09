@@ -1,14 +1,13 @@
 """
 Adapter for handling FASTA files in LoRē Genome.
 """
-from typing import Any, Iterator
+from typing import Any, ClassVar, Iterator
 
 import lore
 import numpy as np
 
 
-@lore.adapter()
-class FastaAdapter(lore.TabularAdapter):
+class BaseFastaAdapter(lore.TabularAdapter):
     """
     Adapter for NCBI-style FASTA files with three part headers:
     >accession description sequence
@@ -21,7 +20,6 @@ class FastaAdapter(lore.TabularAdapter):
     TODO: Support other FASTA header formats (e.g. UniProt's pipe-separated)
     """
     accepted_formats = {"fasta", "faa", "fa", "fna", "ffn"}
-    accepted_types = {"protein_fasta", "nucleotide_fasta", "fasta"}
     version = "1.0.0"
 
     @property
@@ -169,6 +167,37 @@ class FastaAdapter(lore.TabularAdapter):
             # 3. Yield the entire block at once
             yield f"{header}\n{wrapped_seq}\n"
 
+# --- Fasta adapters by domain (protein, DNA, RNA) ---
+# These are just thin wrappers for types and schemas
+
+@lore.adapter()
+class ProteinFastaAdapter(BaseFastaAdapter):
+    """Semantic wrapper for protein sequences"""
+    accepted_types: ClassVar[set[str]] = {"protein_fasta"}
+
+    @property
+    def schema(self):
+        return {
+            "protein_accession": "accession",
+            "protein_description": "description",
+            "protein_sequence": "sequence",
+        }
+
+
+@lore.adapter()
+class NucleotideFastaAdapter(BaseFastaAdapter):
+    """Semantic wrapper for nucleotide sequences"""
+    accepted_types: ClassVar[set[str]] = {"nucleotide_fasta"}
+
+    @property
+    def schema(self):
+        return {
+            "nucleotide_accession": "accession",
+            "nucleotide_description": "description",
+            "nucleotide_sequence": "sequence",
+        }
+
+
 # --- Specialized FASTA adapter for computations ---
 # This essentially applies ExPASy's ProtParam calculations on the fly to a 
 # FASTA file. Their tool is avilable at https://web.expasy.org/protparam/
@@ -313,7 +342,7 @@ def _aromaticity(seq: str) -> float | None:
 
 
 @lore.adapter()
-class ProtParamAdapter(FastaAdapter):
+class ProtParamAdapter(ProteinFastaAdapter):
     """
     Protein physicochemical properties from FASTA sequences. Obviously does
     not work for nucleotide FASTA files.

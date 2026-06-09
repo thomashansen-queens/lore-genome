@@ -191,7 +191,7 @@ class TaskPayload(BaseModel):
     name: str | None = None
     task_id: str | None = None  # for edits; ignored on new Tasks
     inputs: dict
-    exec_config: TaskConfig = Field(default_factory=TaskConfig)
+    task_config: TaskConfig = Field(default_factory=TaskConfig)
 
 
 @router.post("/{task_id}/rename", response_class=RedirectResponse)
@@ -341,7 +341,7 @@ def api_task_commit(
                 task = s.update_task(
                     task.id,
                     inputs=input_bindings,
-                    exec_config=payload.exec_config.model_dump(mode="json"),
+                    exec_config=payload.task_config.model_dump(mode="json"),
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),
                 )
@@ -351,7 +351,7 @@ def api_task_commit(
                     inputs=input_bindings,
                     name=task_name,
                     parent_artifact_ids=list(set(parent_ids)),  # Deduplicate parent IDs
-                    exec_config=payload.exec_config.model_dump(mode="json"),
+                    exec_config=payload.task_config.model_dump(mode="json"),
                 )
             task_id = task.id
 
@@ -410,7 +410,7 @@ def api_task_preview(
             session_id=session_id,
             task_key=task_key,
             raw_inputs=inferred_bindings,
-            exec_config=payload.exec_config.model_dump(mode="json"),
+            exec_config=payload.task_config.model_dump(mode="json"),
         )
         primary_results = results.primary_data
         if not primary_results:
@@ -427,8 +427,7 @@ def api_task_preview(
         adapter_name = primary_result.get("adapter_name", "unknown")
 
         # 5. Extract strategy used to determine UI state
-        exec_config = payload.exec_config
-        strategy = exec_config.adapter.strategy
+        strategy = payload.task_config.adapter.strategy
 
         # 6. Apply DOM truncation for large datasets (avoid browser crashes)
         # TODO: Centralize this logic? It also exists in Artifact Explore
@@ -471,7 +470,7 @@ def api_task_preview(
         render_context = {
             "request": ctx.request,
             "data": output_data,
-            "view_state": payload.exec_config.adapter.view_state,
+            "view_state": payload.task_config.adapter.view_state,
             "metadata": metadata,
             "adapter_name": adapter_name,
             "view_mode": view_mode,

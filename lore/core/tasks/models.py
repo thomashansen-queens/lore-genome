@@ -174,7 +174,6 @@ class AdapterStrategy(StrEnum):
 
 class AdapterConfig(BaseModel):
     """Task config for the Adapter and UI presentation layer"""
-
     view_state: dict[str, Any] = Field(
         default_factory=dict, description="UI view state (e.g. {'sort_by': 'score'})"
     )
@@ -182,19 +181,20 @@ class AdapterConfig(BaseModel):
         default=AdapterStrategy.AUTO,
         description="How the Adapter should load the data for the Task. 'auto' streams if possible, 'lazy' forces streaming, 'eager' loads everything",
     )
-    # FUTURE: UI settings can go here too (e.g. whether to show a table with pagination, or a simple list of results)
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description="kwargs to pass to the Adapter e.g. {'separator': '\\t'}",
+    )
 
 
 class ExecutionConfig(BaseModel):
     """Task config for the Engine's execution behaviour"""
-
     pass
     # FUTURE: Settings like "force_recommpute", "timeout" etc.
 
 
 class TaskConfig(BaseModel):
     """Namespaced configuration for a Task execution"""
-
     adapter: AdapterConfig = Field(default_factory=AdapterConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     task: dict[str, Any] = Field(default_factory=dict)  # arbitrary Task-specific config

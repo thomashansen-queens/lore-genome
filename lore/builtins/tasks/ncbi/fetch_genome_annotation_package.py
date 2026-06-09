@@ -31,7 +31,7 @@ class NcbiAnnotationPackageInputs:
     """
     Inputs for fetching genome annotation packages from NCBI.
     """
-    genome_accessions = lore.ArtifactInput(
+    genome_accession = lore.ArtifactInput(
         description="List of genome assembly accessions (e.g. GCF_000005845.2) to fetch annotation packages for",
         select=lore.MULTIPLE,
         load_as=lore.ADAPTED,
@@ -172,7 +172,7 @@ def _fetch_single_annotation_package(
 )
 def fetch_genome_annotation_package_handler(
     ctx: lore.ExecutionContext,
-    genome_accessions: list[str],
+    genome_accession: list[str],
     fetch_limit: int | None = None,
     **kwargs,
 ):
@@ -181,8 +181,10 @@ def fetch_genome_annotation_package_handler(
     of accessions.
     """
     if fetch_limit:
-        genome_accessions = genome_accessions[:fetch_limit]
-    ctx.logger.info("Fetching NCBI genome annotations for first %s accessions", len(genome_accessions))
+        genome_accession = genome_accession[:fetch_limit]
+    ctx.logger.info(
+        "Fetching NCBI genome annotations for first %s accessions", len(genome_accession),
+    )
 
     ncbi_config = ctx.get_config("ncbi")
     api_key = ncbi_config.api_key if ncbi_config else None
@@ -196,7 +198,7 @@ def fetch_genome_annotation_package_handler(
 
     with ncbi_client(api_key) as api:
         with open(out_path, "w", encoding="utf-8") as tmp_out:
-            for i, acc in enumerate(genome_accessions):
+            for i, acc in enumerate(genome_accession):
                 try:
                     records = _fetch_single_annotation_package(ctx, api, acc, **kwargs)
 
