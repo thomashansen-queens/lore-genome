@@ -2,6 +2,25 @@
 {% set metadata = metadata | default({}) %}
 {% set view_state = view_state | default({}) %}
 
+<style>
+    table {
+        border-collapse: collapse;
+        user-select: none; /* Stops native text highlighting */
+    }
+    td {
+        border: 1px solid #ccc;
+        padding: 12px 20px;
+        text-align: center;
+        cursor: cell;
+    }
+    /* Excel-like selection style */
+    td.selected {
+        background-color: rgba(33, 115, 70, 0.15);
+        outline: 2px solid rgb(33, 115, 70);
+        outline-offset: -2px;
+    }
+</style>
+
 <div class="column">
 
     <div class="row gapped muted small" style="flex-shrink: 0;">
@@ -82,3 +101,108 @@
     </div>
 
 </div>
+
+<script>
+    (() => {
+        // Excel-like table selection
+        const table = document.getElementById('preview-table');
+        let isDragging = false;
+        let startCell = null;
+        let sel_rows = 0
+        let sel_cols = 0
+
+        // Helper to get row and column index of a TD element
+        function getIndices(cell) {
+            return {
+                row: cell.parentElement.rowIndex,
+                col: cell.cellIndex
+            };
+        }
+
+        document.addEventListener('click', (event) => {
+            // Check if the click happened outside the table
+            if (!table.contains(event.target)) {
+                clearSelection();
+                sel_cols = 0;
+                sel_rows = 0;
+            }
+        });
+
+        table.addEventListener('mousedown', (e) => {
+            const cell = e.target.closest('td');
+            if (!cell) return;
+
+            isDragging = true;
+            startCell = getIndices(cell);
+
+            // Clear previous selections
+            clearSelection();
+            cell.classList.add('selected');
+
+            sel_cols = 1;
+            sel_rows = 1;
+        });
+
+        table.addEventListener('mouseover', (e) => {
+            if (!isDragging) return;
+            const cell = e.target.closest('td');
+            if (!cell) return;
+
+            const currentCell = getIndices(cell);
+            
+            // Calculate bounding boxes (handles dragging up, down, left, or right)
+            const startRow = Math.min(startCell.row, currentCell.row);
+            const endRow = Math.max(startCell.row, currentCell.row);
+            const startCol = Math.min(startCell.col, currentCell.col);
+            const endCol = Math.max(startCell.col, currentCell.col);
+
+            clearSelection();
+
+            // Highlight all cells within the calculated rectangle
+            for (let r = startRow; r <= endRow; r++) {
+                for (let c = startCol; c <= endCol; c++) {
+                table.rows[r].cells[c].classList.add('selected');
+                }
+            }
+
+            sel_cols = endCol - startCol + 1;
+            sel_rows = endRow - startRow + 1;
+        });
+
+        // Stop selection when mouse is released anywhere on the page
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        function clearSelection() {
+            const selectedCells = table.querySelectorAll('td.selected');
+            selectedCells.forEach(cell => cell.classList.remove('selected'));
+        }
+        
+        // 
+        document.addEventListener('copy', (event) => {
+            // Don't override copy behavior if no cells are selected
+            if (sel_cols > 0) {
+                // Prevent the default copy action
+                event.preventDefault(); 
+
+                sel_cells = table.querySelectorAll('td.selected');
+                
+                let csvRows = [];
+
+                for (let r = 0; r < sel_rows; r++) {
+                    let row = [];
+
+                    for (let c = 0; c < sel_cols; c++) {
+                        const index = r * sel_cols + c;
+                        row.push(sel_cells[index].innerText.trim());
+                    }
+
+                    csvRows.push(row.join(","));
+                }
+
+                event.clipboardData.setData('text/plain', csvRows.join("\n"));
+            }
+        });
+    })();
+</script>
