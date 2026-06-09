@@ -5,10 +5,28 @@
     <div style="flex-shrink: 0; min-height: 0; margin-bottom: var(--spacing-sm);">
         <small class="muted">
             Rendered via {{ adapter_name }} (raw text fallback)
+            <button id="copyBtn" style="float: right;">Copy All</button>
         </small>
     </div>
+    
     
     <div class="scroll-area">
         <pre style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap;">{{ data }}</pre>
     </div>
 </div>
+
+<script>
+(() => {
+    const div = document.getElementsByClassName("scroll-area")[0];
+
+    document.getElementById("copyBtn").addEventListener("click", async () => {
+        const text = div.innerText;
+
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error("Copy failed:", err);
+        }
+    });
+})();
+</script>
