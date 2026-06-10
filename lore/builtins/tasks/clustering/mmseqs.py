@@ -179,7 +179,7 @@ def _sliced_fasta(
                     continue
 
             name_part = f" {record['name']}" if record.get("name") else ""
-            f_out.write(f">{record['accession']}{name_part}\n{sliced}\n")
+            f_out.write(f">{record['protein_accession']}{name_part}\n{sliced}\n")
             kept_count += 1
 
     ctx.logger.info(f"Sliced FASTA created with {kept_count} sequences kept and {dropped_count} sequences dropped based on the specified window.")
