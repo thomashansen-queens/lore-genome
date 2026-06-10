@@ -1,21 +1,12 @@
 """
 Python-based REST API client for NCBI Datasets
-
-NCBI Datasets API documentation:
-https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/rest-api/
 """
-
-from contextlib import contextmanager
-from importlib.metadata import version
 import functools
 from time import sleep
 import logging
 import httpx
 
-import lore.core.dsl as lore
-
-
-NCBI_DATASETS_BASE_URL = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha"
+import lore
 
 
 @lore.config(key="ncbi", title="NCBI Datasets")
@@ -30,33 +21,15 @@ class NcbiDatasetsConfig:
             "(https://account.ncbi.nlm.nih.gov/settings/)"
         ),
     )
-
-
-@contextmanager
-def ncbi_client(api_key: str | None = None, timeout: float = 60.0):
-    """
-    Create a configured httpx client for the NCBI Datasets API.
-    event_hooks allows us to raise exceptions on HTTP errors, rather than checking
-    {"success": false, "error": {...}} in the JSON response.
-    """
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": f"lore-genome/{version('lore-genome')}",
-    }
-    if api_key:
-        headers["api-key"] = api_key
-
-    def raise_on_4xx_5xx(response: httpx.Response):
-        response.raise_for_status()
-
-    with httpx.Client(
-        base_url=NCBI_DATASETS_BASE_URL,
-        headers=headers,
-        timeout=httpx.Timeout(connect=5.0, read=timeout, write=timeout, pool=timeout),
-        event_hooks={"response": [raise_on_4xx_5xx]},
-        verify=False,
-    ) as client:
-        yield client
+    email = lore.ValueInput(
+        str,
+        default="",
+        label="Contact Email",
+        description=(
+            "Email address to include in API requests. NCBI recommends including an email for "
+            "contact purposes, but it is not strictly required."
+        ),
+    )
 
 
 def retry(exceptions=(httpx.RequestError, httpx.TimeoutException), tries=4, delay=2, default_logger=None):

@@ -20,7 +20,6 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
     """
     Returns a list of Artifacts able to satisfy an input field's data type requirements.
     """
-    from lore.core.adapters import TabularAdapter
     from lore.core.topology.traits import DataTrait
 
     if not field_extra.get("is_artifact"):
@@ -47,26 +46,9 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
             valid_artifacts.append(artifact)
             continue
 
-        # 3. Requirement is a literal string - e.g. "json"
-        if not semantic_requirements:
-            continue
-
-        provided_types = set(artifact.resolvable_types())
-
-        # 4. Does a slice of a table-like artifact match?
-        table_adapters = [a for a in art_adapters if isinstance(a, TabularAdapter)]
-        if table_adapters:
-            # A. Dynamic schema: Columns (e.g. from arbitrary CSVs)
-            provided_types.update(artifact.metadata.get("columns", []))
-            provided_types.update(artifact.metadata.get("keys", []))
-
-            # B. Static schema: Adapter-provided
-            for adapter in table_adapters:
-                schema = getattr(adapter, "schema", {})
-                provided_types.update(schema.keys())
-
-        # 5. Is either schema capable of satisfying the accepted data requirements?
-        if semantic_requirements & provided_types:
+        # 3. Requirement is a literal string - e.g. "json", "uid"
+        # The Artifact owns the union of its static and dynamic schemas.
+        if semantic_requirements & artifact.resolvable_types():
             valid_artifacts.append(artifact)
 
     return valid_artifacts
@@ -106,7 +88,8 @@ def map_artifacts_to_task_inputs(session: "Session", task_def: "TaskDefinition",
         _, extra = task_def.field_meta(key)
 
         accepted_data = set(extra.get("accepted_data", ["*"]))
-        is_multiple = extra.get("cardinality", "single") in ("multiple", "pair", "two_or_more")
+        # `select` holds the serialized Cardinality value (see ArtifactInput._enrich_schema_extra)
+        is_multiple = extra.get("select", "single") in ("multiple", "optional_multiple")
 
         for artifact in artifacts:
             resolvable = artifact.resolvable_types()

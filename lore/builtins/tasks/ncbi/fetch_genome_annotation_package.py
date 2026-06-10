@@ -6,18 +6,17 @@ file, where each line describes one gene's annotation metadata.
 
 https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/data-packages/gene-package/
 """
-
 from enum import Enum
 import io
 import json
 from time import sleep
 import zipfile
 import logging
-
 import httpx
 
-import lore.core.dsl as lore
-from lore.builtins.tasks.ncbi.client import ncbi_client, retry
+import lore
+from .config import retry
+from .datasets_client import datasets_client
 
 # --- NCBI Enums ---
 class V2GenomeAnnotationRequestAnnotationType(str, Enum):
@@ -91,7 +90,7 @@ class NcbiAnnotationPackageOutputs:
         is_primary=True,
     )
     failed_accessions = lore.TaskOutput(
-        data_type="genome_accessions",
+        data_type="genome_accession",
         label="Failed accessions",
         description="The list of accessions that failed to be fetched.",
     )
@@ -196,7 +195,7 @@ def fetch_genome_annotation_package_handler(
     record_count = 0
     failed_accessions = []
 
-    with ncbi_client(api_key) as api:
+    with datasets_client(api_key) as api:
         with open(out_path, "w", encoding="utf-8") as tmp_out:
             for i, acc in enumerate(genome_accession):
                 try:

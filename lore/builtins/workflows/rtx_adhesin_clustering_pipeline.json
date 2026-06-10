@@ -126,7 +126,7 @@
         "group_by": [
           {
             "type": "literal",
-            "value": "accession"
+            "value": "protein_accession"
           }
         ],
         "deduplicate": [
@@ -336,10 +336,10 @@
             "value": "Sequel"
           }
         ],
-        "taxons": [
+        "taxon": [
           {
             "type": "user_input",
-            "input_key": "taxons"
+            "input_key": "taxon"
           }
         ],
         "fetch_limit": [

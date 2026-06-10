@@ -5,11 +5,11 @@ from datetime import datetime
 from enum import Enum
 import json
 import logging
-
 import httpx
 
 import lore
-from .client import ncbi_client, retry
+from .config import retry
+from .datasets_client import datasets_client
 
 
 # --- Enums for Dropdowns (copied from NCBI Open API) ---
@@ -236,7 +236,7 @@ def _fetch_all_reports_for_group(
         ctx.logger.warning("No NCBI API key set in Settings! Authentication may be rate-limited.")
 
     # 2. Generate with generator
-    with ncbi_client(api_key) as api:
+    with datasets_client(api_key) as api:
         iterator = _iter_genome_reports(
             api=api,
             taxons=taxons,

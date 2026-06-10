@@ -2,16 +2,16 @@
 Task to fetch genome 'assembly packages' from NCBI Datasets. Currently the main 
 use is to fetch the protein FASTA files for a list of genome accessions.
 """
-
 import enum
 import io
 import logging
 import zipfile
-
 import httpx
 
-import lore.core.dsl as lore
-from lore.builtins.tasks.ncbi.client import ncbi_client, retry
+import lore
+
+from .config import retry
+from .datasets_client import datasets_client
 
 # Enum value: (glob path in zip, output_key in outputs)
 # --- NCBI API Enums ---
@@ -133,7 +133,7 @@ class NcbiAssemblyPackageOutputs:
         yields=lore.OPTIONAL_MULTIPLE,
     )
     failed_accessions = lore.TaskOutput(
-        data_type="genome_accessions",
+        data_type="genome_accession",
         label="Failed accessions",
         description="The list of genome accessions that failed to be fetched.",
         yields=lore.OPTIONAL,
@@ -228,7 +228,7 @@ def fetch_assembly_package(
     # 3. Fetch and unzip data
     failed_accessions = []
 
-    with ncbi_client(api_key) as api:
+    with datasets_client(api_key) as api:
         for genome_acc in genome_accession:
             try:
                 zip_bytes = _fetch_single_assembly_package(ctx, api, genome_acc, **kwargs)
