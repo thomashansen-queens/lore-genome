@@ -3,6 +3,8 @@ import pandas as pd
 import lore.core.dsl as lore
 import re
 
+from time import sleep
+
 DEFAULT_ACCESSION_HEADER_NAMES = ["mmseqs_cluster_id", "protein_accession", "accession"]
 DEFAULT_PROTEIN_HEADER_NAMES = ["protein_sequence", "sequence"]
 
@@ -77,9 +79,10 @@ def wp_to_fasta(
         ncbi_config = ctx.get_config("ncbi")        
         api_key = ncbi_config.api_key if ncbi_config else None
         if not api_key:
+            has_api_key = False 
             ctx.logger.warning("No NCBI API key set in Settings! Authentication may be rate-limited.")
-
-        # from lore.builtins.tasks.ncbi.fetch_genome_annotation_package import _fetch_single_annotation_package
+        else:
+            has_api_key = True
         
     acc_list = re.split(r"[,\s]+", accessions)
     out_path = ctx.get_temp_path("wp_protein.FASTA")
@@ -98,7 +101,7 @@ def wp_to_fasta(
                     break
             if not found:    
                 raise ValueError("Could not find the protein sequence column in the provided table - please manually indicate the column under 'Sequence Column (optional)'")
-        # If a header name was specified for the protein sequence, try to for that
+        # If a header name was specified for the protein sequence, try for that
         elif seq_column in df.columns:
             seq_header = seq_column
         else:
@@ -112,11 +115,10 @@ def wp_to_fasta(
             else:
                 seq_header = df.columns[seq_header_idx]
                 
-        # Check for accessions under headers named either "mmseqs_cluster_id", "protein_sequence", or "sequence"
         if acc_column == "":
             raise ValueError("Please specify the Accession Column under 'Accession Column' - this column is required to index the protein sequences. Available columns are: " + ", ".join(df.columns))
 
-        # If a header name was specified for the protein sequence, try to for that
+        # Get accession column
         if acc_column in df.columns:
             acc_header = acc_column
         else:
@@ -130,6 +132,7 @@ def wp_to_fasta(
             else:
                 acc_header = df.columns[acc_header_idx]
         
+        # Check for matches in the table and keep track of any accessions that were missed so we can optionally pull them from NCBI
         match_idxs = df[acc_header].isin(acc_list)
         all_matches = df[match_idxs]
         missed_matches = set(acc_list) - set(all_matches[acc_header])
@@ -141,33 +144,42 @@ def wp_to_fasta(
             if not index_from_ncbi:
                 raise ValueError(f"Could not find protein sequences for {missed_matches}. To acquire missing sequences, set 'Index from NCBI' to True (note this is slower than indexing from a pre-made table and requires internet connection).")
             else:
+                # Pull missing protein sequences from NCBI
                 ctx.logger.info(f"Attempting to acquire missing protein sequences for {missed_matches} directly from NCBI...")
                 with ncbi_client(api_key) as api:
-                    try:
-                        zip_bytes = api.get(f"/protein/accession/{','.join(missed_matches)}/download", params={"include_annotation_type": "FASTA_PROTEIN"}).read()
-                        if not zip_bytes:
-                            raise Exception("No data returned for accessions", missed_matches)
+                    # Make requests to NCBI in batches of 10
+                    for i in range(0, len(missed_matches), 10):
+                        batch = list(missed_matches)[i:i+10]
+                        try:
+                            zip_bytes = api.get(f"/protein/accession/{','.join(batch)}/download", params={"include_annotation_type": "FASTA_PROTEIN"}).read()
+                            if not zip_bytes:
+                                raise Exception("No data returned for the batch of accessions:", batch)
 
-                        # 3. Extract the JSONL file from the zip
-                        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
-                            targets = [f for f in z.namelist() if f.endswith(".faa")]
-                            if not targets:
-                                raise Exception("No protein FASTA file found in zip for accessions %s", missed_matches)
+                            # Extract the FASTA file from the zip
+                            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+                                targets = [f for f in z.namelist() if f.endswith(".faa")]
+                                if not targets:
+                                    raise Exception("No protein FASTA file found in zip for accessions %s", batch)
 
-                            with z.open(targets[0]) as zip_f:
-                                while True:
-                                    line = zip_f.readline()
-                                    if not line:
-                                        break
-                                    line = line.decode("utf-8").rstrip()
-                                    if not line.startswith(">"):
-                                        line = line.replace("\n", "")
-                                        print(line, file=f, end="")
-                                    else:
-                                        print(f'\n{line}', file=f)
-                            print(file=f)
-                    except:
-                        raise Exception("Error fetching the following missing accessions from NCBI: %s", missed_matches)
+                                with z.open(targets[0]) as zip_f:
+                                    # Append the FASTA contents to the output file
+                                    while True:
+                                        line = zip_f.readline()
+                                        if not line:
+                                            break
+                                        line = line.decode("utf-8").rstrip()
+                                        if not line.startswith(">"):
+                                            line = line.replace("\n", "")
+                                            print(line, file=f, end="")
+                                        else:
+                                            print(f'\n{line}', file=f)
+                        except:
+                            raise Exception("Error fetching the following batch of accessions from NCBI - did you enter an invalid accession?: %s", batch)
+                        if has_api_key:
+                            sleep(0.1)
+                        else:
+                            sleep(0.34)
+                print(file=f)
         hit_matches = set()
         for i in range(len(all_matches)):
             match = all_matches.iloc[i]
