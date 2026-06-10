@@ -57,7 +57,7 @@ def fasterq_dump_handler(
     clean_accession = srr_accession.strip().split(".")[0]
 
     # 2. Set up output directory for massive FASTQ files
-    out_dir = ctx.get_temp_path(f"{clean_accession}_fastq")
+    out_dir = ctx.get_temp_dir(f"{clean_accession}_fastq")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     ctx.logger.info(f"Initiating fasterq-dump for {clean_accession}...")

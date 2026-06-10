@@ -66,14 +66,27 @@ class ExecutionContext:
 
     def get_temp_path(self, filename: str) -> Path:
         """Generates an isolated path in the task's scratch directory."""
-        if self._temp_dir is None:
-            cache_dir = self.runtime.settings.cache_root
+        base_dir = Path(self._temp_dir.name) if self._temp_dir else self._init_temp_dir()
+        base_dir.mkdir(parents=True, exist_ok=True)
+        return base_dir / filename
 
-            self._temp_dir = tempfile.TemporaryDirectory(
-                prefix=f"task_{self.task.id[:8]}_",
-                dir=cache_dir,
-            )
-        return Path(self._temp_dir.name) / filename
+    def get_temp_dir(self, dirname: str | None = None) -> Path:
+        """Generates an isolated directory in the task's scratch space."""
+        base_dir = Path(self._temp_dir.name) if self._temp_dir else self._init_temp_dir()
+        if dirname:
+            subdir = base_dir / dirname
+            subdir.mkdir(parents=True, exist_ok=True)
+            return subdir
+        return base_dir
+
+    def _init_temp_dir(self) -> Path:
+        """Helper to initialize an empty temp directory if it doesn't yet exist."""
+        cache_dir = self.runtime.settings.cache_root
+        self._temp_dir = tempfile.TemporaryDirectory(
+            prefix=f"task_{self.task.id[:8]}_",
+            dir=cache_dir,
+        )
+        return Path(self._temp_dir.name)
 
     def memoize(self, key_prefix: str, func, **kwargs):
         """
