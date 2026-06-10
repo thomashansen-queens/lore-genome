@@ -74,7 +74,7 @@ def wp_to_fasta(
 ):
     """Produces a simplified FASTA file given a list of WP accessions and a table to index protein sequences from. Can optionally acquire protein sequences directly from NCBI (slower than indexing from a pre-made table and requires internet)."""
     if index_from_ncbi: 
-        from lore.builtins.tasks.ncbi.client import ncbi_client, retry
+        from lore.builtins.tasks.ncbi.datasets_client import datasets_client as ncbi_client
         import json, zipfile, io
         ncbi_config = ctx.get_config("ncbi")        
         api_key = ncbi_config.api_key if ncbi_config else None
