@@ -138,8 +138,8 @@ class Task(BaseModel):
         unwrapped_inputs = {}
         for key, bindings in self.inputs.items():
             field_info, extra = task_def.field_meta(key)
-            allows_multiple = extra.get("cardinality", Cardinality.SINGLE).allows_multiple
-            expects_collection = allows_multiple or is_collection_type(field_info.annotation)
+            raw_card = Cardinality(extra.get("cardinality", Cardinality.SINGLE))
+            expects_collection = raw_card.allows_multiple or is_collection_type(field_info.annotation)
 
             unwrapped_list = []
             for b in bindings:
@@ -292,8 +292,8 @@ class TaskResults:
             for key, field in task_def.output_model.model_fields.items():
                 extra = field.json_schema_extra or {}
 
-                raw_card = cast(Cardinality, extra.get("cardinality", Cardinality.SINGLE))
-                self._allows_multiple[key] = raw_card.allows_multiple
+                raw_card = extra.get("cardinality", Cardinality.SINGLE)
+                self._allows_multiple[key] = Cardinality(raw_card).allows_multiple
 
                 # Initialize all output slots as empty ordered lists
                 object.__setattr__(self, key, [])

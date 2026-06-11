@@ -126,7 +126,7 @@ class TaskRegistry:
                                 "data_type": attr_value.data_type,
                                 "description": attr_value.description,
                                 "is_primary": attr_value.is_primary,
-                                "cardinality": attr_value.cardinality,
+                                "cardinality": attr_value.cardinality.value,
                                 "is_artifact": attr_value.is_artifact,
                                 "is_output": True,  # Hint for UI
                             },

@@ -5,18 +5,19 @@
 <div id="task-detail-container"
     data-current-status="{{ task.status.value }}"
     class="column fill"
-    {% if task.status.value not in ['completed', 'failed', 'cancelled'] %}
-        hx-get="/sessions/{{ session.id }}/tasks/{{ task.id }}"
-        hx-trigger="every 1s"
-        hx-select="#task-detail-container"
-        hx-swap="outerHTML"
+    hx-ext="sse"
+    {% if not task.status.is_terminal %}
+        sse-connect="/sessions/{{ session.id }}/tasks/{{ task.id }}/stream"
     {% endif %}
+    sse-close="close"
     >
+    {# Invisible div to catch SSE messages, trigger HTMX out-of-band hot swaps #}
+    <div sse-swap="task_update" style="display:none;"></div>
 
     {# === Header === #}
     <div>
         <span class="ui-label">Task</span>
-        <div id="task-header-preserve" hx-preserve="true">
+        <div id="task-header-preserve">
             {{ ui.editable_header(
                 task.name,
                 '/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/rename',
@@ -25,7 +26,7 @@
         </div>
 
         {# === Task status and metadata === #}
-        <div class="row gapped">
+        <div id="task-status-row" class="row gapped">
             {{ ui.status_badge(task.status) }}
 
             {% if task.status.value == 'completed' %}
@@ -52,62 +53,63 @@
         </div>
 
         {# === Task actions === #}
-        {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
+        <div id="task-action-bar">
+            {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/tasks/' ~ task.id ~ '/delete') %}
 
-            {% if task.status.value != 'running' %}
-                <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
-                    class="btn secondary">
-                    ✎ Edit
-                </a>
-            {% endif %}
-            
-            {% if task.status.is_runnable %}
-                <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
+                {% if task.status.value != 'running' %}
+                    <a href="/sessions/{{ session.id }}/tasks/{{ task.id }}/edit"
+                        class="btn secondary">
+                        ✎ Edit
+                    </a>
+                {% endif %}
+                
+                {% if task.status.is_runnable %}
+                    <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
+                        <button type="submit" class="btn primary">
+                            ▶
+                            {% if task.status.value == 'ready' %}
+                                Run
+                            {% elif task.integrity.value in ['degraded', 'stale'] %}
+                                Fix Data (Re-Run)
+                            {% elif task.status.value == 'completed' %}
+                                Force Re-Run
+                            {% elif task.status.value in ['failed', 'cancelled'] %}
+                                Retry
+                            {% endif %}
+                        </button>
+                    </form>
+                {% endif %}
+
+                <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/clone" method="POST">
                     <button type="submit" class="btn primary">
-                        ▶
-                        {% if task.status.value == 'ready' %}
-                            Run
-                        {% elif task.integrity.value in ['degraded', 'stale'] %}
-                            Fix Data (Re-Run)
-                        {% elif task.status.value == 'completed' %}
-                            Force Re-Run
-                        {% elif task.status.value in ['failed', 'cancelled'] %}
-                            Retry
-                        {% endif %}
+                        ⟳ Clone
                     </button>
                 </form>
-            {% endif %}
 
-            <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/clone" method="POST">
-                <button type="submit" class="btn primary">
-                    ⟳ Clone
-                </button>
-            </form>
-
-        {% endcall %}
+            {% endcall %}
+        </div>
     </div>
 
     <div class="column gapped" style="max-height: 50vh;">
         {# === Task Log === #}
         <div class="card" style="flex: 1;">
             <header>Task Log</header>
-            <div class="scroll-area" id="task-log" style="flex: 1; min-height: 0;">
-                {% if task_log %}
-                    <pre class="small" style="white-space: pre-wrap;">{{ task_log }}</pre>
-                {% else %}
-                    <span class="muted small">No log output yet.</span>
-                {% endif %}
+            <div class="scroll-area" id="task-log-container" style="flex: 1; min-height: 0;">
+                <pre class="small" id="task-log" style="white-space: pre-wrap;">{{ task_log | default('No log output yet.', true) }}</pre>
             </div>
         </div>
+
         {# === Error === #}
-        {% if task.error %}
-        <div class="card" style="background: var(--danger-bg); flex: 1;">
-            <header style="color: var(--danger);">Error</header>
-            <div class="scroll-area" id="task-error" style="flex: 1; min-height: 0;">
-                <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
+        <div id="task-error-container">
+            {% if task.error %}
+            <div class="card" style="background: var(--danger-bg); flex: 1;">
+                <header style="color: var(--danger);">Error</header>
+                <div class="scroll-area" id="task-error" style="flex: 1; min-height: 0;">
+                    <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
+                </div>
             </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     {# === Configuration + Outputs === #}
@@ -157,7 +159,7 @@
         {# === Outputs (right) === #}
         <div class="card" style="flex: 1;">
             <header>Outputs</header>
-            <div class="scroll-area gapped">
+            <div id="task-outputs-container" class="scroll-area gapped">
 
                 {% for key, out in outputs.items() %}
                     <div>
@@ -220,10 +222,27 @@
 
 {% block scripts %}
 <script>
-    // Listen for HTMX swaps, and scroll the log to the bottom
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target.id === 'task-detail-container') {
-            const logWindow = document.getElementById('task-log');
+    // Clear placeholder log text on first update
+    let firstLogUpdate = true;
+    document.body.addEventListener('htmx:oobBeforeSwap', function(evt) {
+        if (
+            firstLogUpdate &&
+            evt.detail.target.id === 'task-log' &&
+            evt.detail.target.textContent.trim() === 'No log output yet.'
+        ) {
+            evt.detail.target.textContent = '';
+            firstLogUpdate = false;
+        }
+    });
+    
+    document.body.addEventListener("htmx:sseClose", function (evt) {
+        console.log("SSE closed:", evt.detail);
+    });
+
+    // Autoscroll log if we're at the bottom
+    document.body.addEventListener('htmx:oobAfterSwap', function(evt) {
+        if (evt.detail.target.id === 'task-log-container') {
+            const logWindow = document.getElementById('task-log-container');
             if (logWindow) {
                 logWindow.scrollTop = logWindow.scrollHeight;
             }

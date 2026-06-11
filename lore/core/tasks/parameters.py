@@ -238,8 +238,8 @@ class ArtifactInput(TaskInput):
             {
                 "is_artifact": True,
                 "widget": self.cardinality.ui_widget().value,
-                "select": self.cardinality.value,
-                "load_as": self.materialization.value,
+                "cardinality": self.cardinality.value,
+                "materialization": self.materialization.value,
                 # TODO: Stringify traits for serialization/UI
                 "accepted_data": self.accepted_data,
             }
@@ -435,5 +435,5 @@ class TaskOutput(BaseModel):
 
     # Engine-facing `cardinality` alias
     @property
-    def cardinality(self) -> CardinalityLiteral | Cardinality:
-        return self.yields
+    def cardinality(self) -> Cardinality:
+        return Cardinality(self.yields)

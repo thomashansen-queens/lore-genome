@@ -1,12 +1,15 @@
 """
 Routes for managing individual Tasks within a Session.
 """
-
+import asyncio
+from collections.abc import AsyncIterable
+import html
+from pathlib import Path
 from pydantic import BaseModel, Field
 
-from fastapi import Depends, Query
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import AdapterStrategy, TaskConfig, TaskStatus, task_registry
@@ -14,8 +17,6 @@ from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
-
-from time import sleep
 
 router = APIRouter(prefix="/sessions/{session_id}/tasks", tags=["tasks"])
 
@@ -233,25 +234,10 @@ def run_task_action(
 
         task.error = None
         s.mark_dirty()
-    
-    prev_task_status = task.status
-    task_status = task.status
-    # rt.logger.info("Aleyssu: %s" % prev_task_status)
+
+    # 3. Send to Runtime to execute
     rt.execute_task(session_id=session_id, task_id=task_id)
-    
-    # Poll for up to 10 seconds for a change in task status before refreshing the page.
-    tries = 100
-    while task and prev_task_status == task_status and tries > 0:
-        with rt.open_session(session_id, read_only=True) as s:
-            # refresh task state
-            task = s.get_task(task_id)
-            if task is not None:
-                task_status = task.status
-                # rt.logger.info("Aleyssu: %s" % (task_status))
-        tries -= 1
-        sleep(0.1)
-    # rt.logger.info("Aleyssu: %s" % task_status)
-    
+
     return ctx.redirect_back(
         fallback_url=f"/sessions/{session_id}",
         message="Task execution started.",
@@ -353,11 +339,6 @@ def api_task_commit(
                     exec_config=payload.task_config.model_dump(mode="json"),
                 )
             task_id = task.id
-
-            rt.logger.debug(
-                "api_task_commit [%s]: task.id=%s  status=%s  error=%r  inputs=%r",
-                task_key, task.id, task.status, task.error, task.inputs,
-            )
 
         # 6. Return success and the redirect URL
         return JSONResponse(content={
@@ -495,3 +476,112 @@ def api_task_preview(
             content={"status": "error", "message": str(e)},
             status_code=400,
         )
+
+# --- SSE for real-time updates ---
+
+def _drain_log(log_path: Path | None, cursor: int, flush: bool = False) -> tuple[str | None, int]:
+    """
+    Helper that reads log content written since the last cursor position.
+    Returns (escaped_text_or_None, new_cursor).
+    """
+    if log_path is None or not log_path.exists():
+        return None, cursor
+    size = log_path.stat().st_size
+
+    # If the log was truncated, reset, or rotated
+    if size < cursor:
+        cursor = 0
+    if size <= cursor:
+        return None, cursor
+
+    with open(log_path, "rb") as f:
+        f.seek(cursor)
+        chunk = f.read()
+    if not flush:
+        nl = chunk.rfind(b"\n")  # only read up to the last full line
+        if nl == -1:
+            return None, cursor
+        chunk = chunk[:nl+1]
+
+    if not chunk:
+        return None, cursor
+    return html.escape(chunk.decode("utf-8", errors="replace")), cursor + len(chunk)
+
+
+@router.get("/{task_id}/stream", response_class=EventSourceResponse)
+async def stream_task_updates(
+    session_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+) -> AsyncIterable[ServerSentEvent]:
+    """
+    SSE stream that pushes DOM updates for changes in Task state (e.g.
+    Task status change, new Artifact emitted, etc.).
+    TODO: Add heartbeat to detect disconnects/issues with long-running streams
+    """
+    # 1. Set initial state (prevents tick 0 update)
+    with rt.open_session(session_id, read_only=True) as s:
+        task_prev = s.get_task(task_id)
+        if task_prev is None:
+            raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
+        log_path = s.get_task_log_path(task_id)
+
+    # No new data expected
+    if task_prev.status.is_terminal:
+        yield ServerSentEvent(raw_data="", event="close")
+        return
+
+    # 2. If the task exists and could receive updates, open a stream
+    log_cursor = log_path.stat().st_size if (log_path and log_path.exists()) else 0
+
+    while True:
+        if await ctx.request.is_disconnected():
+            break
+
+        # 3. Set live state (re-check on each poll)
+        with rt.open_session(session_id, read_only=True) as s:
+            task_now = s.get_task(task_id)
+
+        if task_now is None or task_prev is None:
+            error_html = f'<div id="task-status-row" hx-swap-oob="true"><div class="badge danger">Vanished</div></div>'
+            yield ServerSentEvent(raw_data=error_html, event="task_update")
+            break
+        terminal = task_now.status.is_terminal
+
+        # 4. Diff the Task state (status change, new outputs, log updates, error)
+        status_changed = task_now.status != task_prev.status
+        outputs_changed = task_now.outputs != task_prev.outputs
+        error_changed = task_now.error != task_prev.error
+        new_logs, log_cursor = _drain_log(log_path, log_cursor, flush=terminal)
+
+        # 5. Unpack outputs
+        resolved_outputs = {}
+        if outputs_changed:
+            with rt.open_session(session_id, read_only=True) as s:
+                resolved_outputs = resolve_task_outputs(s, task_id)
+
+        # 6. Send data diffs to Jinja
+        html_data = ""
+        if status_changed or outputs_changed or error_changed or new_logs:
+            html_data = templates.get_template(
+                "features/tasks/fragments/oob_updates.html"
+            ).render(
+                task=task_now,
+                session_id=session_id,
+                status_changed=status_changed,
+                outputs=resolved_outputs,
+                outputs_changed=outputs_changed,
+                task_log=new_logs,
+                error_changed=error_changed,
+            )
+        if html_data.strip():
+            yield ServerSentEvent(raw_data=html_data, event="task_update")
+
+        if terminal:
+            yield ServerSentEvent(raw_data="", event="close")
+            return
+
+        # 7. Wait 1 second before checking again
+        task_prev = task_now
+        await asyncio.sleep(1)

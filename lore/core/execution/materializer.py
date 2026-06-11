@@ -70,8 +70,8 @@ def materialize_task_inputs(
             continue
 
         # 3. Extract Metadata from DSL
-        materialization = extra.get("load_as")
-        cardinality = extra.get("select")
+        materialization = extra.get("materialization")
+        cardinality = extra.get("cardinality")
         if not materialization or not cardinality:
             raise ValueError(
                 f"Task input '{key}' missing load_as (`materialization`) or select (`cardinality`)"
