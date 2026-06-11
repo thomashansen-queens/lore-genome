@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 
+from lore.core.io import TextReader
 from lore.core.tasks import AdapterConfig
 from lore.core.io import get_reader_for
 from lore.core.utils import filter_and_sort
@@ -205,7 +206,12 @@ async def view_artifact_explore(
     # 2. Data loading
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
-    data, io_metadata = reader.preview(100)
+    if isinstance(reader, TextReader):
+        data = reader.read_full()
+        io_metadata = reader.get_metadata()
+    else:
+        data, io_metadata = reader.preview(100)
+        
 
     config = {**(artifact.metadata or {}), "ext": artifact.extension}
     preview_result = adapter.preview(data, io_metadata, config=config)

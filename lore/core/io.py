@@ -296,7 +296,7 @@ class TextReader(DataReader):
         metadata = self.get_metadata()
         metadata.update(
             {
-                "strategy_used": "streamed lines",
+                "strategy_used": "streamed lines",  # Don't change the naming pls
                 "file_eof_reached": hit_eof,
                 "preview_limit": limit,
                 "total_lines_previewed": len(lines),
