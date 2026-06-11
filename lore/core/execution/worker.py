@@ -13,6 +13,7 @@ import sys
 
 from .context import ExecutionContext, PreviewContext
 from .materializer import materialize_task_inputs
+from lore.core.adapters import AdapterPreview
 from lore.core.tasks import AdapterStrategy, task_registry, TaskResults, Task, TaskStatus
 
 if TYPE_CHECKING:
@@ -176,6 +177,7 @@ def run_preview_worker(
 
     adapter_config = ephemeral_task.exec_config.get("adapter", {})
     strategy = adapter_config.get("strategy", AdapterStrategy.PEEK)
+    strategy_val = strategy if isinstance(strategy, str) else strategy.value
 
     # 4. "Dry Run" logic: No handler execution, just return the validated config
     if not task_def.preview_mode.executes_handler:
@@ -185,26 +187,26 @@ def run_preview_worker(
         # Inject echoed config into results for UI readout. The payload mirrors the
         # shape produced by PreviewContext so the standard viewers can render it.
         if results.primary_key:
-            echo = json.dumps(
+            dry_run_payload = json.dumps(
                 {
+                    "message": (
+                        "This Task does not generate previews. Below is the validated config"
+                    ),
                     "resolved_inputs": clean_inputs,
                     "execution_config": ephemeral_task.exec_config,
-                    "strategy": strategy.value,
+                    "strategy": strategy_val,
                 },
                 indent=2,
                 default=str,
             )
-            dry_run_payload = {
-                "is_preview": True,
-                "view_mode": "raw",
-                "adapter_name": "Dry run (handler not executed)",
-                "data": (
-                    "DRY RUN — the handler was not executed. "
-                    "Validated configuration:\n\n" + echo
-                ),
-                "metadata": {"dry_run": True, "strategy_used": strategy.value},
-            }
-            results.add(results.primary_key, [dry_run_payload])
+            preview_obj = AdapterPreview(
+                data=dry_run_payload,
+                metadata={
+                    "dry_run": True,
+                    "is_truncated": False,
+                },
+            )
+            results.add(results.primary_key, preview_obj.model_dump())
         return results
 
     # 5. Resolve inputs
@@ -213,7 +215,7 @@ def run_preview_worker(
             s=s,
             task_def=task_def,
             bindings=ephemeral_task.inputs,
-            strategy=strategy,
+            strategy=AdapterStrategy(strategy),
         )
 
     # 6. Execute handler

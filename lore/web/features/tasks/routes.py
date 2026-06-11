@@ -471,7 +471,7 @@ def api_task_preview(
         })
 
     except Exception as e:
-        rt.logger.error("Preview API Error: %s", str(e))
+        rt.logger.error("Preview API Error: %s", str(e), exc_info=True)
         return JSONResponse(
             content={"status": "error", "message": str(e)},
             status_code=400,
