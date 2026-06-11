@@ -178,6 +178,7 @@ def dummy_task_plugin(isolated_task_registry) -> str:
         inputs=DummyInputs,
         outputs=DummyOutputs,
         name="Dummy Worker Task",
+        preview_mode="full",
     )
     def handler(ctx: ExecutionContext, text_to_write: str):
         out_path = ctx.get_temp_path("output.txt")

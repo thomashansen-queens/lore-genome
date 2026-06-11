@@ -6,7 +6,7 @@ the mutable instance.
 from datetime import datetime, timezone
 from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing import Any, cast, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from lore.core.bindings import (
     Binding,
