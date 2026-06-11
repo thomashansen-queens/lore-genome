@@ -10,10 +10,8 @@ import pytest
 from lore.core.adapters import BaseAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
-from lore.core.tasks import Task, TaskDefinition, TaskStatus
-from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.tasks.parameters import TaskOutput, ValueInput
-from lore.core.tasks.registry import TaskRegistry
+from lore.core.tasks import Task, TaskDefinition, TaskStatus, TaskOutput, ValueInput, TaskRegistry
+from lore.core.execution import ExecutionContext, PreviewContext
 
 # --- DATA FACTORIES & WORKSPACE FIXTURES ---
 

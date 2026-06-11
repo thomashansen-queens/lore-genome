@@ -40,6 +40,7 @@ class ESearchOutputs:
     outputs=ESearchOutputs,
     name="NCBI Entrez ESearch",
     category="NCBI Entrez",
+    preview_mode="full",
 )
 def esearch(
     ctx: lore.ExecutionContext,

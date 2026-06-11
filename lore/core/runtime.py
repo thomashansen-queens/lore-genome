@@ -29,7 +29,7 @@ from lore.core.workflows.manager import WorkflowManager
 
 if TYPE_CHECKING:
     from lore.core.sessions import Session
-    from lore.core.tasks.models import TaskResults
+    from lore.core.tasks import TaskResults
 
 
 @dataclass

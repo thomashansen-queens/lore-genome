@@ -11,7 +11,7 @@ from .executors import (
 )
 
 # 3. Context sandbox
-from .context import ExecutionContext
+from .context import ExecutionContext, PreviewContext
 
 # 4. Input resolver
 from .materializer import materialize_task_inputs
@@ -22,5 +22,6 @@ __all__ = [
     "BaseExecutor",
     "LocalSubprocessExecutor",
     "ExecutionContext",
+    "PreviewContext",
     "materialize_task_inputs",
 ]

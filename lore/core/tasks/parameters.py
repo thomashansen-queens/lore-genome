@@ -1,13 +1,11 @@
 """
 LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 """
-
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
-import types
-from typing import Any, get_args, get_origin, Type, Union
-from pydantic import BaseModel, Field
+from typing import Any, Literal, Type, TypeAlias
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
@@ -15,15 +13,13 @@ from lore.core.topology import traits
 from lore.core.utils import is_collection_type, is_optional_type
 from lore.core.utils.pydantic import get_base_type
 
-# --- Data handling ---
-
+# --- Input enums and type aliases ---
 
 class Widget(StrEnum):
     """
     Defines the type of UI widget to render for a TaskInput. Will be inferred
     unless manually overridden (e.g. for Enums)
     """
-
     # Artifacts
     ARTIFACT_SINGLE = "artifact_single_select"
     ARTIFACT_MULTI = "artifact_multi_select"
@@ -44,7 +40,22 @@ class Widget(StrEnum):
     DATE = "date"
     DATETIME = "datetime"
 
-_WIDGET_VALUES = {w.value for w in Widget}
+WidgetLiteral: TypeAlias = Literal[
+    "artifact_single_select",
+    "artifact_multi_select",
+    "select",
+    "checkbox_group",
+    "radio",
+    "segmented_radio",
+    "text",
+    "textarea",
+    "slider",
+    "float",
+    "integer",
+    "checkbox",
+    "date",
+    "datetime",
+]
 
 
 class Cardinality(str, Enum):
@@ -53,7 +64,6 @@ class Cardinality(str, Enum):
     type hints. Task handler should still defensively check, and the Execution
     enforces this contract when resolving inputs.
     """
-
     OPTIONAL_SINGLE = "optional"
     OPTIONAL_MULTIPLE = "optional_multiple"
     SINGLE = "single"
@@ -74,6 +84,9 @@ class Cardinality(str, Enum):
         return Widget.ARTIFACT_MULTI if self.allows_multiple else Widget.ARTIFACT_SINGLE
 
 
+CardinalityLiteral: TypeAlias = Literal["optional", "optional_multiple", "single", "multiple"]
+
+
 class Materialization(str, Enum):
     """
     How the Task input should be materialized for the handler function.
@@ -83,7 +96,6 @@ class Materialization(str, Enum):
     Streamed: Same as Full RAM but passed as an iterator/generator
     Preview: Gives a small piece of content (e.g. first 100 lines) to the handler
     """
-
     # Pointer
     ARTIFACT = "artifact"
     PATH = "path"
@@ -97,6 +109,16 @@ class Materialization(str, Enum):
     PREVIEW = "preview"
 
 
+MaterializationLiteral: TypeAlias = Literal[
+    "artifact",
+    "path",
+    "raw",
+    "adapted",
+    "raw_stream",
+    "adapted_stream",
+    "preview",
+]
+
 # --- Task inputs ---
 
 
@@ -106,7 +128,6 @@ class TaskInput:
     This is not a Pydantic model itself, but is a factory for generating Pydantic FieldInfo with 
     with LoRe metadata at task registration time.
     """
-
     def __init__(
         self,
         description: str = "",
@@ -184,12 +205,11 @@ class ArtifactInput(TaskInput):
         or a slice of from a table (e.g. "genome_accessions"). If provided as a list, 
         any one match is sufficient.
     """
-
     def __init__(
         self,
         description: str = "",
-        select: Cardinality = Cardinality.SINGLE,
-        load_as: Materialization = Materialization.ADAPTED,
+        select: CardinalityLiteral | Cardinality = Cardinality.SINGLE,
+        load_as: MaterializationLiteral | Materialization = Materialization.ADAPTED,
         # Fuzzy Matching: ["json", "ncbi", "genome_accessions"]
         accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = traits.ANY,
         # Pydantic pass-throughs
@@ -198,8 +218,13 @@ class ArtifactInput(TaskInput):
         examples: list[Any] | None = None,
     ):
         super().__init__(description=description, default=default, label=label, examples=examples)
-        self.cardinality = select
-        self.materialization = load_as
+        # 1. Guards
+        try:
+            self.cardinality = Cardinality(select)
+            self.materialization = Materialization(load_as)
+        except ValueError as e:
+            raise ValueError(f"Invalid ArtifactInput configuration: {e}")
+
         if accepted_data is None:
             self.accepted_data = [traits.ANY]
         elif isinstance(accepted_data, list):
@@ -234,7 +259,6 @@ class ValueInput(TaskInput):
     """
     A single primitive (e.g. str, list) or Enum value as input to a Task.
     """
-
     def __init__(
         self,
         annotated_type: Any,  # primitive or Enum. Accepts UnionTypes like "int | None"
@@ -330,8 +354,14 @@ class ValueInput(TaskInput):
                 extra["widget"] = Widget.SELECT
 
         # 8. Manual widget override (e.g. for Enums to radio instead of dropdown)
-        if self.widget_override and self.widget_override in _WIDGET_VALUES:
-            extra["widget"] = self.widget_override
+        if self.widget_override:
+            try:
+                extra["widget"] = self.widget_override
+            except ValueError:
+                raise ValueError(
+                    f"Invalid widget override: '{self.widget_override}'. "
+                    f"Must be one of: {", ".join([w.value for w in Widget])}"
+                )
 
 
 def _normalize_options(options: str | list[Any]) -> list[dict[str, Any]]:
@@ -394,15 +424,16 @@ class TaskOutput(BaseModel):
         is_primary: At least one output must be marked as the 'primary' output.
         is_artifact: Whether this output is an Artifact (True, default) or primitive value (False).
     """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     data_type: str | type | Passthrough  # LoRē semantic type, Python type, or Passthrough
     label: str
-    yields: Cardinality = Cardinality.SINGLE
+    yields: CardinalityLiteral | Cardinality = Cardinality.SINGLE
     description: str = ""
     is_primary: bool = False
     is_artifact: bool = True
 
     # Engine-facing `cardinality` alias
     @property
-    def cardinality(self) -> Cardinality:
+    def cardinality(self) -> CardinalityLiteral | Cardinality:
         return self.yields

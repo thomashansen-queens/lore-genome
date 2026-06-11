@@ -4,15 +4,16 @@ This code runs as a separate process entirely decoupled from the main process.
 """
 
 from datetime import datetime, timezone
+import json
 import traceback
 from typing import TYPE_CHECKING
 from uuid import uuid4
 import logging
 import sys
 
+from .context import ExecutionContext, PreviewContext
+from .materializer import materialize_task_inputs
 from lore.core.tasks import AdapterStrategy, task_registry, TaskResults, Task, TaskStatus
-from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.execution.materializer import materialize_task_inputs
 
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
@@ -25,6 +26,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     Worker function that runs as a background process.
     Manages the Task state machine (RUNNING -> COMPLETED/FAILED) and file locks.
     On error, uses sys.exit(1) to signal failure to the Orchestrator.
+    NOTE: Future Executor implementations may require different error signalling
     """
     # 1a. Top bread (fast initialization, short lock) - mutates Session manifest
     try:
@@ -76,7 +78,6 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
 
     # 2. The meat (slow execution, no lock)
     ctx = None
-    # task_handler = _attach_task_logger(rt, session_id, task_id)
 
     try:
         ctx = ExecutionContext(
@@ -146,33 +147,67 @@ def run_preview_worker(
     in the UI. Does not modify the Manifest or create Artifacts.
     Errors raise or return, rather than sys.exit.
     """
-    rt.logger.info("Running preview for '%s' in Session ID: '%s'", task_key, session_id)
-
+    # 1. Guards
     task_def = task_registry.get(task_key)
-
     if not task_def:
         raise ValueError(f"Task key: '{task_key}' not found in Task Registry.")
-    if not task_def.live_preview:
-        rt.logger.info("Generating preview for '%s'", task_key)
+    if not task_def.preview_mode.is_allowed:
+        raise RuntimeError(
+            f"Previews are disabled for Task '{task_key}' "
+            f"(preview_mode={task_def.preview_mode})."
+        )
 
-    # 1. Create ephemeral Task
+    rt.logger.info("Running preview for '%s' in Session ID: '%s'", task_key, session_id)
+
+    # 2. Create ephemeral Task
     ephemeral_task = Task(
         id=f"preview_{uuid4().hex[:8]}",
         registry_key=task_key,
         status=TaskStatus.RUNNING,
         inputs=raw_inputs,
     )
-    ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
 
-    adapter_config = ephemeral_task.exec_config.get("adapter", {})
-    strategy = adapter_config.get("strategy", AdapterStrategy.AUTO)
-
+    # 3. Validate config and inputs
     try:
-        ephemeral_task.validate_and_serialize()
+        ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
+        clean_inputs = ephemeral_task.validate_and_serialize()
     except Exception as e:
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
-    # 2. Resolve inputs
+    adapter_config = ephemeral_task.exec_config.get("adapter", {})
+    strategy = adapter_config.get("strategy", AdapterStrategy.PEEK)
+
+    # 4. "Dry Run" logic: No handler execution, just return the validated config
+    if not task_def.preview_mode.executes_handler:
+        # Synthetic TaskResults object to echo config back to the user
+        results = TaskResults(task_def)
+
+        # Inject echoed config into results for UI readout. The payload mirrors the
+        # shape produced by PreviewContext so the standard viewers can render it.
+        if results.primary_key:
+            echo = json.dumps(
+                {
+                    "resolved_inputs": clean_inputs,
+                    "execution_config": ephemeral_task.exec_config,
+                    "strategy": strategy.value,
+                },
+                indent=2,
+                default=str,
+            )
+            dry_run_payload = {
+                "is_preview": True,
+                "view_mode": "raw",
+                "adapter_name": "Dry run (handler not executed)",
+                "data": (
+                    "DRY RUN — the handler was not executed. "
+                    "Validated configuration:\n\n" + echo
+                ),
+                "metadata": {"dry_run": True, "strategy_used": strategy.value},
+            }
+            results.add(results.primary_key, [dry_run_payload])
+        return results
+
+    # 5. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
         resolved_inputs, input_artifacts = materialize_task_inputs(
             s=s,
@@ -181,7 +216,7 @@ def run_preview_worker(
             strategy=strategy,
         )
 
-    # 3. Execute handler
+    # 6. Execute handler
     ctx = None
     try:
         ctx = PreviewContext(

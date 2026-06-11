@@ -11,8 +11,8 @@ consider upstream/downstream relationships and other factors (e.g. cycles).
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .session import Session
     from lore.core.artifacts import Artifact
-    from lore.core.sessions import Session
     from lore.core.tasks import TaskDefinition
 
 

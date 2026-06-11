@@ -4,7 +4,7 @@ This is the single import point for all plugin authors writing Tasks
 or Adapters. Workflows do not have any DSL-specific imports (yet).
 """
 # 1. Task Inputs & Configuration
-from lore.core.tasks.parameters import (
+from lore.core.tasks import (
     TaskInput,
     ValueInput,
     TaskOutput,
@@ -13,8 +13,13 @@ from lore.core.tasks.parameters import (
     Cardinality,
     Materialization,
     Passthrough,
+    PreviewMode,
+    CardinalityLiteral,
+    MaterializationLiteral,
+    PreviewModeLiteral,
+    WidgetLiteral,
+    task_registry,
 )
-from lore.core.tasks.registry import task_registry
 from lore.core.settings import config_registry
 
 # 2. Topology & trait matching
@@ -43,22 +48,6 @@ adapter = adapter_registry.register
 task = task_registry.register
 config = config_registry.register
 
-# 6. Direct Enum access
-# Cardinality for ArtifactInputs
-OPTIONAL = Cardinality.OPTIONAL_SINGLE
-SINGLE = Cardinality.SINGLE
-MULTIPLE = Cardinality.MULTIPLE
-OPTIONAL_MULTIPLE = Cardinality.OPTIONAL_MULTIPLE
-
-# Materialization for ArtifactInputs
-ARTIFACT = Materialization.ARTIFACT
-PATH = Materialization.PATH
-RAW = Materialization.RAW
-ADAPTED = Materialization.ADAPTED
-RAW_STREAM = Materialization.RAW_STREAM
-ADAPTED_STREAM = Materialization.ADAPTED_STREAM
-PREVIEW = Materialization.PREVIEW
-
 # Public API
 __all__ = [
     "TaskInput",
@@ -69,6 +58,7 @@ __all__ = [
     "Cardinality",
     "Materialization",
     "Passthrough",
+    "PreviewMode",
     # Traits
     "ANY", "TABULAR",
     # Execution
@@ -86,6 +76,8 @@ __all__ = [
     "task",
     "config",
     # Input configuration Enums (cardinality/'select', materliaziation/'load_as')
-    "OPTIONAL", "SINGLE", "MULTIPLE", "OPTIONAL_MULTIPLE",
-    "ARTIFACT", "PATH", "RAW", "ADAPTED", "RAW_STREAM", "ADAPTED_STREAM", "PREVIEW",
+    "CardinalityLiteral",
+    "MaterializationLiteral",
+    "PreviewModeLiteral",
+    "WidgetLiteral",
 ]

@@ -7,8 +7,7 @@ from unittest.mock import patch
 
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
-from lore.core.tasks import Task
-from lore.core.tasks.models import TaskStatus
+from lore.core.tasks import Task, TaskStatus
 
 # --- Runtime factory ---
 

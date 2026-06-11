@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from fastapi.datastructures import FormData
 
-from lore.core.bindings import LiteralBinding, ReferenceBinding
 from lore.core.utils import clean, is_collection_type, is_optional_type
 from lore.core.tasks import TaskDefinition
 

@@ -22,8 +22,9 @@ def datasets_client(api_key: str | None = None, timeout: float = 60.0):
         "Accept": "application/json",
         "User-Agent": f"lore-genome/{version('lore-genome')}",
     }
+    params = {}
     if api_key:
-        headers["api-key"] = api_key
+        params["api-key"] = api_key
 
     def raise_on_4xx_5xx(response: httpx.Response):
         response.raise_for_status()
@@ -31,6 +32,7 @@ def datasets_client(api_key: str | None = None, timeout: float = 60.0):
     with httpx.Client(
         base_url=NCBI_DATASETS_BASE_URL,
         headers=headers,
+        params=params,
         timeout=httpx.Timeout(connect=5.0, read=timeout, write=timeout, pool=timeout),
         event_hooks={"response": [raise_on_4xx_5xx]},
         verify=False,

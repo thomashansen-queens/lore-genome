@@ -48,8 +48,8 @@ class NcbiAssemblyPackageInputs:
     """Inputs for fetching assembly packages from NCBI"""
     genome_accession = lore.ArtifactInput(
         description="List of genome accessions to fetch assembly packages for",
-        select=lore.OPTIONAL_MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="optional_multiple",
+        load_as="adapted",
         accepted_data="genome_accession",
         examples=["GCF_000005845.2, GCF_000006945.2"],
     )
@@ -100,43 +100,43 @@ class NcbiAssemblyPackageOutputs:
         data_type="protein_fasta",
         label="Protein FASTAs",
         description="Protein FASTA files fetched from NCBI Datasets",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     genome_fastas = lore.TaskOutput(
         data_type="genome_fasta",
         label="Genome FASTAs",
         description="Genome FASTA files fetched from NCBI Datasets",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     gff_annotations = lore.TaskOutput(
         data_type="gff_annotation",
         label="GFF Annotations",
         description="GFF annotation files fetched from NCBI Datasets",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     sequence_reports = lore.TaskOutput(
         data_type="ncbi_sequence_report",
         label="Sequence Reports",
         description="Sequence reports fetched from NCBI Datasets, containing metadata about the assembly.",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     assembly_reports = lore.TaskOutput(
         data_type="ncbi_genome_reports",
         label="Assembly Reports",
         description="Sequencing and assembly metadata for each genome fetched.",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     dataset_catalogs = lore.TaskOutput(
         data_type="ncbi_dataset_catalog",
         label="Dataset Catalogs",
         description="A catalogue describing what data was fetched (or would be fetched if fully hydrated) for each genome accession.",
-        yields=lore.OPTIONAL_MULTIPLE,
+        yields="optional_multiple",
     )
     failed_accessions = lore.TaskOutput(
         data_type="genome_accession",
         label="Failed accessions",
         description="The list of genome accessions that failed to be fetched.",
-        yields=lore.OPTIONAL,
+        yields="optional",
     )
 
 
@@ -191,6 +191,7 @@ def _fetch_single_assembly_package(
     name="Fetch NCBI Assembly Package",
     category="NCBI",
     icon="＞",
+    preview_mode="dry_run",
 )
 def fetch_assembly_package(
     ctx: lore.ExecutionContext,

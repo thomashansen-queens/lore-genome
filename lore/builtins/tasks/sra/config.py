@@ -34,7 +34,7 @@ class SraToolsConfig:
     )
     default_threads = lore.ValueInput(
         int,
-        default=4,
+        default=6,
         min=1, max=32, step=1,
         label="Default CPU Threads",
         description="Number of CPU threads to use for SRA toolkit operations.",

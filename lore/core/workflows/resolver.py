@@ -4,7 +4,7 @@ Workflow version of the input resolver. Since workflows are templates, this only
 """
 from lore.core.bindings import ReferenceBinding, LiteralBinding, UserInputBinding
 from lore.core.sessions.resolver import ResolvedField
-from lore.core.tasks.registry import task_registry
+from lore.core.tasks import task_registry
 
 
 def resolve_workflow_task_inputs(workflow, task_id: str) -> dict[str, "ResolvedField"]:

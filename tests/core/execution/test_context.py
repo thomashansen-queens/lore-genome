@@ -4,8 +4,7 @@ Tests for ExecutionContext
 import pytest
 
 from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.tasks import Task
-from lore.core.tasks.models import TaskStatus
+from lore.core.tasks import Task, TaskStatus
 
 
 def test_context_temp_directory_lifecycle(

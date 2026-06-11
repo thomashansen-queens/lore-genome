@@ -4,7 +4,7 @@ Synthesizing and anaylzing protein clusters
 import pandas as pd
 
 # from lore.core.adapters import adapter_registry, TableAdapter
-import lore.core.dsl as lore
+import lore
 from lore.core.utils.parse import fasta_lookup
 
 # --- Helpers ----
@@ -64,20 +64,20 @@ class BaseClusterInputs:
     cluster_map = lore.ArtifactInput(
         label="MMSeqs2 cluster map",
         accepted_data=["mmseqs2_cluster_map"],
-        select=lore.SINGLE,
-        load_as=lore.ADAPTED,
+        select="single",
+        load_as="adapted",
     )
     genome_annotations = lore.ArtifactInput(
         label="Genome annotations",
         accepted_data=["ncbi_annotation_packages"],
-        select=lore.MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="multiple",
+        load_as="adapted",
     )
     protein_fasta = lore.ArtifactInput(
         label="Clustered protein sequences",
         accepted_data=["protein_fasta"],
-        select=lore.OPTIONAL,
-        load_as=lore.PATH,
+        select="optional",
+        load_as="path",
     )
 
 # --- Summarize cluster origins ---
@@ -104,7 +104,7 @@ class SummarizeClusterOriginsOutputs:
     outputs=SummarizeClusterOriginsOutputs,
     category="Clustering",
     icon="🖩",
-    live_preview=True,
+    preview_mode="live",
 )
 def summarize_cluster_origins(
     ctx: lore.ExecutionContext,
@@ -196,8 +196,8 @@ class InspectClusterInputs(BaseClusterInputs):
         description="Generate a report showing all proteins co-clustered with the input protein(s)",
         label="Protein accession",
         accepted_data=["protein_accession"],
-        select=lore.MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="multiple",
+        load_as="adapted",
         examples=["WP_012345678.1"],
     )
     save_fasta = lore.ValueInput(
@@ -230,7 +230,7 @@ class InspectClusterOutputs:
     outputs=InspectClusterOutputs,
     category="Clustering",
     icon="🗏",
-    live_preview=True,
+    preview_mode="full",
 )
 def inspect_cluster(
     ctx: lore.ExecutionContext,

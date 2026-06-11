@@ -2,7 +2,6 @@
 Plugin for fasterq-dump, sratoolkit's multi-threaded SRA extraction tool.
 """
 import subprocess
-from pathlib import Path
 
 import lore
 from .config import get_sra_binary, isolated_vdb_env
@@ -13,7 +12,7 @@ class FasterqDumpInputs:
     srr_accession = lore.ArtifactInput(
         accepted_data=["sra_accession", "srr_accession"],
         label="SRR Accession",
-        select=lore.SINGLE,
+        select="single",
         description="The SRR accession to download and extract.",
         examples=["SRR000123 with no suffix"],
     )
@@ -26,7 +25,7 @@ class FasterqDumpOutputs:
         label="Extracted FASTQ Reads",
         description="The extracted FASTQ files from the SRA run.",
         is_primary=True,
-        yields=lore.MULTIPLE,
+        yields="multiple",
     )
 
 
@@ -37,10 +36,11 @@ class FasterqDumpOutputs:
     name="SRA Toolkit fasterq-dump",
     category="SRA Toolkit",
     icon="⬇️",
+    preview_mode="dry_run",
 )
 def fasterq_dump_handler(
     ctx: lore.ExecutionContext,
-    srr_accession: str,
+    srr_accession: list[str],
 ):
     """
     Downloads and extracts FASTQ files from the specified SRR accession in the 
@@ -53,8 +53,18 @@ def fasterq_dump_handler(
     sra_config = config_model.model_dump() if config_model else {}
     
     fasterq_dump_binary = get_sra_binary(sra_config, "fasterq-dump")
-    threads = str(sra_config.get("default_threads", 4))
-    clean_accession = srr_accession.strip().split(".")[0]
+    threads = str(sra_config.get("default_threads", 6))
+
+    # 2. The materializer hands the handler a list of accessinos
+    if not srr_accession:
+        raise ValueError("No SRR accession provided for fasterq-dump.")
+    if len(srr_accession) > 1:
+        ctx.logger.warning(
+            f"Multiple accessions provided ({len(srr_accession)}). "
+            "fasterq-dump will only process the first one: "
+            f"{srr_accession[0]}"
+        )
+    clean_accession = srr_accession[0].strip().split(".")[0]
 
     # 2. Set up output directory for massive FASTQ files
     out_dir = ctx.get_temp_dir(f"{clean_accession}_fastq")
@@ -72,6 +82,7 @@ def fasterq_dump_handler(
         "--temp", str(out_dir),
         "--threads", threads,
         "--force",
+        "--progress",
     ]
 
     with isolated_vdb_env(sra_config, ctx) as safe_env:

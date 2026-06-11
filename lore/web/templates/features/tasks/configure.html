@@ -5,16 +5,18 @@
 {% block content %}
 
 {# Empty data-carrying div #}
-<div id="task-def" data-live-preview="{{ task_def.live_preview }}"></div>
+<div id="task-def" data-preview-mode="{{ task_def.preview_mode.value }}"></div>
 
 <div class="row fill stretch">
-    
+
     <aside class="sidebar">
 
         <div class="row" style="flex-shrink: 0;">
             <span class="ui-label">{% if edit_task_id %}Edit Task{% else %}New Task{% endif %}</span>
-            {% if task_def.live_preview %}
+            {% if task_def.preview_mode.is_live %}
                 <span class="badge small info push-right">🖵 Live Preview</span>
+            {% elif task_def.preview_mode.value == 'dry_run' %}
+                <span class="badge small push-right">🛈 Dry Run Only</span>
             {% endif %}
         </div>
 
@@ -47,9 +49,11 @@
                         ➡ Commit to Task
                     {% endif %}
                 </button>
+                {% if task_def.preview_mode.is_allowed %}
                 <button id="preview-button" class="btn secondary">
                     👁 Preview
                 </button>
+                {% endif %}
             </div>
         </form>
     </aside>
@@ -63,8 +67,13 @@
 
         <div id="preview-target" class="card" style="max-height: 100%; overflow: auto;">
             <p class="muted">
-                {% if task_def.live_preview %}
+                {% if not task_def.preview_mode.is_allowed %}
+                    Preview is not available for this task — it runs heavy work
+                    that only executes when committed and run.
+                {% elif task_def.preview_mode.is_live %}
                     Change a parameter to generate preview...
+                {% elif task_def.preview_mode.value == 'dry_run' %}
+                    Click "Preview" to validate inputs without running the task...
                 {% else %}
                     Click "Preview" to generate a preview...
                 {% endif %}
@@ -83,7 +92,9 @@ document.addEventListener("DOMContentLoaded", function() {
     const target = document.getElementById('preview-target');
     const loader = document.getElementById('preview-loader');
     const previewBtn = document.getElementById('preview-button');
-    const livePreviewEnabled = document.getElementById('task-def').dataset.livePreview.toLowerCase() === 'true';
+    const previewMode = document.getElementById('task-def').dataset.previewMode;
+    const previewEnabled = previewMode !== 'none';
+    const livePreviewEnabled = previewMode === 'live';
     const commitBtn = document.getElementById('commit-button');
 
     // --- Helper to gather form inputs into a dict ---   
@@ -162,8 +173,9 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     async function fetchPreview() {
+        if (!previewEnabled) return;  // Preview disabled (PreviewMode.NONE)
         loader.style.display = 'block';
-        
+
         // Cancel pending requests before starting a new one
         if (abortController) {
             abortController.abort();
@@ -184,7 +196,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     name: name || null,
                     task_id: task_id || null,
                     inputs: taskInputs,
-                    exec_config: {
+                    task_config: {
                         adapter: {
                             view_state: currentViewState,
                             strategy: isFullPreview ? 'full' : 'peek'
@@ -249,7 +261,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     name: name || null,
                     task_id: task_id || null,
                     inputs: taskInputs,
-                    exec_config: { adapter: { view_state: currentViewState } }
+                    task_config: { adapter: { view_state: currentViewState } }
                 })
             });
             

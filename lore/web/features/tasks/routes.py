@@ -9,12 +9,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 
 from lore.core.sessions import resolve_task_outputs
-from lore.core.tasks.models import AdapterStrategy, TaskConfig
+from lore.core.tasks import AdapterStrategy, TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
-from lore.core.tasks import task_registry, TaskStatus
 
 from time import sleep
 

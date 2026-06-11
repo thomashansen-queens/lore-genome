@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, Any, cast
 from lore.core.artifacts import Artifact, ArtifactManager, TransferMode
 from lore.core.filelock import acquire_lock, release_lock
 from lore.core.manifest import Manifest
-from lore.core.tasks.models import TaskIntegrity
+from lore.core.tasks import TaskIntegrity
 from lore.core.utils import fmt_bytes
 
 if TYPE_CHECKING:
     from lore.core.bindings import Binding
     from lore.core.runtime import Runtime
-    from lore.core.tasks import Task, TaskDefinition
+    from lore.core.tasks import Task
 
 
 def _make_session_logger(session_id: str, log_path: Path) -> logging.Logger:

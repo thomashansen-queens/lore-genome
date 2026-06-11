@@ -44,7 +44,7 @@ class NcbiPostHocOutputs:
     name="Post-hoc filter NCBI Genome Reports",
     category="NCBI",
     icon="🗐>",
-    live_preview=True,
+    preview_mode="live",
 )
 def ncbi_post_hoc_handler(
     ctx: lore.ExecutionContext,

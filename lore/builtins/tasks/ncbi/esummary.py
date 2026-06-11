@@ -12,7 +12,7 @@ class ESummaryInputs:
     """Inputs for ESummary Task"""
     uid = lore.ArtifactInput(
         accepted_data=["uid", "target_uid"],
-        select=lore.MULTIPLE,
+        select="multiple",
         label="UID",
         description=(
             "The unique identifier (UID) of the record to summarize. "
@@ -41,6 +41,7 @@ class ESummaryOutputs:
     outputs=ESummaryOutputs,
     name="NCBI Entrez ESummary",
     category="NCBI Entrez",
+    preview_mode="full",
 )
 def esummary(
     ctx: lore.ExecutionContext,

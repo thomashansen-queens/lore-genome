@@ -3,7 +3,6 @@ Task execution logic. Is the engine behind Session and TaskRecord.
 Uses Sandwich pattern (load -> run -> save) to manage task lifecycle within a session.
 Allows long-running tasks to run without holding locks on the session manifest.
 """
-
 from dataclasses import dataclass, field
 from typing import Any, Iterator, TYPE_CHECKING
 from pathlib import Path
@@ -27,7 +26,6 @@ class ExecutionContext:
     in case it needs momentary access to session data (e.g. saving artifacts).
     Helpers safely open the session as needed.
     """
-
     runtime: "Runtime"
     session_id: str
     task: "Task"
@@ -95,7 +93,6 @@ class ExecutionContext:
         Usage:
             my_obj = ctx.memoize("my_unique_key", expensive_function, arg1=val1)
         """
-
         def _thunk():
             return func(**kwargs)
 
@@ -306,7 +303,6 @@ class PreviewContext(ExecutionContext):
     Intercepts materialization to return UI-ready data payloads.
     Leaves the Manifest untouched.
     """
-
     def materialize_file(
         self,
         source_path: Path | str,

@@ -1,3 +1,7 @@
+from .meta import (
+    iter_dsl_attrs,
+    has_field_type,
+)
 from .strings import (
     auto_increment,
     clean,
@@ -17,6 +21,8 @@ __all__ = [
     "is_artifact_id",
     "is_collection_type",
     "is_optional_type",
+    "iter_dsl_attrs",
+    "has_field_type",
     "normalize_display_name",
     "normalize_query",
     "slugify",

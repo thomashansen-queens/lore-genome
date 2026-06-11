@@ -37,6 +37,7 @@ class VdbDumpOutputs:
     name="SRA Toolkit vdb-dump (--info)",
     category="SRA Toolkit",
     icon="📦",
+    preview_mode="full",
 )
 def vdb_dump_handler(
     ctx: lore.ExecutionContext,

@@ -1,15 +1,14 @@
 """
 Disk IO and factory methods for Workflows.
 """
-
 import json
 from pathlib import Path
 from typing import Any, List, Dict
 
+from .models import Workflow
 from lore.core.bindings import Binding, ReferenceBinding, LiteralBinding, UserInputBinding
 from lore.core.sessions import Session
-from lore.core.tasks.models import Task, TaskStatus
-from lore.core.workflows.models import Workflow
+from lore.core.tasks import Task, TaskStatus
 from lore.core.utils import auto_increment, slugify
 
 
