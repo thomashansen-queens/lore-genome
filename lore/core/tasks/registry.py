@@ -156,9 +156,13 @@ class TaskRegistry:
                 )
 
             # 2. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
+<<<<<<< HEAD
             if inputs is None:
                 final_input_model = create_model(f"{key.replace('.', '_')}_InputModel")
             elif isinstance(inputs, type) and issubclass(inputs, BaseModel):
+=======
+            if isinstance(inputs, type) and issubclass(inputs, BaseModel):
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
                 final_input_model = inputs
             elif has_field_type(inputs, TaskInput):
                 final_input_model = _compile_inputs_to_pydantic(key, inputs)
@@ -169,9 +173,13 @@ class TaskRegistry:
                 )
 
             # 3. Similar logic for outputs
+<<<<<<< HEAD
             if outputs is None:
                 final_output_model = create_model(f"{key.replace('.', '_')}_OutputModel")
             elif isinstance(outputs, type) and issubclass(outputs, BaseModel):
+=======
+            if isinstance(outputs, type) and issubclass(outputs, BaseModel):
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
                 final_output_model = outputs
             elif has_field_type(outputs, TaskOutput):
                 final_output_model = _compile_outputs_to_pydantic(key, outputs)

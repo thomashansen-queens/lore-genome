@@ -53,7 +53,10 @@ class TaskDefinition:
         description: Human-readable description of the Task.
         category: Category or grouping for the Task (e.g. "NCBI", "Phylogeny").
         icon: Emoji or symbol representing the Task visually. TODO: De-unicodify this, use SVGs
+<<<<<<< HEAD
         preview_mode: Permissions for UI previews ("none", "live", "full", "dry_run")
+=======
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
     """
     key: str
     handler: Callable

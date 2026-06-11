@@ -13,8 +13,13 @@ from .executors import (
     LocalSubprocessExecutor,
 )
 
+<<<<<<< HEAD
 # 4. Context sandbox
 from .context import ExecutionContext
+=======
+# 3. Context sandbox
+from .context import ExecutionContext, PreviewContext
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 
 # 5. Input resolver
 from .materializer import materialize_task_inputs
@@ -29,8 +34,12 @@ __all__ = [
     "BaseExecutor",
     "LocalSubprocessExecutor",
     "ExecutionContext",
+<<<<<<< HEAD
     "run_preview_worker",
     "PreviewContext",
     "PreviewPayload",
+=======
+    "PreviewContext",
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
     "materialize_task_inputs",
 ]

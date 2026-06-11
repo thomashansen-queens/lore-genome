@@ -6,9 +6,14 @@ the mutable instance.
 from datetime import datetime, timezone
 from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+<<<<<<< HEAD
 from typing import Any, TYPE_CHECKING
 
 from lore.core.adapters import AdapterPreview
+=======
+from typing import Any, cast, TYPE_CHECKING
+
+>>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 from lore.core.bindings import (
     Binding,
     LiteralBinding,

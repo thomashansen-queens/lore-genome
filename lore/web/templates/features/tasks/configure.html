@@ -12,6 +12,8 @@
             <span class="ui-label">{% if edit_task_id %}Edit Task{% else %}New Task{% endif %}</span>
             {% if task_def.preview_mode.is_live %}
                 <span class="badge small info push-right">🖵 Live Preview</span>
+            {% elif task_def.preview_mode.value == 'dry_run' %}
+                <span class="badge small push-right">🛈 Dry Run Only</span>
             {% endif %}
         </div>
 
@@ -93,6 +95,8 @@
                     that only executes when committed and run.
                 {% elif task_def.preview_mode.is_live %}
                     Change a parameter to generate preview...
+                {% elif task_def.preview_mode.value == 'dry_run' %}
+                    Click "Preview" to validate inputs without running the task...
                 {% elif task_def.preview_mode.value == 'dry_run' %}
                     Click "Preview" to validate inputs without running the task...
                 {% else %}
