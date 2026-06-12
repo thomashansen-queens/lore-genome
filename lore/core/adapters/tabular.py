@@ -5,7 +5,7 @@ and optionally extract specific series/columns for use in tasks.
 """
 from typing import Any, Callable, ClassVar, Iterator, TYPE_CHECKING
 
-from lore.core.adapters.base import BaseAdapter
+from .base import AdapterPreview, BaseAdapter
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -173,7 +173,13 @@ class TabularAdapter(BaseAdapter):
 
     # --- Outputs ---
 
-    def preview(self, raw_data, io_metadata, config: dict | None = None, **kwargs):
+    def preview(
+        self,
+        raw_data: Any,
+        io_metadata: dict[str, Any],
+        config: dict | None = None,
+        **kwargs,
+    ) -> AdapterPreview:
         """Override to inject config transformations (e.g. sorting)"""
         result = super().preview(raw_data, io_metadata, config, **kwargs)
         kwconfig = self._prepare_config(config, **kwargs)

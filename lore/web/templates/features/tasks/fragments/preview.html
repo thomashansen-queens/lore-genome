@@ -1,0 +1,18 @@
+{# Preview presentation #}
+
+{% for key, preview in payload.output_previews.items() %}
+    <div class="card">
+        <header>Output: {{ key }} <span class="muted">({{ preview.adapter_name }})</span></header>
+        
+        {# Serve viewer based on view_mode #}
+
+        {% if preview.view_mode == 'table' %}
+            {% include "components/viewers/table.html" %}
+        {% elif preview.view_mode == 'json' %}
+            {% include "components/viewers/json.html" %}
+        {% else %}
+            {% include "components/viewers/raw.html" %}
+        {% endif %}
+        
+    </div>
+{% endfor %}

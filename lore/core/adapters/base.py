@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 class AdapterPreview(BaseModel):
     """Strict payload returned by all Adapters for UI rendering."""
     data: Any = Field(description="The actual data (records, SVG string, etc.)")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Context about the data")
+    view_mode: str = Field(description="How the UI should render this data (e.g. 'table', 'svg', 'text')")
+    adapter_name: str = Field(description="The name of the Adapter that generated this preview")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Context about the data (e.g. total_rows, file_eof_reached)",
+    )
 
 
 class BaseAdapter(ABC):
@@ -143,11 +148,7 @@ class BaseAdapter(ABC):
         """
         adapted_data = self.adapt(raw_data, config, **kwargs)
 
-        final_metadata = {
-            **io_metadata,
-            "view_mode": self.view_mode,
-            "adapter_name": self.name,
-        }
+        final_metadata = io_metadata.copy()
 
         if final_metadata.get("total_rows") is None and isinstance(adapted_data, list):
             if io_metadata.get("file_eof_reached", True):
@@ -155,5 +156,7 @@ class BaseAdapter(ABC):
 
         return AdapterPreview(
             data=adapted_data,
+            view_mode=self.view_mode,
+            adapter_name=self.name,
             metadata=final_metadata,
         )

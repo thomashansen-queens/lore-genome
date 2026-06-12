@@ -54,8 +54,8 @@ class TaskRegistry:
     def register(
         self,
         key: str,
-        inputs: type["BaseModel"] | type,
-        outputs: type["BaseModel"] | type,
+        inputs: type["BaseModel"] | type | None,
+        outputs: type["BaseModel"] | type | None,
         name: str | None = None,
         description: str | None = None,
         category: str | None = None,
@@ -156,7 +156,9 @@ class TaskRegistry:
                 )
 
             # 2. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
-            if isinstance(inputs, type) and issubclass(inputs, BaseModel):
+            if inputs is None:
+                final_input_model = create_model(f"{key.replace('.', '_')}_InputModel")
+            elif isinstance(inputs, type) and issubclass(inputs, BaseModel):
                 final_input_model = inputs
             elif has_field_type(inputs, TaskInput):
                 final_input_model = _compile_inputs_to_pydantic(key, inputs)
@@ -167,7 +169,9 @@ class TaskRegistry:
                 )
 
             # 3. Similar logic for outputs
-            if isinstance(outputs, type) and issubclass(outputs, BaseModel):
+            if outputs is None:
+                final_output_model = create_model(f"{key.replace('.', '_')}_OutputModel")
+            elif isinstance(outputs, type) and issubclass(outputs, BaseModel):
                 final_output_model = outputs
             elif has_field_type(outputs, TaskOutput):
                 final_output_model = _compile_outputs_to_pydantic(key, outputs)

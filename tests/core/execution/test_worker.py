@@ -4,9 +4,8 @@ Tests for worker execution of Tasks, including materialization and error handlin
 import pytest
 
 from lore.core.bindings import LiteralBinding
-from lore.core.execution.context import ExecutionContext, PreviewContext
 from lore.core.tasks import TaskResults, TaskStatus, ValueInput, TaskOutput
-from lore.core.execution.worker import run_preview_worker, run_task_worker
+from lore.core.execution import run_preview_worker, run_task_worker, ExecutionContext
 
 # --- DUMMY TASK CONTRACTS ---
 

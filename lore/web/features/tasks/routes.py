@@ -5,14 +5,16 @@ import asyncio
 from collections.abc import AsyncIterable
 import html
 from pathlib import Path
-from pydantic import BaseModel, Field
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
+from lore.core.adapters import AdapterPreview
 from lore.core.sessions import resolve_task_outputs
-from lore.core.tasks import AdapterStrategy, TaskConfig, TaskStatus, task_registry
+from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
@@ -190,8 +192,14 @@ class TaskPayload(BaseModel):
     """Contract for the AJAX payload when previewing or committing a Task"""
     name: str | None = None
     task_id: str | None = None  # for edits; ignored on new Tasks
-    inputs: dict
     task_config: TaskConfig = Field(default_factory=TaskConfig)
+    run_immediately: str | bool | None = None
+    model_config = ConfigDict(extra="allow")  # Allow arbitrary keys for adapter config, etc.
+
+    @property
+    def inputs(self) -> dict[str, Any]:
+        """Reconstructs inputs dictionary from extra fields in the payload"""
+        return self.model_extra or {}
 
 
 @router.post("/{task_id}/rename", response_class=RedirectResponse)
@@ -265,9 +273,9 @@ def delete_task_action(task_id: str, s: ActiveSession, ctx: PageContext = Depend
     return ctx.redirect(f"/sessions/{s.id}", message="Task deleted successfully.", message_type="success")
 
 
-# --- AJAX routes ---
+# --- HTMX routes ---
 
-@router.post("/configure/{task_key}", response_class=JSONResponse)
+@router.post("/configure/{task_key}")
 def api_task_commit(
     task_key: str,
     payload: TaskPayload,
@@ -275,7 +283,8 @@ def api_task_commit(
     rt: RT,
 ):
     """
-    Commits the current configuration to a Task in the Manifest
+    Commits the current configuration to a Task in the Manifest.
+    Responds to HTMX.
     """
     try:
         task_def = task_registry.get(task_key)
@@ -290,7 +299,7 @@ def api_task_commit(
             "api_task_commit [%s]: payload keys=%s", task_key, list(payload.inputs.keys())
         )
 
-        # 2. Parse JSON payload
+        # 2. Parse payload (pulled from model_extra)
         raw_inputs = form_json_to_dict(payload.inputs, task_def.input_model)
 
         ui_modes = {
@@ -311,7 +320,6 @@ def api_task_commit(
             # 5. Upsert logic for Task (allows editing existing tasks)
             task_id = None
             task = None
-            msg = ""
 
             # New tasks will not have an id yet
             if existing_task_id:
@@ -320,7 +328,6 @@ def api_task_commit(
                     raise ValueError(f"Task with ID '{existing_task_id}' not found in Session '{s.id}'.")
                 if task.status == TaskStatus.RUNNING:
                     task = None  # Cannot edit, save as new
-                    msg = "Task is running. Saving changes as a new task."
 
             if task:
                 task = s.update_task(
@@ -340,23 +347,25 @@ def api_task_commit(
                 )
             task_id = task.id
 
+        if str(payload.run_immediately).lower() == "true":
+            rt.execute_task(session_id=session_id, task_id=task_id)
+
         # 6. Return success and the redirect URL
-        return JSONResponse(content={
-            "status": "success",
-            "message": msg or "Task saved successfully.",
-            "message_type": "success",
-            "redirect_url": f"/sessions/{session_id}/tasks/{task_id}",
-        })
+        return Response(headers={"HX-Redirect": f"/sessions/{session_id}/tasks/{task_id}"})
 
     except Exception as e:
-        return JSONResponse(
-            content={"status": "error", "message": str(e)},
-            status_code=400,
-        )
+        rt.logger.error("Commit API Error: %s", str(e), exc_info=True)
+        # Return 200 OK so HTMX accepts the payload, but the error string
+        err_html = f"""
+        <div class="card warning" style="margin-bottom: var(--spacing-md);">
+            <strong>Validation Error:</strong> {str(e)}
+        </div>
+        """
+        return HTMLResponse(content=err_html)
 
 
 # Because this is `def` and not `async def`, FastAPI runs it in a background thread!
-@router.post("/configure/{task_key}/preview", response_class=JSONResponse)
+@router.post("/configure/{task_key}/preview", response_class=HTMLResponse)
 def api_task_preview(
     session_id: str,
     task_key: str,
@@ -368,6 +377,8 @@ def api_task_preview(
     AJAX endpoint for the Task preview. Runs the task in memory and returns
     rendered HTML of the results.
     """
+    from lore.core.adapters import adapter_registry
+
     try:
         task_def = task_registry.get(task_key)
         if not task_def:
@@ -386,96 +397,62 @@ def api_task_preview(
             inferred_bindings = infer_bindings_from_raw(form_inputs, s, ui_modes)
 
         # 3. Ephemeral preview task
-        results = rt.preview_task(
+        preview_payload = rt.preview_task(
             session_id=session_id,
             task_key=task_key,
             raw_inputs=inferred_bindings,
             exec_config=payload.task_config.model_dump(mode="json"),
         )
-        primary_results = results.primary_data
-        if not primary_results:
-            raise ValueError(
-                "Task execution completed, but no primary result. "
-                "Does the Task plugin have `is_primary` set?"
+
+        # 4. Adapt data for UI presentation (e.g. table vs. json)
+        adapted_previews = {}
+        for key, output in preview_payload.output_previews.items():
+            # A. Choose which adapter to use (explicit config > type-based)
+            adapter_key = payload.task_config.adapter.options.get(f"{key}_adapter")
+            adapter = adapter_registry.get(adapter_key) if adapter_key else None
+
+            if not adapter:
+                ext = output.data.suffix if isinstance(output.data, Path) else "*"
+                adapters = adapter_registry.get_for_type(data_type=output.data_type, extension=ext)
+                adapter = adapters[0] if adapters else None
+
+            # B. Mock response if no adapter found
+            if not adapter:
+                adapted_previews[key] = AdapterPreview(
+                    data=None,
+                    view_mode="raw",
+                    adapter_name="Error",
+                    metadata={"error": "No adapter found for type '{output.data_type}'."},
+                )
+                continue
+    
+            # C. Adapt the raw output data for frontend preview
+            adapted_previews[key] = adapter.preview(
+                raw_data=output.data,
+                io_metadata={},
+                config=payload.task_config.adapter.model_dump(),
             )
-        primary_result = primary_results[0]
 
-        # 4. Extract the metadata
-        output_data = primary_result.get("data", {})
-        view_mode = primary_result.get("view_mode", "raw")
-        metadata = primary_result.get("metadata", {})
-        adapter_name = primary_result.get("adapter_name", "unknown")
-
-        # 5. Extract strategy used to determine UI state
-        strategy = payload.task_config.adapter.strategy
-
-        # 6. Apply DOM truncation for large datasets (avoid browser crashes)
-        # TODO: Centralize this logic? It also exists in Artifact Explore
-        _DEFAULT_EXPLORE_DISPLAY_LIMIT: int = 1000
-        if isinstance(output_data, list):
-            actual_length = len(output_data)
-            display_limit = rt.settings.explore_display_limit or _DEFAULT_EXPLORE_DISPLAY_LIMIT
-
-            # Check if we know how many total records there are
-            if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
-                metadata["total_rows"] = actual_length
-
-                if actual_length > display_limit:
-                    output_data = output_data[:display_limit]
-                    metadata["is_truncated"] = True
-                else:
-                    metadata["is_truncated"] = False
-
-            # If not loaded in full, did we hit EOF?
-            else:
-                peek_limit = metadata.get("preview_limit", 100)
-
-                # If the output is exactly the peek limit, assume this is a truncated preview
-                if actual_length >= peek_limit:
-                    metadata["total_rows"] = None
-                else:
-                    inferred_total = metadata.get("total_rows")
-                    metadata["total_rows"] = inferred_total or None
-
-                metadata["is_truncated"] = False
-
-            metadata["columns"] = list(output_data[0].keys()) if output_data else []
-
-        else:
-            # Non-tabular data (non-list)
-            metadata["is_truncated"] = False
-            metadata["columns"] = []
-
-        # 7. Prepare the HTML component
-        render_context = {
-            "request": ctx.request,
-            "data": output_data,
-            "view_state": payload.task_config.adapter.view_state,
-            "metadata": metadata,
-            "adapter_name": adapter_name,
-            "view_mode": view_mode,
-            "keys": metadata.get("columns"),
-        }
-
-        response = templates.TemplateResponse(
+        # 5. Render the preview with Jinja
+        return templates.TemplateResponse(
             request=ctx.request,
-            name=f"components/viewers/{view_mode}.html",
-            context=render_context,
+            name=f"features/tasks/fragments/preview.html",
+            context=ctx.render(
+                payload=preview_payload,
+                adapted_previews=adapted_previews,
+            )
         )
-        html_content = bytes(response.body).decode("utf-8")
-
-        # 7. Send the compiled HTML to frontend for display
-        return JSONResponse(content={
-            "status": "success",
-            "html": html_content,
-        })
 
     except Exception as e:
         rt.logger.error("Preview API Error: %s", str(e), exc_info=True)
-        return JSONResponse(
-            content={"status": "error", "message": str(e)},
-            status_code=400,
-        )
+        err_html = f"""
+        <div class="card" style="background: var(--danger-bg); border-color: var(--danger);">
+            <h4 style="color: var(--danger); margin-top: 0;">Preview Failed</h4>
+            <p class="small">{str(e)}</p>
+        </div>
+        """
+        return HTMLResponse(content=err_html)
+
 
 # --- SSE for real-time updates ---
 

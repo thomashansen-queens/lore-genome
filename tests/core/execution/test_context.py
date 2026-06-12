@@ -3,7 +3,7 @@ Tests for ExecutionContext
 """
 import pytest
 
-from lore.core.execution.context import ExecutionContext, PreviewContext
+from lore.core.execution import ExecutionContext, PreviewContext
 from lore.core.tasks import Task, TaskStatus
 
 

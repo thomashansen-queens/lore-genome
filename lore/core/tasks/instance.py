@@ -8,6 +8,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Any, TYPE_CHECKING
 
+from lore.core.adapters import AdapterPreview
 from lore.core.bindings import (
     Binding,
     LiteralBinding,
