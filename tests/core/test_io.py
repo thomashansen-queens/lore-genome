@@ -46,12 +46,12 @@ def test_table_reader_preview_jsonl(dummy_jsonl_file):
     """
     reader = TableReader(dummy_jsonl_file)
 
-    preview, metadata = reader.preview(limit=2)
+    preview, metadata = reader.preview(peek_limit=2)
     preview = cast(list[dict], preview)
 
     assert len(preview) == 2
-    assert metadata["file_eof_reached"] is False
-    assert metadata["strategy_used"] == "Streamed preview"
+    assert metadata["file_eof_hit"] is False
+    assert metadata["strategy"] == "Streamed (peek)"
     assert metadata["total_rows"] is None
 
     assert preview[0]["id"] == 1

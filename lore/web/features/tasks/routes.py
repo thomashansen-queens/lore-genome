@@ -408,16 +408,17 @@ def api_task_preview(
         adapted_previews = {}
         for key, output in preview_payload.output_previews.items():
             # A. Choose which adapter to use (explicit config > type-based)
-            adapter_key = payload.task_config.adapter.options.get(f"{key}_adapter")
-            adapter = adapter_registry.get(adapter_key) if adapter_key else None
+            explicit_key = payload.task_config.adapter.options.get(f"{key}_adapter")
+            adapter = adapter_registry.get(explicit_key) if explicit_key else None
 
             if not adapter:
-                ext = output.data.suffix if isinstance(output.data, Path) else "*"
+                ext = output.io_metadata.get("extension", "*")
                 adapters = adapter_registry.get_for_type(data_type=output.data_type, extension=ext)
                 adapter = adapters[0] if adapters else None
 
             # B. Mock response if no adapter found
             if not adapter:
+                # TODO: standardize metadata for "no adapter found"
                 adapted_previews[key] = AdapterPreview(
                     data=None,
                     view_mode="raw",
@@ -429,7 +430,7 @@ def api_task_preview(
             # C. Adapt the raw output data for frontend preview
             adapted_previews[key] = adapter.preview(
                 raw_data=output.data,
-                io_metadata={},
+                io_metadata=output.io_metadata,
                 config=payload.task_config.adapter.model_dump(),
             )
 

@@ -180,27 +180,54 @@ class TabularAdapter(BaseAdapter):
         config: dict | None = None,
         **kwargs,
     ) -> AdapterPreview:
-        """Override to inject config transformations (e.g. sorting)"""
+        """
+        Packages adapted data with metadata for UI presentation.
+        Override to inject config transformations (e.g. sorting).
+        """
+        # 1. Adapt data using the standard preview method
         result = super().preview(raw_data, io_metadata, config, **kwargs)
         kwconfig = self._prepare_config(config, **kwargs)
 
-        # 1. Inject tabular metadata
-        if isinstance(result.data, list) and result.data and isinstance(result.data[0], dict):
+        if not isinstance(result.data, list) or not result.data:
+            return result
+
+        # 2. Inject tabular metadata
+        if isinstance(result.data[0], dict):
             result.metadata["columns"] = list(result.data[0].keys())
 
-        # 2. Apply view-level config transformations (e.g. sorting)
+        # 3. Apply view-level config transformations (e.g. sorting)
         view_state = kwconfig.get("view_state", {})
         sort_by = view_state.get("sort_by")
 
-        if sort_by and isinstance(result.data, list):
+        if sort_by:
             sort_asc = view_state.get("sort_asc", True)
-            # Sort: Pushes None to end, strinigifies values to prevent type errors
-            result.data.sort(
-                key=lambda r: (
-                    1 if r.get(sort_by) is None else 0,
-                    str(r.get(sort_by)).lower() if r.get(sort_by) is not None else ""),
-                reverse=not sort_asc,
-            )
+            try:
+                # Sort: Pushes None to end, strinigifies values to prevent type errors
+                result.data.sort(
+                    key=lambda r: (
+                        1 if r.get(sort_by) is None else 0,
+                        str(r.get(sort_by)).lower() if r.get(sort_by) is not None else ""
+                    ),
+                    reverse=not sort_asc,
+                )
+            except TypeError:
+                pass  # If sorting fails, return unsorted data
+
+        # 4. Truncate preview to avoid crashing browser/console
+        ui_limit = kwconfig.get("ui_limit", 1000)
+        ui_limit_hit = False
+        if len(result.data) > ui_limit:
+            result.data = result.data[:ui_limit]
+            ui_limit_hit = True
+
+        # 5. Add truncation metadata for UI to display warning if needed
+        if result.metadata.get("total_rows") is None:
+            if io_metadata.get("file_eof_hit", True):
+                result.metadata["total_rows"] = len(raw_data)
+
+        io_ram_limit_hit = io_metadata.get("ram_limit_hit", False)
+        io_eof_hit = io_metadata.get("file_eof_hit", False)
+        result.metadata["is_truncated"] = ui_limit_hit or io_ram_limit_hit or not io_eof_hit
 
         return result
 

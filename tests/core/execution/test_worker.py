@@ -4,8 +4,9 @@ Tests for worker execution of Tasks, including materialization and error handlin
 import pytest
 
 from lore.core.bindings import LiteralBinding
-from lore.core.tasks import TaskResults, TaskStatus, ValueInput, TaskOutput
-from lore.core.execution import run_preview_worker, run_task_worker, ExecutionContext
+from lore.core.execution.preview import PreviewOutput
+from lore.core.tasks import TaskStatus, ValueInput, TaskOutput
+from lore.core.execution import run_preview_worker, run_task_worker, ExecutionContext, PreviewPayload
 
 # --- DUMMY TASK CONTRACTS ---
 
@@ -21,6 +22,7 @@ class DummyOutputs:
 def failing_task_plugin(isolated_task_registry) -> str:
     """A task guaranteed to raise an exception for testing error handling"""
     @isolated_task_registry.register(
+            
         key="test.failing_worker",
         inputs=DummyInputs,
         outputs=DummyOutputs,
@@ -97,21 +99,19 @@ def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_task_p
 
     raw_inputs = {"text_to_write": [LiteralBinding(value="Previewing is fun!")]}
 
-    results = run_preview_worker(
+    preview_payload = run_preview_worker(
         rt=temp_runtime,
         session_id=closed_session.id,
         task_key=dummy_task_plugin,
         raw_inputs=raw_inputs,
     )
 
-    assert isinstance(results, TaskResults)
+    assert isinstance(preview_payload, PreviewPayload)
 
-    primary_data = results.primary_data
-    assert len(primary_data) > 0
+    primary_data = preview_payload.output_previews.get("greeting_file", [])
 
-    first_result = primary_data[0]
-    assert first_result.get("is_preview") is True
-    assert "Previewing is fun!" in str(first_result.get("data", ""))
+    assert isinstance(primary_data, PreviewOutput)
+    assert primary_data.data[0] == "Processed: Previewing is fun!"
 
     with temp_runtime.open_session(closed_session.id, read_only=True) as s:
         assert len(s.list_tasks()) == initial_task_count

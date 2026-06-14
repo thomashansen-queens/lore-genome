@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 from pydantic import BaseModel
+from pydantic.fields import Field
 from typing import Any, TYPE_CHECKING
 
 from .context import ExecutionContext
@@ -22,6 +23,7 @@ class PreviewOutput(BaseModel):
     """Structured output for a single previewed output slot."""
     data: Any
     data_type: str
+    io_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PreviewPayload(BaseModel):
@@ -77,77 +79,27 @@ class PreviewContext(ExecutionContext):
         data_type = self._resolve_data_type(output_key, data_type)
 
         # 2. Delegate packaging
-        payload = self._adapt_for_preview(source_path, data_type)
+        adapter_config = self.task.exec_config.get("adapter", {})
+        strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
+        reader = get_reader_for(source_path)
+
+        if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
+            try:
+                raw_data = reader.read_full()
+                io_meta = {"file_eof_reached": True, "strategy_used": "Full load"}
+            except NotImplementedError:
+                raw_data, io_meta = reader.preview(limit=100)
+        else:
+            raw_data, io_meta = reader.preview(limit=100)
+
+        io_meta["extension"] = source_path.suffix.lstrip(".")
+        io_meta["data_type"] = data_type
 
         # 3. Store in ephemeral results object
-        self.results.add(output_key, payload)
+        self.results.add(output_key, (raw_data, io_meta))
         self.logger.debug("Preview intercepted file materialization for slot: %s", output_key)
 
         return DummyPreviewArtifact()  # Return a mock artifact for preview mode
-
-    def _adapt_for_preview(self, source_path: Path, data_type: str) -> dict:
-        """Logic to find adapter and prepare preview payload"""
-        from lore.core.adapters import adapter_registry
-
-        # 1. Resolve adapter
-        extension = source_path.suffix.lstrip(".") or "*"
-        adapters = adapter_registry.get_for_type(data_type, extension)
-        adapter = adapters[0] if adapters else None
-
-        if not adapter:
-            self.logger.warning(
-                "No adapter found for previewing data type '%s' with extension '%s'",
-                data_type,
-                source_path.suffix,
-            )
-            return {
-                "is_preview": True,
-                "view_mode": "raw",
-                "adapter_name": "Raw file (no Adapter)",
-                "data": f"No adapter found for {data_type}. Cannot preview.",
-                "metadata": {"strategy_used": "system_fallback"},
-            }
-
-        # 2. Read raw data and apply adapter
-        try:
-            adapter_config = self.task.exec_config.get("adapter", {})
-            strategy = adapter_config.get("strategy", "peek")
-
-            reader = get_reader_for(source_path)
-
-            # Only load all data for a preview if explicitly requested
-            if strategy in ("full", "eager"):
-                raw_data = reader.read_full()
-                io_metadata = {"file_eof_reached": True}
-            else:
-                raw_data, io_metadata = reader.preview(limit=100)
-
-            adapter_result = adapter.preview(
-                raw_data,
-                io_metadata,
-                config=adapter_config,
-                ext=extension,
-            )
-
-            return {
-                "data": adapter_result.data,
-                "metadata": adapter_result.metadata,
-                "is_preview": True,
-                "view_mode": adapter.view_mode,
-                "adapter_name": adapter.name,
-            }
-
-        except Exception as e:
-            self.logger.error(
-                "Adapter preview failed for data type '%s': %s", data_type, str(e), exc_info=True
-            )
-            return {
-                "is_preview": True,
-                "view_mode": "raw",
-                "adapter_name": adapter.name if adapter else "No adapter",
-                "data": f"Error generating preview: {str(e)}",
-                "metadata": {"error": str(e)},
-            }
 
 
 def run_preview_worker(
@@ -223,19 +175,30 @@ def run_preview_worker(
     try:
         task_def.handler(ctx, **resolved_inputs)
 
+        # 7. Extract preview outputs from the ephemeral context
         for key in ctx.results.output_keys:
             data_list = ctx.results[key]
-
-            if data_list:
+            if not data_list:
                 continue
 
-            _, field_extra = task_def.field_meta(key, is_output=True)
+            # For previews, only adapt the first output per output slot
+            raw_data = data_list[0]
+            if isinstance(raw_data, tuple) and len(raw_data) == 2 and isinstance(raw_data[1], dict):
+                data, io_meta = raw_data
+            else:
+                data, io_meta = raw_data, {}
 
-            # For preview purposes, only adapt the first item if 
-            # multiple are present in an output slot
+            # PreviewContext should always populate data_type in io_meta, but fall back to
+            # field definition just in case
+            data_type = io_meta.get("data_type")
+            if not data_type:
+                _, field_extra = task_def.field_meta(key, is_output=True)
+                data_type = field_extra.get("data_type", "unknown")
+
             preview.output_previews[key] = PreviewOutput(
-                data=data_list[0],
-                data_type=field_extra.get("data_type", "unknown"),
+                data=data,
+                data_type=data_type,
+                io_metadata=io_meta,
             )
 
     except Exception as e:

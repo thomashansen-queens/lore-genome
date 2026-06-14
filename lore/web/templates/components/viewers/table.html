@@ -32,7 +32,7 @@
             {% if metadata.get('total_rows') is not none %}
                 {{ '{:,}'.format(metadata.get('total_rows')) }} rows
             {% else %}
-                <em>many</em> rows (streamed)
+                <em>many</em> rows (preview partially loaded)
             {% endif %}
         </p>
 
