@@ -67,10 +67,10 @@
 
         {% if view_mode == 'table' %}
         {# === Data Controls (table only) === #}
-        <div class="row gapped">
+        <div class="row gapped" style="margin-bottom: var(--spacing-sm);">
             <input type="text" id="query-input"
-                   placeholder="pandas query e.g. symbol == 'ctxA' and name.str.contains('toxin')"
-                   style="flex: 1; font-family: var(--font-mono); font-size: 0.85rem;" />
+                placeholder="pandas query e.g. symbol == 'ctxA' and name.str.contains('toxin')"
+                style="flex: 1; font-family: var(--font-mono); font-size: 0.85rem;" />
             
             <label class="checkbox" style="white-space: nowrap; margin: 0;">
                 <input type="checkbox" id="regex-toggle"> Regex
@@ -80,6 +80,9 @@
                 {# Gets updated with filtered row count by JavaScript #}
             </div>
         </div>
+        
+        {# Wrapper-level load-full / RAM-limit notice (shared with preview) #}
+        {{ ui.truncation_notice(metadata) }}
         {% endif %}
 
         {# === Viewer === #}
@@ -143,10 +146,12 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
-    // --- Sort and load: click on table header ---
-    viewerTarget.addEventListener('click', function(e) {
+    // --- Sort and load: click on header or the load-full button ---
+    // Listen on the card so it catches the wrapper-level load-full button
+    // (outside #viewer-target) as well as the sort headers inside the viewer.
+    card.addEventListener('click', function(e) {
         // Check if the user has requested to load the full preview
-        if (e.target.closest('#btn-load-full')) {
+        if (e.target.closest('.btn-load-full')) {
             fetchData();
             return;
         }
@@ -203,6 +208,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (result.status === 'success') {
                 viewerTarget.innerHTML = result.html;
+
+                // A successful fetch loads the full dataset, so the peek's
+                // load-full prompt is no longer relevant.
+                card.querySelector('.btn-load-full')?.remove();
 
                 // Inject the scripts from the HTML
                 viewerTarget.querySelectorAll("script").forEach(oldScript => {

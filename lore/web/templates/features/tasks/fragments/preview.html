@@ -1,4 +1,5 @@
 {# Preview presentation #}
+{% import "macros/ui.html" as ui %}
 
 {# --- Error --- #}
 {% if payload.error %}
@@ -37,10 +38,13 @@
                         view_state = payload.execution_config.get('adapter', {}).get('view_state', {})
                     %}
 
-                    {# Copy button #}
-                    <button type="button" class="btn badge secondary small push-right copy-preview-btn">
-                        Copy Preview
-                    </button>
+                    {# Tab chrome: wrapper-level truncation notice + copy #}
+                    <div class="row gapped" style="flex-shrink: 0; align-items: center;">
+                        {{ ui.truncation_notice(preview.metadata) }}
+                        <button type="button" class="btn badge secondary small push-right copy-preview-btn">
+                            Copy Preview
+                        </button>
+                    </div>
 
                         {% if preview.view_mode == 'table' %}
                             {% include "components/viewers/table.html" %}

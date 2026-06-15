@@ -24,7 +24,7 @@
 
 <div class="column">
 
-    {# --- Preview info and full load --- #}
+    {# --- Preview info (display-level only; wrapper renders the "load full" button --- #}
     <div class="row gapped muted small" style="flex-shrink: 0;">
         <p>
             Showing {{ '{:,}'.format(data|length) }} records
@@ -38,32 +38,12 @@
             {% endif %}
         </p>
 
-        <div class="push-right">
-            {% if metadata.get('total_rows') is none %}
-                
-                {# Peek preview #}
-                <button id="btn-load-full" class="btn badge primary small push-right">
-                    PREVIEW (Click to load full)
-                </button>
-
-            {% else %}
-                
-                {# Full preview requested #}
-                {% if metadata.get('ram_limit_hit') %}
-                    <div class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
-                        File too large for full preview.
-                    </div>
-                {% endif %}
-
-                {% if metadata.get('ui_limit_hit') %}
-                    {# DOM-truncated preview #}
-                    <div class="badge small info" title="Data truncated to prevent browser performance issues.">
-                        Showing: Top {{ '{:,}'.format(data|length) }}
-                    </div>
-                {% endif %}
-
-            {% endif %}
-        </div>
+        {% if metadata.get('ui_limit_hit') %}
+            {# DOM display cap — distinct from data completeness #}
+            <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
+                Showing: Top {{ '{:,}'.format(data|length) }}
+            </div>
+        {% endif %}
     </div>
 
     {# --- Data viewer --- #}

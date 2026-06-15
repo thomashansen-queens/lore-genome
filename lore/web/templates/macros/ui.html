@@ -131,3 +131,24 @@
     </button>
 </form>
 {% endmacro %}
+
+{# === Preview truncation notice ===
+   Used in viewer wrappers (preview / explore) to indicate data completeness.
+   - ram_limit_hit: a full load was attempted but cut off by RAM — no point
+     offering "load full"; just show a warning
+   - not file_eof_hit: only a peek was loaded — offer to load the full data.
+
+   The load-full button uses a class (not an id) so a multi-output preview can
+   show one per output tab; the wrapper's own JS wires the click. #}
+{% macro truncation_notice(metadata) %}
+    {% if metadata.get('ram_limit_hit') %}
+        <span class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
+            File too large for full preview
+        </span>
+    {% elif not metadata.get('file_eof_hit') %}
+        <button type="button" style="display: block; width: fit-content;"
+            class="btn-load-full btn badge primary small">
+            PREVIEW (Click to load full)
+        </button>
+    {% endif %}
+{% endmacro %}
