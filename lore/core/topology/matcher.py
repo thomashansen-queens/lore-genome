@@ -11,7 +11,7 @@ from lore.core.topology.traits import DataTrait
 
 if TYPE_CHECKING:
     from lore.core.sessions.session import Session
-    from lore.core.tasks.models import TaskDefinition
+    from lore.core.tasks import TaskDefinition
 
 
 def is_primitive_compatible(source_type: Any, target_extra: dict) -> bool:

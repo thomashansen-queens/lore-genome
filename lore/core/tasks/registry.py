@@ -2,13 +2,12 @@
 The Task Registry is initialized at Runtime and serves as the global source of truth for all
 available Task definitions.
 """
-
-from typing import Type, Any
+from typing import Any, Type
 from pydantic import BaseModel, Field, create_model
 
-from lore.core.tasks.parameters import TaskInput, TaskOutput
-from lore.core.tasks.models import TaskDefinition
-from lore.core.utils.meta import iter_dsl_attrs, has_field_type
+from .definition import PreviewMode, PreviewModeLiteral, TaskDefinition
+from .parameters import TaskInput, TaskOutput
+from lore.core.utils import iter_dsl_attrs, has_field_type
 
 
 class TaskRegistry:
@@ -16,7 +15,6 @@ class TaskRegistry:
     Registry for managing Task definitions. Use the `register` method as a decorator to register
     Task handler functions.
     """
-
     def __init__(self):
         self._tasks: dict[str, TaskDefinition] = {}
         # O(1) reverse lookup for UI suggestions
@@ -56,18 +54,26 @@ class TaskRegistry:
     def register(
         self,
         key: str,
-        inputs: type["BaseModel"] | type,
-        outputs: type["BaseModel"] | type,
+        inputs: type["BaseModel"] | type | None,
+        outputs: type["BaseModel"] | type | None,
         name: str | None = None,
         description: str | None = None,
         category: str | None = None,
         icon: str | None = None,
-        live_preview: bool = False,
+        preview_mode: PreviewModeLiteral | PreviewMode = PreviewMode.NONE,
     ):
         """
         Decorator to registers a TaskDefinition with a unique key.
         Internally compiles LoRē TaskInput DSL to Pydantic model for validation
         and UI generation. Also allows for raw Pydantic models for power users.
+
+        1. Validates uniqueness of the task key.
+        2. Compiles input and output models from LoRē DSL to Pydantic if necessary.
+        3. Auto-generates metadata like name and description if not provided.
+
+        Previews can be enabled by setting the `preview_mode` parameter, which 
+        controls how the preview is generated and displayed (defaults tp "none" for
+        safety).
         """
         def _compile_inputs_to_pydantic(task_key: str, input_model: type) -> type[BaseModel]:
             """
@@ -78,14 +84,7 @@ class TaskRegistry:
             """
             fields = {}
 
-            # Compile an ordered dictionary of all the TaskInput fields
-            attributes = {}
-            # Using __mro__ to walk the Method Resolution Order, allowing inheritance
-            for base_class in reversed(input_model.__mro__):
-                attributes.update(base_class.__dict__)
-            
             # Iterate to convert TaskInput fields to Pydantic field definitions
-            # Using dir() to walk the Method Resolution Order, allowing inheritance
             for attr_name, attr_value in iter_dsl_attrs(input_model):
                 if callable(attr_value):
                     continue  # Skip methods
@@ -127,7 +126,7 @@ class TaskRegistry:
                                 "data_type": attr_value.data_type,
                                 "description": attr_value.description,
                                 "is_primary": attr_value.is_primary,
-                                "cardinality": attr_value.cardinality,
+                                "cardinality": attr_value.cardinality.value,
                                 "is_artifact": attr_value.is_artifact,
                                 "is_output": True,  # Hint for UI
                             },
@@ -144,11 +143,22 @@ class TaskRegistry:
             return model
 
         def wrapper(func):
+            # 1. Guards
             if key in self._tasks:
                 raise ValueError(f"Task with key '{key}' is already registered.")
 
-            # 1. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
-            if isinstance(inputs, type) and issubclass(inputs, BaseModel):
+            try:
+                preview_mode_enum = PreviewMode(preview_mode)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid preview_mode '{preview_mode}' for task '{key}'. "
+                    f"Must be one of {", ".join([mode.value for mode in PreviewMode])}."
+                )
+
+            # 2. Resolve input model (LoRe TaskInput or Pydantic BaseModel)
+            if inputs is None:
+                final_input_model = create_model(f"{key.replace('.', '_')}_InputModel")
+            elif isinstance(inputs, type) and issubclass(inputs, BaseModel):
                 final_input_model = inputs
             elif has_field_type(inputs, TaskInput):
                 final_input_model = _compile_inputs_to_pydantic(key, inputs)
@@ -158,15 +168,17 @@ class TaskRegistry:
                     f"Pydantic BaseModel."
                 )
 
-            # 2. Similar logic for outputs
-            if isinstance(outputs, type) and issubclass(outputs, BaseModel):
+            # 3. Similar logic for outputs
+            if outputs is None:
+                final_output_model = create_model(f"{key.replace('.', '_')}_OutputModel")
+            elif isinstance(outputs, type) and issubclass(outputs, BaseModel):
                 final_output_model = outputs
             elif has_field_type(outputs, TaskOutput):
                 final_output_model = _compile_outputs_to_pydantic(key, outputs)
             else:
                 raise ValueError(f"Outputs for {key} must be a Class of TaskOutput objects.")
 
-            # 3. Auto-generate metadata if not provided
+            # 4. Auto-generate metadata if not provided
             final_name = name or key.split(".")[-1].replace("_", " ").capitalize()
             final_category = category or (key.split(".")[0] if "." in key else "General")
             final_icon = icon or "⚡"
@@ -184,12 +196,12 @@ class TaskRegistry:
                 name=final_name,
                 category=final_category,
                 icon=final_icon,
-                live_preview=live_preview,
+                preview_mode=preview_mode_enum,
             )
 
             self._tasks[key] = task_def
 
-            # 4. Build reverse index for UI to match Artifacts to Tasks
+            # 5. Build reverse index for UI to match Artifacts to Tasks
             for field_name in task_def.input_model.model_fields.keys():
                 _, extra = task_def.field_meta(field_name)
                 accepted_data = extra.get("accepted_data", [])
@@ -220,7 +232,7 @@ class TaskRegistry:
 
         return TaskDefinition(
             name=f"Unavailable Task ({key})",
-            description="",
+            description=f"Auto-generated placeholder for an unavailable Task: {key}",
             key=key,
             handler=lambda: None,  # No-op handler
             input_model=create_model(f"{key}_InputModel"),

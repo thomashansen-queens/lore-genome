@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from lore.builtins.adapters.fasta import ProteinFastaAdapter
-import lore.core.dsl as lore
+import lore
 
 
 @lore.config(key="mmseqs2", title="MMseqs2 suite")
@@ -33,8 +33,8 @@ class Mmseqs2ClusterInputs:
     source_fasta = lore.ArtifactInput(
         label="Protein FASTA",
         accepted_data=["protein_fasta", "fasta"],
-        select=lore.SINGLE,
-        load_as=lore.PATH,
+        select="single",
+        load_as="path",
     )
     min_seq_id = lore.ValueInput(
         float,
@@ -97,13 +97,13 @@ class Mmseqs2ClusterOutputs:
         data_type="protein_fasta",
         label="Representative Sequences",
         description="FASTA file containing only the representative sequence from each cluster.",
-        yields=lore.OPTIONAL,
+        yields="optional",
     )
     truncated_fasta = lore.TaskOutput(
         data_type="protein_fasta",
         label="Truncated Sequences",
         description="The sliced FASTA used as input for clustering (if requested).",
-        yields=lore.OPTIONAL,
+        yields="optional",
     )
 
 # --- Helpers ---
@@ -194,6 +194,7 @@ def _sliced_fasta(
     name="MMseqs2 easy-cluster",
     category="Clustering",
     icon="🐈︎",
+    preview_mode="full",
 )
 def mmseqs2_handler(
     ctx: lore.ExecutionContext,

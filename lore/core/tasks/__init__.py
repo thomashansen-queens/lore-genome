@@ -1,59 +1,78 @@
 """
 Core task management, data models, and the global registry.
 """
-# 1. Models
-from .models import (
-    Task, 
-    TaskDefinition, 
-    TaskConfig, 
-    AdapterConfig,
-    AdapterStrategy,
-    ExecutionConfig,
-    TaskResults,
-    TaskStatus,
-    TaskIntegrity,
+# 1. Definition
+from .definition import (
+    TaskDefinition,
+    PreviewMode,
+    PreviewModeLiteral,
 )
 
-# 2. Registry
+# 2. Instance
+from .instance import (
+    AdapterStrategy,
+    AdapterConfig,
+    ExecutionConfig,
+    TaskConfig,
+    Task,
+    TaskResults,
+)
+
+# 3. Parameters
+from .parameters import (
+    Widget,
+    WidgetLiteral,
+    Cardinality,
+    CardinalityLiteral,
+    Materialization,
+    MaterializationLiteral,
+    TaskInput,
+    ArtifactInput,
+    ValueInput,
+    Passthrough,
+    TaskOutput,
+)
+
+# 4. Registry
 from .registry import (
     TaskRegistry, 
     task_registry,
 )
 
-# 3. DSL Primitives (Assuming these live in your internal dsl.py)
-from .parameters import (
-    TaskInput,
-    ValueInput,
-    ArtifactInput,
-    TaskOutput,
-    Widget,
-    Cardinality,
-    Materialization,
+# 5. State
+from .state import (
+    TaskIntegrity,
+    TaskStatus,
 )
 
-# 4. Publicize
+# 6. Publicize
 __all__ = [
-    # Models
-    "Task",
     "TaskDefinition",
-    "TaskConfig",
-    "AdapterConfig",
-    "AdapterStrategy",
-    "ExecutionConfig",
-    "TaskResults",
-    "TaskStatus",
-    "TaskIntegrity",
+    "PreviewMode",
+    "PreviewModeLiteral",
 
-    # Registry
+    "AdapterStrategy",
+    "AdapterConfig",
+    "ExecutionConfig",
+    "TaskConfig",
+    "Task",
+    "TaskResults",
+
+    "Widget",
+    "WidgetLiteral",
+    "Cardinality",
+    "CardinalityLiteral",
+    "Materialization",
+    "MaterializationLiteral",
+    "TaskInput",
+    "ArtifactInput",
+    "ValueInput",
+    "Passthrough",
+    "TaskOutput",
+
     "TaskRegistry",
     "task_registry",
 
-    # Internal DSL Primitives
-    "TaskInput",
-    "ValueInput",
-    "ArtifactInput",
-    "TaskOutput",
-    "Widget",
-    "Cardinality",
-    "Materialization",
+    "TaskIntegrity",
+    "TaskStatus",
 ]

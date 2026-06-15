@@ -29,8 +29,8 @@ class SampleInputs:
         description="Artifact to sample from (JSON list or DataFrame-compatible)",
         label="Source Artifact",
         accepted_data=lore.TABULAR,
-        select=lore.SINGLE,
-        load_as=lore.RAW,
+        select="single",
+        load_as="raw",
     )
     sample_by = lore.ValueInput(
         list[str] | None,
@@ -81,7 +81,7 @@ class SampleOutputs:
         data_type=lore.Passthrough("source"),
         label="Remainder",
         description="(Optional) Remainder of the data not included in the sample, as a new Artifact",
-        yields=lore.OPTIONAL,
+        yields="optional",
     )
 
 
@@ -141,7 +141,7 @@ def stratified_sample(
     name="Sample data",
     category="Data processing",
     icon="Ω",
-    live_preview=True,
+    preview_mode="live",
 )
 def sample_handler(
     ctx: lore.ExecutionContext,

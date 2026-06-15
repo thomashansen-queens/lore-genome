@@ -19,8 +19,8 @@ class QueryInputs:
     source = lore.ArtifactInput(
         label="Artifact(s) to filter",
         accepted_data=lore.TABULAR,
-        select=lore.MULTIPLE,
-        load_as=lore.RAW,
+        select="multiple",
+        load_as="raw",
     )
     regex = lore.ValueInput(
         bool,
@@ -86,7 +86,7 @@ def _make_query_pattern(query_string: str) -> str:
     name="Filter by query",
     category="Data processing",
     icon="🔍︎",
-    live_preview=True,
+    preview_mode="live",
 )
 def filter_query_handler(
     ctx: lore.ExecutionContext,

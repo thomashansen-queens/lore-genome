@@ -10,10 +10,8 @@ import pytest
 from lore.core.adapters import BaseAdapter
 from lore.core.runtime import build_runtime, Runtime
 from lore.core.sessions import Session
-from lore.core.tasks import Task, TaskDefinition, TaskStatus
-from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.tasks.parameters import TaskOutput, ValueInput
-from lore.core.tasks.registry import TaskRegistry
+from lore.core.tasks import Task, TaskDefinition, TaskStatus, TaskOutput, ValueInput, TaskRegistry
+from lore.core.execution import ExecutionContext, PreviewContext
 
 # --- DATA FACTORIES & WORKSPACE FIXTURES ---
 
@@ -180,6 +178,7 @@ def dummy_task_plugin(isolated_task_registry) -> str:
         inputs=DummyInputs,
         outputs=DummyOutputs,
         name="Dummy Worker Task",
+        preview_mode="full",
     )
     def handler(ctx: ExecutionContext, text_to_write: str):
         out_path = ctx.get_temp_path("output.txt")

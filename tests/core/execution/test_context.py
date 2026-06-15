@@ -3,9 +3,8 @@ Tests for ExecutionContext
 """
 import pytest
 
-from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.tasks import Task
-from lore.core.tasks.models import TaskStatus
+from lore.core.execution import ExecutionContext, PreviewContext
+from lore.core.tasks import Task, TaskStatus
 
 
 def test_context_temp_directory_lifecycle(
@@ -111,5 +110,6 @@ def test_preview_context_interception(
     )
 
     assert len(ctx.results.primary_data) == 1
-    assert ctx.results.primary_data[0].get("is_preview") is True
-    assert "This is a preview." in ctx.results.primary_data[0].get("data", "")
+    # 0th item of primary_data slot: (data, io_metadata)
+    assert ctx.results.primary_data[0][1].get("preview_limit")
+    assert "This is a preview." in ctx.results.primary_data[0][0]

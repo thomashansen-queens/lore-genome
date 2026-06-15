@@ -3,7 +3,6 @@ Data access policy and memory-safe file reading.
 """
 
 from abc import ABC, abstractmethod
-import csv
 import json
 from pathlib import Path
 from typing import Any, Iterator
@@ -34,12 +33,14 @@ class DataReader(ABC):
                 "file_size_bytes": 0,
                 "extension": self.path.suffix.lower().lstrip("."),
                 "exists": False,
+                "reader": self.__class__.__name__,
             }
 
         return {
             "file_size_bytes": self.path.stat().st_size,
             "extension": self.path.suffix.lower().lstrip("."),
             "exists": True,
+            "reader": self.__class__.__name__,
         }
 
     @abstractmethod
@@ -51,20 +52,21 @@ class DataReader(ABC):
         pass
 
     @abstractmethod
-    def stream(self) -> Iterator[Any]:
+    def stream(self, config: dict | None = None, **kwargs) -> Iterator[Any]:
         """Yields small, memory-safe chunks (lines, dicts, byte-chinks)"""
         pass
 
     @abstractmethod
-    def read_full(self) -> Any:
+    def read_full(self, config: dict | None = None, **kwargs) -> Any:
         """Loads the entire file into memory (or raises MemoryError if too big)"""
         pass
 
     @abstractmethod
-    def preview(self, limit: int) -> tuple[Any, dict]:
+    def preview(self, peek_limit: int, config: dict | None = None, **kwargs) -> tuple[Any, dict]:
         """
-        Gets the first `limit` items (lines, dicts, bytes) and metadata about them.
-        Subclasses decide if this uses stream() or read_full()
+        Gets the first `peek_limit` items (lines, dicts, bytes) and metadata about them.
+        Returns: (previewed_data, io_metadata_dict)
+        Subclasses decide if this uses stream() or read_full().
         """
         pass
 
@@ -98,10 +100,11 @@ class TableReader(DataReader):
         base_meta["can_stream"] = ext in {"csv", "tsv", "txt", "jsonl", "ndjson"}
         return base_meta
 
-    def stream(self, config: dict | None = None) -> Iterator[str | dict]:
+    def stream(self, config: dict | None = None, **kwargs) -> Iterator[str | dict]:
         """
         Memory-safe generator for large tabular files
         """
+        io_config = {**(config or {}), **kwargs}
         ext = self.path.suffix.lower().lstrip(".")
 
         if ext in ("csv", "tsv", "txt"):
@@ -137,12 +140,13 @@ class TableReader(DataReader):
         else:
             raise NotImplementedError(f"Streaming not implemented for '{ext}'")
 
-    def read_full(self, config: dict | None = None) -> list[str | dict]:
+    def read_full(self, config: dict | None = None, **kwargs) -> list[str | dict]:
         """
         Loads the entire file into memory (or raises MemoryError if too big)
         """
+        io_config = {**(config or {}), **kwargs}
         try:
-            return list(self.stream(config))
+            return list(self.stream(io_config))
         except NotImplementedError:
             pass  # not streamable, proceed to monolithic JSON
 
@@ -160,32 +164,53 @@ class TableReader(DataReader):
 
     def preview(
         self,
-        limit: int = 100,
+        peek_limit: int = 100,
         config: dict | None = None,
+        **kwargs,
     ) -> tuple[list[str | dict], dict]:
         """
-        Smart preview with graceful monolithic fallback
+        Smart preview with graceful monolithic fallback.
         Returns: tuple[preview_data, preview_metadata]
         """
+        io_config = {**(config or {}), **kwargs}
+        strategy = io_config.get("strategy", "peek")
+        max_ram_rows = io_config.get("max_ram_rows", 10000)
+        max_ram_bytes = io_config.get("max_ram_bytes", 50 * 1024 * 1024)  # 50 MB default
+
         data = []
-        hit_eof = True
-        total_rows = None
+        eof_hit = True
+        rows_read = 0
+        current_ram_bytes = 0
+        ram_limit_hit = False
 
         try:
-            for i, record in enumerate(self.stream(config)):
-                if i >= limit:
-                    hit_eof = False
+            for record in self.stream(io_config):
+                rows_read += 1
+
+                if strategy == "peek" and rows_read > peek_limit:
+                    eof_hit = False
                     break
-                data.append(record)
-            strategy = "Streamed preview"
+
+                if len(data) < max_ram_rows and not ram_limit_hit:
+                    # Some efficiency could be gained here by sampling size, but probably not worth the milliseconds
+                    record_size = len(str(record))
+                    if current_ram_bytes + record_size > max_ram_bytes:
+                        ram_limit_hit = True
+                    else:
+                        data.append(record)
+                        current_ram_bytes += record_size
+
+            io_strategy = f"Streamed ({strategy})"
+            io_total_rows = rows_read if (strategy in ("full", "eager") or eof_hit) else None
+
         except NotImplementedError:
             # fallback to monolithic load
-            # TODO: Use ijson to stream monolithic JSON arrays to protect RAM
-            all_records = self.read_full(config)
-            total_rows = len(all_records)
-            data = all_records[:limit]
-            hit_eof = total_rows <= limit
-            strategy = "Full-load preview"
+            all_records = self.read_full(io_config)
+            io_total_rows = len(all_records)
+            data = all_records[:max_ram_rows]
+            eof_hit = io_total_rows <= max_ram_rows
+            ram_limit_hit = not eof_hit
+            io_strategy = f"Monolithic fallback ({strategy})"
 
         metadata = self.get_metadata()
 
@@ -196,11 +221,13 @@ class TableReader(DataReader):
 
         metadata.update(
             {
-                "strategy_used": strategy,
-                "file_eof_reached": hit_eof,
-                "preview_limit": limit,
-                "total_rows": total_rows,  # Will be None if streamed, which is correct!
+                "io_strategy": io_strategy,
+                "file_eof_hit": eof_hit,
+                "preview_limit": peek_limit if strategy == "peek" else max_ram_rows,
+                "total_rows": io_total_rows,  # Will be None if streamed, which is correct!
                 "columns": columns,
+                "ram_limit_hit": ram_limit_hit,
+                "preview_ram_bytes": current_ram_bytes,
             }
         )
 
@@ -220,18 +247,18 @@ class ImageReader(DataReader):
         meta["can_stream"] = False
         return meta
 
-    def stream(self, config: dict | None = None) -> Iterator[Any]:
+    def stream(self, config: dict | None = None, **kwargs) -> Iterator[Any]:
         """Images are monolithic blocks. Streaming is not supported."""
         raise NotImplementedError("Streaming not supported for monolithic image files.")
 
-    def read_full(self, config: dict | None = None) -> bytes | str:
+    def read_full(self, config: dict | None = None, **kwargs) -> bytes | str:
         """Loads the entire image into memory."""
         ext = self.path.suffix.lower().lstrip(".")
         if ext == "svg":
             return self.path.read_text(encoding="utf-8", errors="replace")
         return self.path.read_bytes()
 
-    def preview(self, limit: int = 0, config: dict | None = None) -> tuple[bytes | str, dict]:
+    def preview(self, peek_limit: int = 0, config: dict | None = None, **kwargs) -> tuple[bytes | str, dict]:
         """
         No image previews! Here, we just enforce a size limit and return full
         """
@@ -250,8 +277,8 @@ class ImageReader(DataReader):
 
         meta.update(
             {
-                "strategy_used": "read_full",
-                "file_eof_reached": False,
+                "io_strategy": "read_full",
+                "file_eof_hit": False,
             }
         )
 
@@ -270,25 +297,30 @@ class TextReader(DataReader):
         meta["can_stream"] = True
         return meta
 
-    def stream(self, config: dict | None = None) -> Iterator[str]:
+    def stream(self, config: dict | None = None, **kwargs) -> Iterator[str]:
         """Memory-safe generator yielding one text line at a time."""
         with open(self.path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 yield line
 
-    def read_full(self, config: dict | None = None) -> str:
+    def read_full(self, config: dict | None = None, **kwargs) -> str:
         """Loads the entire file into memory as a single string."""
         return self.path.read_text(encoding="utf-8", errors="replace")
 
-    def preview(self, limit: int = 100, config: dict | None = None) -> tuple[list[str], dict]:
+    def preview(
+        self,
+        peek_limit: int = 100,
+        config: dict | None = None,
+        **kwargs,
+    ) -> tuple[list[str], dict]:
         """
-        Smart preview: pulls exactly `limit` lines from the stream.
+        Smart preview: pulls exactly `peek_limit` lines from the stream.
         """
         lines = []
         hit_eof = True
 
         for i, line in enumerate(self.stream(config)):
-            if i >= limit:
+            if i >= peek_limit:
                 hit_eof = False
                 break
             lines.append(line)
@@ -296,9 +328,9 @@ class TextReader(DataReader):
         metadata = self.get_metadata()
         metadata.update(
             {
-                "strategy_used": "streamed lines",  # Don't change the naming pls
-                "file_eof_reached": hit_eof,
-                "preview_limit": limit,
+                "io_strategy": "streamed lines",
+                "file_eof_hit": hit_eof,
+                "preview_limit": peek_limit,
                 "total_lines_previewed": len(lines),
             }
         )

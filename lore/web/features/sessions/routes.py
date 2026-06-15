@@ -3,7 +3,6 @@ LoRe API routes for managing Sessions.
 
 Manages top level Session routes (CRUD)
 """
-
 import asyncio
 from collections.abc import AsyncIterable
 from pathlib import Path
@@ -393,13 +392,6 @@ async def stream_session(
             # Strip empty lines and indent/trailing whitespaces (from Jinja template)
             # to drastically reduce SSE payload size
             clean_html = "\n".join(line.strip() for line in html_data.splitlines() if line.strip())
-
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Session {session_id} - Tasks changed: {tasks_changed}")
-            logger.info(f"Session {session_id} - Artifacts changed: {artifacts_changed}")
-            logger.info("Length of HTML data to push: %d", len(clean_html))
-            logger.info(clean_html)
 
             # 4. Push a single SSE message with all the HTML data
             # HTMX listens for 'message' events, which is the default for ServerSentEvent if

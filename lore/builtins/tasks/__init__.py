@@ -21,4 +21,6 @@ from .ncbi import (
 from .sra import (
     config,
     vdb_info,
+    fasterq_dump,
+    vdb_config,
 )

@@ -1,167 +1,29 @@
 """
-A Task is a contract to perform a single unit of work in LoRē. Each Task is defined by a series of
-models:
-
-- TaskDefinition: The entire contract for a Task. Registered at runtime and immutable.
-- Task: A concrete instance of a TaskDefinition within a Session. Mutable.
-- Task input_model: A Pydantic model defining the expected inputs for a TaskDefinition.
-- Task output_model: A Pydantic model defining the expected outputs for a TaskDefinition.
-- TaskResults: A strict container for Task outputs. All slots are lists of results.
-- TaskStatus: Enum for the execution state of a Task in the engine.
-- TODO: TaskIntegrity: Enum for the data continuity state of a Task within the DAG.
-- TaskConfig: Namespaced configuration for a Task execution
-  - AdapterConfig: Task config for the Adapter and UI presentation layer
-  - ExecutionConfig: Task config for the Engine's execution behaviour
+The actual Task instances that are created, mutated, and executed within
+a Session. The TaskDefinition is the immutable contract, while the Task is
+the mutable instance.
 """
-
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any, cast, Callable, Type
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic.fields import FieldInfo
+from typing import Any, TYPE_CHECKING
 
-from lore.core.adapters import BaseAdapter
 from lore.core.bindings import (
     Binding,
     LiteralBinding,
     ReferenceBinding,
     UserInputBinding,
-    UnresolvedReferenceError,
     MissingUserInputError,
+    UnresolvedReferenceError,
 )
-from lore.core.tasks.parameters import Cardinality, Passthrough
 from lore.core.utils import is_collection_type
+from .parameters import Cardinality, Passthrough
+from .state import TaskIntegrity, TaskStatus
 
-# --- Task Definition ---
+if TYPE_CHECKING:
+    from .definition import TaskDefinition
 
-
-@dataclass(frozen=True)
-class TaskDefinition:
-    """
-    Each Task is a contract to perform a single unit of work in LoRē, with defined inputs, outputs,
-    and a handler function that does the science.
-
-    Attributes:
-        key: Unique identifier for the Task (e.g. "ncbi.fetch_genome_reports").
-        name: Human-readable name of the Task. (e.g. "Fetch Genome Reports from NCBI").
-        handler: Python function that implements the Task logic. (ctx, config) -> result.
-        input_model: Pydantic model defining the Inputs for the Task.
-        output_model: Pydantic model defining the Outputs for the Task
-        description: Human-readable description of the Task.
-        category: Category or grouping for the Task (e.g. "NCBI", "Phylogeny").
-        icon: Emoji or symbol representing the Task visually. TODO: De-unicodify this, use SVGs
-    """
-
-    key: str
-    handler: Callable
-    input_model: Type[BaseModel]
-    output_model: Type[BaseModel]
-    description: str = ""
-    name: str = ""
-    category: str = ""
-    icon: str = "⚡"
-    live_preview: bool = False
-
-    def field_meta(self, key: str, is_output: bool = False) -> tuple[FieldInfo, dict[str, Any]]:
-        """
-        Validates and extracts metadata for a given input field in a TaskDefinition.
-        :returns: tuple[FieldInfo, json_schema_extra_dict]
-        """
-        model = self.output_model if is_output else self.input_model
-
-        # No output model (e.g. it's an exporter)
-        if not model:
-            return FieldInfo(annotation=None), {}
-
-        field_info = model.model_fields.get(key)
-
-        # 1. Graceful fallback (e.g. missing TaskDefinition)
-        if field_info is None:
-            dummy_field = FieldInfo(annotation=None)
-            return dummy_field, {}
-
-        # 2. Extract enriched field metadata from json_schema_extra
-        extra = getattr(field_info, "json_schema_extra", None)
-        if extra is None or not isinstance(extra, dict):
-            return field_info, {}
-        return field_info, extra
-
-    @property
-    def primary_output_key(self) -> str | None:
-        """Scans the output model for the field marked is_primary=True"""
-        for key in self.output_model.model_fields.keys():
-            meta = self.output_model.model_fields[key].json_schema_extra
-            if meta is None:
-                continue
-            if meta.get("is_primary"):
-                return key
-
-        return None
-
-    def get_adapters_for_output(self, output_key: str) -> list["BaseAdapter"]:
-        """
-        Convenience accessor to find valid Adapters for a specific theoretical output.
-        Mirrors the behavior of Artifact.get_adapters()
-        """
-        from lore.core.adapters import adapter_registry
-
-        field = self.output_model.model_fields.get(output_key)
-        if not field:
-            return []
-
-        _, meta = self.field_meta(output_key, is_output=True)
-        data_type = meta.get("data_type", "unknown")
-
-        return adapter_registry.get_for_type(data_type=data_type, extension="*")
-
-
-# --- Task execution ---
-
-
-class TaskStatus(StrEnum):
-    """Execution state of the Task in the engine."""
-    DRAFT = "draft"  # Missing config or fails validation
-    READY = "ready"  # Validated and ready for the user to click 'Run'
-    QUEUED = "queued"  # Waiting for engine resources OR upstream FutureArtifacts
-    RUNNING = "running"  # Currently executing
-    COMPLETED = "completed"  # Success!
-    FAILED = "failed"  # Errored out (check task.error)
-    CANCELLED = "cancelled"  # Stopped by user
-    UNKNOWN = "unknown"  # Fallback state
-    TEMPLATE = "template"  # Workflow-only status
-
-    @property
-    def is_active(self) -> bool:
-        """Currently doing something or about to."""
-        return self in (TaskStatus.READY, TaskStatus.QUEUED, TaskStatus.RUNNING)
-
-    @property
-    def is_terminal(self) -> bool:
-        """Will not change state unless the user does something."""
-        return self in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
-
-    @property
-    def is_runnable(self) -> bool:
-        """User can try to run this task."""
-        return self in (
-            TaskStatus.READY,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        )
-
-
-class TaskIntegrity(StrEnum):
-    """
-    Data continuity state of the Task within the DAG.
-    Degraded is when output files are missing/changed, stale is when upstream inputs are modified.
-    """
-    INTACT = "intact"
-    DEGRADED = "degraded"
-    STALE = "stale"
-    PENDING = "pending"
-    UNKNOWN = "unknown"
-
+# --- Per-Task execution data ---
 
 class AdapterStrategy(StrEnum):
     """Defines how the materializer and adapter should load the data for a task."""
@@ -186,6 +48,18 @@ class AdapterConfig(BaseModel):
         description="kwargs to pass to the Adapter e.g. {'separator': '\\t'}",
     )
 
+    @field_validator("view_state", mode="after")
+    @classmethod
+    def _coerce_view_state(cls, v: dict) -> dict:
+        """
+        Normalize stringified UI flags. HTML form inputs always arrive as strings
+        (e.g. sort_asc='false'), and a non-empty string is truthy — so coerce
+        known boolean view flags to real bools for the adapter and viewer glyphs.
+        """
+        if isinstance(v.get("sort_asc"), str):
+            v["sort_asc"] = v["sort_asc"].strip().lower() not in ("false", "0", "")
+        return v
+
 
 class ExecutionConfig(BaseModel):
     """Task config for the Engine's execution behaviour"""
@@ -199,6 +73,7 @@ class TaskConfig(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     task: dict[str, Any] = Field(default_factory=dict)  # arbitrary Task-specific config
 
+# --- The Task itself ---
 
 class Task(BaseModel):
     """
@@ -275,8 +150,8 @@ class Task(BaseModel):
         unwrapped_inputs = {}
         for key, bindings in self.inputs.items():
             field_info, extra = task_def.field_meta(key)
-            allows_multiple = extra.get("cardinality", Cardinality.SINGLE).allows_multiple
-            expects_collection = allows_multiple or is_collection_type(field_info.annotation)
+            raw_card = Cardinality(extra.get("cardinality", Cardinality.SINGLE))
+            expects_collection = raw_card.allows_multiple or is_collection_type(field_info.annotation)
 
             unwrapped_list = []
             for b in bindings:
@@ -429,8 +304,8 @@ class TaskResults:
             for key, field in task_def.output_model.model_fields.items():
                 extra = field.json_schema_extra or {}
 
-                raw_card = cast(Cardinality, extra.get("cardinality", Cardinality.SINGLE))
-                self._allows_multiple[key] = raw_card.allows_multiple
+                raw_card = extra.get("cardinality", Cardinality.SINGLE)
+                self._allows_multiple[key] = Cardinality(raw_card).allows_multiple
 
                 # Initialize all output slots as empty ordered lists
                 object.__setattr__(self, key, [])

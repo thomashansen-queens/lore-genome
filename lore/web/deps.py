@@ -31,6 +31,8 @@ import traceback
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates.env.trim_blocks = True
+templates.env.lstrip_blocks = True
 templates.env.globals["task_registry"] = task_registry
 templates.env.globals["adapter_registry"] = adapter_registry
 templates.env.globals["version"] = version("lore-genome")

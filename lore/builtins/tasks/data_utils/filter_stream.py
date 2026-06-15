@@ -20,8 +20,8 @@ class QueryInputs:
     source = lore.ArtifactInput(
         label="Artifact(s) to filter",
         accepted_data=lore.TABULAR,
-        select=lore.MULTIPLE,
-        load_as=lore.RAW_STREAM,
+        select="multiple",
+        load_as="raw_stream",
     )
     regex = lore.ValueInput(
         bool,
@@ -188,7 +188,7 @@ def _filter_stream(
     name="Filter by query (streamed)",
     category="Data processing",
     icon="🔍︎",
-    live_preview=False,  # TODO: Can we/should we preview streamed tasks?
+    preview_mode="dry_run",
 )
 def filter_query_handler(
     ctx: lore.ExecutionContext,

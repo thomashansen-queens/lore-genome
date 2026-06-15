@@ -12,7 +12,7 @@ class ELinkInputs:
     """Inputs for ELink Task. Accepting target_uid allows chaining ELink"""
     uid = lore.ArtifactInput(
         accepted_data=["uid", "target_uid"],
-        select=lore.MULTIPLE,
+        select="multiple",
         label="UID",
         description=(
             "The unique identifier (UID) of the record to link from. "
@@ -46,6 +46,7 @@ class ELinkOutputs:
     outputs=ELinkOutputs,
     name="NCBI Entrez ELink",
     category="NCBI Entrez",
+    preview_mode="full",
 )
 def elink(
     ctx: lore.ExecutionContext,

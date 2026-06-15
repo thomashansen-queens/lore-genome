@@ -4,11 +4,8 @@ Helper to render the input widget to configure tasks.
 
 from lore.core.artifacts.models import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
-from lore.core.sessions.session import Session
-from lore.core.sessions.matcher import find_artifact_candidates, map_artifacts_to_task_inputs
-from lore.core.tasks.models import Task, TaskDefinition
-from lore.core.tasks.parameters import Cardinality
-from lore.core.tasks.registry import task_registry
+from lore.core.sessions import Session, find_artifact_candidates, map_artifacts_to_task_inputs
+from lore.core.tasks import Task, TaskDefinition, Cardinality, task_registry
 from lore.core.topology.traversal import find_valid_upstream_tasks
 from lore.core.workflows.models import Workflow
 from lore.web.utils.forms import format_inputs_for_ui

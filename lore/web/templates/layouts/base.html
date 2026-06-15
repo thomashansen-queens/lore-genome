@@ -11,9 +11,10 @@
     {# DEBUG: Uncomment for flexbox outlines for layout troubleshooting #}
     {# <link rel="stylesheet" href="{{ url_for('static', path='/css/debug.css') }}" /> #}
 
-    {# HTMX library and server side events (SSE) extension #}
+    {# HTMX library and extensions: JSON encoding, server side events (SSE) #}
     <script src="{{ url_for('static', path='htmx.min.js') }}"></script>
     <script src="{{ url_for('static', path='htmx-ext-sse.min.js') }}"></script>
+    <script src="{{ url_for('static', path='json-enc.js') }}"></script>
     {# Sortable tables with tablesort #}
     <script src="{{ url_for('static', path='tablesort.min.js') }}"></script>
     <script src="{{ url_for('static', path='tablesort.number.min.js') }}"></script>

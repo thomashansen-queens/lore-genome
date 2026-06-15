@@ -1,0 +1,156 @@
+{# Preview presentation #}
+
+{# --- Error --- #}
+{% if payload.error %}
+    <div class="flash-message scroll-area" 
+        style="background: var(--danger-bg); border-color: var(--danger); margin-bottom: var(--spacing-md);">
+        <pre class="small">{{ payload.error }}</pre>
+    </div>
+{% endif %}
+
+{% if adapted_previews %}
+    <div id="preview-wrapper" class="column fill">
+        
+        {# --- Output selector --- #}
+        <div class="row gapped" style="border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-md); gap: var(--spacing-sm);">
+            {% for key, preview in adapted_previews.items() %}
+                <button class="btn-tab secondary {% if loop.first %}active{% endif %}"
+                    data-target="out-tab-{{ loop.index }}">
+                    {{ key }}
+                </button>
+            {% endfor %}
+        </div>
+
+        {# --- Output viewer --- #}
+        <div class="column fill">
+            {% for key, preview in adapted_previews.items() %}
+
+                <div id="out-tab-{{ loop.index }}"
+                    class="out-tab column fill"
+                    {% if not loop.first %}style="display: none;"{% endif %}>
+
+                    {# Unpack and scope data for the viewer templates #}
+                    {% with 
+                        data = preview.data,
+                        metadata = preview.metadata,
+                        keys = preview.metadata.get('columns', []),
+                        view_state = payload.execution_config.get('adapter', {}).get('view_state', {})
+                    %}
+
+                    {# Copy button #}
+                    <button type="button" class="btn badge secondary small push-right copy-preview-btn">
+                        Copy Preview
+                    </button>
+
+                        {% if preview.view_mode == 'table' %}
+                            {% include "components/viewers/table.html" %}
+                        {% elif preview.view_mode == 'svg' %}
+                            {% include "components/viewers/svg.html" %}
+                        {% else %}
+                            {% include "components/viewers/raw.html" %}
+                        {% endif %}
+                    
+                    {% endwith %}
+
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {# --- Tab switcher --- #}
+    <script>
+        (() => {
+            // Scope to avoid global variable leakage
+            const wrapper = document.getElementById('preview-wrapper');
+            if (!wrapper) return;
+
+            const btnTab = wrapper.querySelectorAll('.btn-tab');
+            const tabs = wrapper.querySelectorAll('.out-tab');
+
+            // Set initial active tab
+            if (btnTab.length > 0) {
+                btnTab[0].style.borderBottomColor = 'var(--primary)';
+                btnTab[0].style.color = 'var(--primary)';
+            }
+
+            // --- Output tab switcher ---
+            btnTab.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();  // Prevent form submission just in case
+                    if (btn.classList.contains('active')) return;  // No action if already active
+                    
+                    // 1. Reset all buttons and hide all tabs
+                    btnTab.forEach(b => {
+                        b.classList.remove('active');
+                        b.style.borderBottomColor = 'transparent';
+                        b.style.color = 'var(--text-muted)';
+                    });
+                    tabs.forEach(t => t.style.display = 'none');
+
+                    // 2. Activate clicked button
+                    btn.classList.add('active');
+                    btn.style.borderBottomColor = 'var(--primary)';
+                    btn.style.color = 'var(--primary-dark)';
+
+                    // 3. Show target tab
+                    const targetId = btn.getAttribute('data-target');
+                    const targetTab = document.getElementById(targetId);
+                    if (targetTab) {
+                        targetTab.style.display = 'flex';
+                    }
+                });
+            });
+
+            // --- Copy buttons ---
+            wrapper.querySelectorAll('.copy-preview-btn').forEach(btn => {
+                const region = btn.closest('.out-tab')?.querySelector('[data-copyable]');
+
+                // Viewer tab has no element with a data-copyable attribute
+                if (!region) {
+                    btn.style.display = 'none';
+                    return;
+                }
+
+                btn.addEventListener('click', async () => {
+                    // Check for custom copy behaviour in the viewer, default to copy innerText
+                    const detail = { result: null };
+                    const ev = new CustomEvent('preview:copy', { cancelable: true, detail });
+                    region.dispatchEvent(ev);
+
+                    try {
+                        if (ev.defaultPrevented) {
+                            await detail.result;
+                        } else {
+                            await navigator.clipboard.writeText(region.innerText);
+                        }
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                    }
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => btn.textContent = 'Copy Preview', 2000);
+                });
+            });
+        })();
+    </script>
+
+{% else %}
+{# Fallback for sink nodes / dry runs #}
+
+    <div class="card">
+        <div class="ui-label">Execution Plan</div>
+        <div class="small muted" style="margin-bottom: var(--spacing-sm);">
+            No outputs generated for preview.
+        </div>
+        <div class="row gapped" style="align-items: flex-start;">
+            <div class="fill">
+                Resolved Inputs
+                <pre class="small">{{ payload.resolved_inputs | tojson(indent=2) }}</pre>
+            </div>
+            <div class="fill">
+                Execution Config
+                <pre class="small">{{ payload.execution_config | tojson(indent=2) }}</pre>
+            </div>
+        </div>
+    </div>
+
+{% endif %}

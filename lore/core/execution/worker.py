@@ -2,17 +2,16 @@
 Isolated execution environment for a Task.
 This code runs as a separate process entirely decoupled from the main process.
 """
-
 from datetime import datetime, timezone
+import json
 import traceback
 from typing import TYPE_CHECKING
-from uuid import uuid4
 import logging
 import sys
 
-from lore.core.tasks import AdapterStrategy, task_registry, TaskResults, Task, TaskStatus
-from lore.core.execution.context import ExecutionContext, PreviewContext
-from lore.core.execution.materializer import materialize_task_inputs
+from .context import ExecutionContext
+from .materializer import materialize_task_inputs
+from lore.core.tasks import task_registry, TaskStatus
 
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
@@ -25,6 +24,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     Worker function that runs as a background process.
     Manages the Task state machine (RUNNING -> COMPLETED/FAILED) and file locks.
     On error, uses sys.exit(1) to signal failure to the Orchestrator.
+    NOTE: Future Executor implementations may require different error signalling
     """
     # 1a. Top bread (fast initialization, short lock) - mutates Session manifest
     try:
@@ -53,7 +53,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     try:
         with rt.open_session(session_id, read_only=True) as s:
             # Resolve references to concrete values (e.g. Artifact IDs to Artifacts)
-            resolved_kwargs, input_artifacts = materialize_task_inputs(
+            materialized = materialize_task_inputs(
                 s=s,
                 task_def=task_def,
                 bindings=task.inputs,
@@ -76,7 +76,6 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
 
     # 2. The meat (slow execution, no lock)
     ctx = None
-    # task_handler = _attach_task_logger(rt, session_id, task_id)
 
     try:
         ctx = ExecutionContext(
@@ -84,10 +83,10 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
             session_id=session_id,
             task=task,
             task_def=task_def,
-            input_artifacts=input_artifacts,
+            input_artifacts=materialized.artifacts,
         )
         rt.logger.info("Executing Task ID: '%s' with handler %s", task_id, task_def.handler.__name__)
-        task_def.handler(ctx=ctx, **resolved_kwargs)
+        task_def.handler(ctx=ctx, **materialized.data)
 
         # 3. Bottom bread (fast cleanup, short lock)
         with rt.open_session(session_id) as s:
@@ -132,73 +131,3 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
 
         # rt.logger.removeHandler(task_handler)
         # task_handler.close()
-
-
-def run_preview_worker(
-    rt: "Runtime",
-    session_id: str,
-    task_key: str,
-    raw_inputs: dict,
-    exec_config: dict | None = None,
-) -> TaskResults:
-    """
-    Execute a Task purely in memory. Is synchronous and meant for quick previews
-    in the UI. Does not modify the Manifest or create Artifacts.
-    Errors raise or return, rather than sys.exit.
-    """
-    rt.logger.info("Running preview for '%s' in Session ID: '%s'", task_key, session_id)
-
-    task_def = task_registry.get(task_key)
-
-    if not task_def:
-        raise ValueError(f"Task key: '{task_key}' not found in Task Registry.")
-    if not task_def.live_preview:
-        rt.logger.info("Generating preview for '%s'", task_key)
-
-    # 1. Create ephemeral Task
-    ephemeral_task = Task(
-        id=f"preview_{uuid4().hex[:8]}",
-        registry_key=task_key,
-        status=TaskStatus.RUNNING,
-        inputs=raw_inputs,
-    )
-    ephemeral_task.exec_config = ephemeral_task.validate_config(exec_config or {})
-
-    adapter_config = ephemeral_task.exec_config.get("adapter", {})
-    strategy = adapter_config.get("strategy", AdapterStrategy.AUTO)
-
-    try:
-        ephemeral_task.validate_and_serialize()
-    except Exception as e:
-        raise ValueError(f"Input validation failed: {str(e)}") from e
-
-    # 2. Resolve inputs
-    with rt.open_session(session_id, read_only=True) as s:
-        resolved_inputs, input_artifacts = materialize_task_inputs(
-            s=s,
-            task_def=task_def,
-            bindings=ephemeral_task.inputs,
-            strategy=strategy,
-        )
-
-    # 3. Execute handler
-    ctx = None
-    try:
-        ctx = PreviewContext(
-            runtime=rt,
-            session_id=session_id,
-            task=ephemeral_task,
-            task_def=task_def,
-            input_artifacts=input_artifacts,
-        )
-        task_def.handler(ctx, **resolved_inputs)
-
-        return ctx.results
-
-    except Exception as e:
-        rt.logger.error("Preview failed for '%s': %s", task_key, str(e), exc_info=True)
-        raise ValueError(f"Preview execution failed: {str(e)}") from e
-
-    finally:
-        if ctx:
-            ctx.cleanup()

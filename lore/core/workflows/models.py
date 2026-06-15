@@ -6,7 +6,7 @@ A Workflow is a DAG (directed acyclic graph) of Tasks.
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, model_validator
 
-from lore.core.tasks.models import Task
+from lore.core.tasks import Task
 
 
 class Workflow(BaseModel):

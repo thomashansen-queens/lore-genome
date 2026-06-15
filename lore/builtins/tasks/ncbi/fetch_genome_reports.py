@@ -271,6 +271,7 @@ def _fetch_all_reports_for_group(
     name="Fetch NCBI Genome Reports",
     category="NCBI",
     icon="🗐",
+    preview_mode="full",
 )
 def fetch_genome_reports_handler(
     ctx: lore.ExecutionContext,

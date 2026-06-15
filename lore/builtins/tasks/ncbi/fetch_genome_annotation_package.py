@@ -32,8 +32,8 @@ class NcbiAnnotationPackageInputs:
     """
     genome_accession = lore.ArtifactInput(
         description="List of genome assembly accessions (e.g. GCF_000005845.2) to fetch annotation packages for",
-        select=lore.MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="multiple",
+        load_as="adapted",
         accepted_data="genome_accession",
         label="Genome accessions",
         examples=["GCF_000005845.2, GCF_000006945.2"],
@@ -168,6 +168,7 @@ def _fetch_single_annotation_package(
     name="Fetch NCBI Genome Annotation Packages",
     category="NCBI",
     icon="📦︎",
+    preview_mode="dry_run",
 )
 def fetch_genome_annotation_package_handler(
     ctx: lore.ExecutionContext,

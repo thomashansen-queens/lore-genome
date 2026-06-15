@@ -13,8 +13,8 @@ class MergeInputs:
     source = lore.ArtifactInput(
         label="Artifact(s) to merge",
         accepted_data="*",
-        select=lore.MULTIPLE,
-        load_as=lore.RAW,
+        select="multiple",
+        load_as="raw",
     )
     deduplicate = lore.ValueInput(
         bool,
@@ -48,7 +48,7 @@ class MergeOutputs:
     name="Merge Artifacts",
     category="Data processing",
     icon="⊕",
-    live_preview=True,
+    preview_mode="live",
 )
 def merge_handler(
     ctx: lore.ExecutionContext,

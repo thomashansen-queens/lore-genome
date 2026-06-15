@@ -4,7 +4,7 @@ Analyzes syntenic neighbourhood of a given gene across a set of genome.
 import pandas as pd
 from typing import Any, Literal
 
-import lore.core.dsl as lore
+import lore
 from lore import viz as v
 
 
@@ -14,14 +14,14 @@ class GenomicNeighbourhoodTaskInputs:
         label="Protein accessions",
         description="The protein accession(s) for the gene(s) of interest",
         accepted_data=["protein_accession"],
-        select=lore.MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="multiple",
+        load_as="adapted",
     )
     genome_annotation = lore.ArtifactInput(
         label="Genome annotations",
         accepted_data=["ncbi_annotation_packages", "genome_annotations"],
-        select=lore.MULTIPLE,
-        load_as=lore.ADAPTED,
+        select="multiple",
+        load_as="adapted",
     )
     context_window_str = lore.ValueInput(
         str | None,
@@ -442,7 +442,7 @@ def _extract_neighbourhoods(
     outputs=GenomicNeighbourhoodTaskOutputs,
     category="clustering",
     icon="☷",
-    live_preview=True,
+    preview_mode="live",
 )
 def genomic_neighbourhood_analysis(
     ctx: lore.ExecutionContext,

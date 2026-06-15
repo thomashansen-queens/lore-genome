@@ -8,62 +8,16 @@
             <button id="copyBtn" style="float: right;" class="btn badge secondary" popovertarget="copyAlert">Copy All</button>
             <div id="copyAlert" class="warning badge" popover style="width: 40vw; white-space: normal; visibility: hidden;"></div>
         </small>
-        
-        {% if metadata.get("strategy_used") == "streamed lines" %}
-            {% if False %}
-        <span class="badge small info push-right">Showing top {{ metadata.get("total_lines_previewed") }} lines</span>
-            {% else %}
+        {% if not metadata.get("file_eof_hit") %}
         <button id="btn-load-full" class="badge primary small push-right">
             PREVIEW (Click to load full)
         </button>
-            {% endif %}
+        {% elif metadata.get("total_lines_previewed") %}
+        <span class="badge small info push-right">Showing top {{ metadata.get("total_lines_previewed") }} lines</span>
         {% endif %}
     </div>
     
-    <div class="scroll-area">
+    <div class="scroll-area" data-copyable>
         <pre style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap;">{{ data }}</pre>
     </div>
 </div>
-
-<script>
-(() => {
-    const div = document.getElementsByClassName("scroll-area")[0];
-    const fullyLoaded = "{{ metadata.get("strategy_used") }}" !== "streamed lines";
-    
-    const totalLinesPreviewed = "{{ metadata.get("total_lines_previewed") }}";
-    const previewLimit = "{{ metadata.get("preview_limit") }}";
-    const truncated = (totalLinesPreviewed !== "None") && totalLinesPreviewed == previewLimit;
-
-    const copyBtn = document.getElementById("copyBtn");
-    const copyBtnAlert = document.getElementById("copyAlert");
-
-    const loadFullBtn = document.getElementById("btn-load-full");
-    
-    copyBtn.addEventListener("click", async () => {
-        const text = div.innerText;
-
-        try {
-            await navigator.clipboard.writeText(text);
-        } catch (err) {
-            console.error("Copy failed:", err);
-        }
-
-        if (fullyLoaded == "False") {
-            copyBtnAlert.showPopover();
-            copyBtnAlert.innerText = "The preview is truncated and only a portion of the content has been copied. Please click the PREVIEW button to load the full content to copy all the text.";
-            copyBtnAlert.style.visibility = "visible";
-        // Non-functional - raw text output doesn't currently get truncated when outside of "streamed lines" strategy
-        } else if (truncated) {
-            copyBtnAlert.showPopover();
-            copyBtnAlert.innerText = `The data is too long so only the first ${previewLimit} have been copied from the preview. Please download the file to access the full content.`;
-            copyBtnAlert.style.visibility = "visible";
-        } else {
-            copyBtnAlert.style.visibility = "hidden";
-            copyBtn.innerText = "Copied!";
-            setTimeout(() => {
-                copyBtn.innerText = "Copy All";
-            }, 2000);
-        }
-    });
-})();
-</script>

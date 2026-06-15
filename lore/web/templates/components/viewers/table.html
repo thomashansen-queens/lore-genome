@@ -1,4 +1,5 @@
 {% set data = data | default({}) %}
+{% set key = key | default('') %}
 {% set metadata = metadata | default({}) %}
 {% set view_state = view_state | default({}) %}
 
@@ -23,6 +24,7 @@
 
 <div class="column">
 
+    {# --- Preview info and full load --- #}
     <div class="row gapped muted small" style="flex-shrink: 0;">
         <p>
             Showing {{ '{:,}'.format(data|length) }} records
@@ -32,33 +34,50 @@
             {% if metadata.get('total_rows') is not none %}
                 {{ '{:,}'.format(metadata.get('total_rows')) }} rows
             {% else %}
-                <em>many</em> rows (streamed)
+                <em>unknown</em> rows
             {% endif %}
         </p>
 
-        {% if metadata.get('total_rows') is none %}
-            {# Peek preview #}
-            <button id="btn-load-full" class="badge primary small push-right">
-                PREVIEW (Click to load full)
-            </button>
-        
-        {% elif metadata.get('is_truncated') %}
-            {# DOM-truncated preview #}
-            <span class="badge small info push-right">Showing top {{ '{:,}'.format(data|length) }}</span>
-        {% endif %}
+        <div class="push-right">
+            {% if metadata.get('total_rows') is none %}
+                
+                {# Peek preview #}
+                <button id="btn-load-full" class="btn badge primary small push-right">
+                    PREVIEW (Click to load full)
+                </button>
+
+            {% else %}
+                
+                {# Full preview requested #}
+                {% if metadata.get('ram_limit_hit') %}
+                    <div class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
+                        File too large for full preview.
+                    </div>
+                {% endif %}
+
+                {% if metadata.get('ui_limit_hit') %}
+                    {# DOM-truncated preview #}
+                    <div class="badge small info" title="Data truncated to prevent browser performance issues.">
+                        Showing: Top {{ '{:,}'.format(data|length) }}
+                    </div>
+                {% endif %}
+
+            {% endif %}
+        </div>
     </div>
 
-    <div class="scroll-area">
-        <table id="preview-table">
+    {# --- Data viewer --- #}
+    <div class="scroll-area" data-copyable>
+        <table id="preview-table-{{ key }}">
             <thead>
                 <tr>
-                    {% for key in keys %}
-                        {% set is_numeric_col = key in metadata.get('numeric_maxes', {}) %}
+                    {% for col in keys %}
+                        {% set is_numeric_col = col in metadata.get('numeric_maxes', {}) %}
                         <th style="cursor: pointer; text-align: {{ 'right' if is_numeric_col else 'left' }};"
                             data-table-action="sort"
-                            data-sort-key="{{ key }}">
-                            {{ key | replace('_', ' ') | title }}
-                            {% if view_state.get('sort_by') == key %}
+                            data-sort-key="{{ col }}">
+                            {{ col | replace('_', ' ') | title }}
+                            {% if view_state.get('sort_by') == col %}
                                 {{ '▲' if view_state.get('sort_asc', True) else '▼' }}
                             {% endif %}
                         </th>
@@ -69,11 +88,11 @@
             <tbody>
                 {% for row in data %}
                 <tr>
-                    {% for key in keys %}
+                    {% for col in keys %}
                         {# Parse value properties #}
-                        {% set value = row.get(key, '') %}
+                        {% set value = row.get(col, '') %}
                         {% set is_num = value is number %}
-                        {% set col_max = metadata.get('numeric_maxes', {}).get(key) %}
+                        {% set col_max = metadata.get('numeric_maxes', {}).get(col) %}
                         {% set align = 'right' if is_num else 'left' %}
                         {% set bg = '' %}
 
@@ -105,7 +124,9 @@
 <script>
     (() => {
         // Excel-like table selection
-        const table = document.getElementById('preview-table');
+        const table = document.getElementById('preview-table-{{ key }}');
+        if (!table) return;
+
         let isDragging = false;
         let startCell = null;
         let sel_rows = 0
@@ -179,30 +200,56 @@
             selectedCells.forEach(cell => cell.classList.remove('selected'));
         }
         
-        // 
+        // Ctrl+C copy support for selected cells
         document.addEventListener('copy', (event) => {
-            // Don't override copy behavior if no cells are selected
-            if (sel_cols > 0) {
-                // Prevent the default copy action
-                event.preventDefault(); 
+            // Ignore if no cells selected or table 'display: none;''
+            if (sel_cols === 0 || table.offsetParent === null) return;
+            // Prevent the default copy action
+            event.preventDefault(); 
 
-                sel_cells = table.querySelectorAll('td.selected');
-                
-                let csvRows = [];
+            const cells = table.querySelectorAll('td.selected');
+            const out = [];
 
-                for (let r = 0; r < sel_rows; r++) {
-                    let row = [];
+            for (let r = 0; r < sel_rows; r++) {
+                let row = [];
 
-                    for (let c = 0; c < sel_cols; c++) {
-                        const index = r * sel_cols + c;
-                        row.push(sel_cells[index].innerText.trim());
-                    }
-
-                    csvRows.push(row.join(","));
+                for (let c = 0; c < sel_cols; c++) {
+                    row.push(cells[r * sel_cols + c].innerText.trim());
                 }
-
-                event.clipboardData.setData('text/plain', csvRows.join("\n"));
+                out.push(row.join('\t'));  // TSV format for clipboard into Excel etc.
             }
+            event.clipboardData.setData('text/plain', out.join('\n'));
         });
+
+        // "Copy preview" button support
+        const region = table.closest('[data-copyable]');
+        if (region) {
+            region.addEventListener('preview:copy', (e) => {
+                e.preventDefault();
+                e.detail.result = copyWholeTable();   // hand the async write back to the button
+            });
+        }
+
+        function copyWholeTable() {
+            const rows = Array.from(table.rows).map(tr =>
+                Array.from(tr.cells).map(cell =>
+                    cell.textContent.replace(/[▲▼]/g, '').trim()  // Drop sort glyphs
+                )
+            );
+            const tsv = rows.map(r => r.join('\t')).join('\n');
+            const html = '<table>' + rows.map(r =>
+                '<tr>' + r.map(c =>
+                    // Escape HTML special chars
+                    '<td>' + c.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</td>'
+                ).join('') + '</tr>'
+            ).join('') + '</table>';
+
+            return navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/plain': new Blob([tsv], { type: 'text/plain' }),
+                    'text/html': new Blob([html], { type: 'text/html' })
+                }),
+            ]);
+        }
     })();
 </script>

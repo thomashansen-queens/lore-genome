@@ -53,7 +53,7 @@ class SvgAdapter(BaseAdapter):
 
         final_metadata = {
             **io_metadata,
-            "strategy_used": "embedded_xml",
+            "io_strategy": "embedded_xml",
             "viewbox": viewbox,
             "is_truncated": False,  # SVGs can't be truncated or they break!
             "total_rows": 1,  # Not really rows, but tells the UI to treat this as a single item

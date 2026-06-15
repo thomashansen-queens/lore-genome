@@ -1,7 +1,6 @@
 """
 Runtime context and configuration for LoRē Genome.
 """
-
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
@@ -29,7 +28,7 @@ from lore.core.workflows.manager import WorkflowManager
 
 if TYPE_CHECKING:
     from lore.core.sessions import Session
-    from lore.core.tasks.models import TaskResults
+    from lore.core.execution import PreviewPayload
 
 
 @dataclass
@@ -442,12 +441,12 @@ class Runtime:
 
     def preview_task(
         self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None,
-    ) -> "TaskResults":
+    ) -> "PreviewPayload":
         """
         Executes a Task in a special preview mode that does not mutate the Session or its data.
         Useful for quick iterations during development and debugging.
         """
-        from lore.core.execution.worker import run_preview_worker
+        from lore.core.execution import run_preview_worker
         from lore.core.tasks import task_registry
 
         if not self.find_session_dir(session_id):

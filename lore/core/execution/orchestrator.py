@@ -5,11 +5,11 @@ Orchestrator to manage Executors and coordinate Task execution in a Workflow.
 import logging
 from pathlib import Path
 
+from .executors import LocalSubprocessExecutor
 from lore.core.runtime import Runtime
-from lore.core.execution.executors import LocalSubprocessExecutor
 from lore.core.topology.traversal import sort_dag_dfs, get_task_descendants
 from lore.core.bindings import ReferenceBinding
-from lore.core.tasks.models import TaskStatus
+from lore.core.tasks import TaskStatus
 
 
 logger = logging.getLogger(__name__)

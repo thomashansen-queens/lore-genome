@@ -19,8 +19,8 @@ class Inputs:
     table = lore.ArtifactInput(
         label="Protein Accession and Sequence Table",
         accepted_data=["clustered_summary", "csv", "tsv"],
-        select=lore.SINGLE,
-        load_as=lore.PATH,
+        select="single",
+        load_as="path",
         default="",
         description="A table containing at least two columns: one with the WP accessions and one with the corresponding protein sequences. The column names or indices can be specified in the next two fields.\nThis can be left empty if 'Index from NCBI' is set to True.",
     )
@@ -62,7 +62,7 @@ class Outputs:
     inputs=Inputs,
     outputs=Outputs,
     icon="🗏",
-    live_preview=True,
+    preview_mode="full",
 )
 def wp_to_fasta(
     ctx: lore.ExecutionContext,
@@ -74,7 +74,7 @@ def wp_to_fasta(
 ):
     """Produces a simplified FASTA file given a list of WP accessions and a table to index protein sequences from. Can optionally acquire protein sequences directly from NCBI (slower than indexing from a pre-made table and requires internet)."""
     if index_from_ncbi: 
-        from lore.builtins.tasks.ncbi.datasets_client import datasets_client as ncbi_client
+        from lore.builtins.tasks.ncbi.datasets_client import datasets_client
         import json, zipfile, io
         ncbi_config = ctx.get_config("ncbi")        
         api_key = ncbi_config.api_key if ncbi_config else None
@@ -146,7 +146,7 @@ def wp_to_fasta(
             else:
                 # Pull missing protein sequences from NCBI
                 ctx.logger.info(f"Attempting to acquire missing protein sequences for {missed_matches} directly from NCBI...")
-                with ncbi_client(api_key) as api:
+                with datasets_client(api_key) as api:
                     # Make requests to NCBI in batches of 10
                     for i in range(0, len(missed_matches), 10):
                         batch = list(missed_matches)[i:i+10]
