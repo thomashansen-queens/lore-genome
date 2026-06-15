@@ -105,25 +105,53 @@
     {# === Metadata === #}
     <div class="card" style="flex: 1; margin-top: var(--spacing-md);">
         <header>Metadata</header>
-        <div class="scroll-area">
-            <table style="table-layout: fixed;">
-                <tr><td class="muted">Size</td><td>{{ artifact.display_size }}</td></tr>
-                <tr><td class="muted">Created</td><td>{{ artifact.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
-                <tr><td class="muted">Created by</td><td>{{ artifact.created_by_task_id }}</td></tr>
-                <tr><td class="muted">Path</td><td class="mono small truncated">{{ artifact.path }}</td></tr>
-                <tr><td class="muted">Hash</td><td class="mono small truncated">{{ artifact.hash }}</td></tr>
-                {% if artifact.extension in ['csv', 'tsv', 'txt'] %}
+
+        {% set metadata = artifact.metadata or {} %}
+
+        {# Standard identity/provenance fields (top-level artifact attributes) #}
+        {% set meta_rows = [
+            ('Size', artifact.display_size),
+            ('Created', artifact.created_at.strftime('%Y-%m-%d %H:%M')),
+            ('Created by', artifact.created_by_task_id),
+            ('Path', artifact.path),
+            ('Hash', artifact.hash),
+        ] %}
+
+        <div class="scroll-area" style="overflow-x: hidden;">
+            <table style="table-layout: fixed; width: 100%;">
+                <colgroup>
+                    <col style="width: 30%;">
+                    <col>
+                </colgroup>
+
+                {% for label, value in meta_rows %}
+                    <tr>
+                        <td class="muted">{{ label }}</td>
+                        <td class="mono small" style="overflow-wrap: anywhere;">{{ value }}</td>
+                    </tr>
+                {% endfor %}
+
+                {# Unpack the rest of the artifact's metadata dict #}
+                {% for key, value in metadata.items() if key != 'header' %}
+                    <tr>
+                        <td class="muted">{{ key | replace('_', ' ') | title }}</td>
+                        <td class="mono small" style="overflow-wrap: anywhere;">{{ value }}</td>
+                    </tr>
+                {% endfor %}
+
+                {# Interactive header toggle — replaces standard header row #}
+                {% if artifact.extension in ['csv', 'tsv', 'txt'] or 'header' in metadata %}
                     <tr>
                         <td class="muted">Has Header</td>
                         <td>
                             <label class="checkbox">
-                                <input type="checkbox" 
+                                <input type="checkbox"
                                     name="has_header"
                                     value="true"
-                                    {% if artifact.metadata.get('header', True) %}checked{% endif %}
+                                    {% if metadata.get('header', metadata.get('has_header', True)) %}checked{% endif %}
                                     hx-post="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/toggle-header"
                                     hx-trigger="change"
-                                    hx-swap="none"> 
+                                    hx-swap="none">
                             </label>
                         </td>
                     </tr>
