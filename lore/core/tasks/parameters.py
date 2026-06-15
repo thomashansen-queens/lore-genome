@@ -435,10 +435,5 @@ class TaskOutput(BaseModel):
 
     # Engine-facing `cardinality` alias
     @property
-<<<<<<< HEAD
     def cardinality(self) -> Cardinality:
         return Cardinality(self.yields)
-=======
-    def cardinality(self) -> CardinalityLiteral | Cardinality:
-        return self.yields
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)

@@ -14,20 +14,11 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from lore.core.adapters import AdapterPreview
 from lore.core.sessions import resolve_task_outputs
-<<<<<<< HEAD
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
-=======
-from lore.core.tasks import AdapterStrategy, TaskConfig, TaskStatus, task_registry
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
-<<<<<<< HEAD
-=======
-
-from time import sleep
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 
 router = APIRouter(prefix="/sessions/{session_id}/tasks", tags=["tasks"])
 
