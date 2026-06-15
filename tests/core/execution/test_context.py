@@ -3,11 +3,7 @@ Tests for ExecutionContext
 """
 import pytest
 
-<<<<<<< HEAD
 from lore.core.execution import ExecutionContext, PreviewContext
-=======
-from lore.core.execution.context import ExecutionContext, PreviewContext
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 from lore.core.tasks import Task, TaskStatus
 
 

@@ -22,8 +22,5 @@ from .sra import (
     config,
     vdb_info,
     fasterq_dump,
-<<<<<<< HEAD
     vdb_config,
-=======
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 )

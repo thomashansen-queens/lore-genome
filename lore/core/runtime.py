@@ -28,11 +28,7 @@ from lore.core.workflows.manager import WorkflowManager
 
 if TYPE_CHECKING:
     from lore.core.sessions import Session
-<<<<<<< HEAD
     from lore.core.execution import PreviewPayload
-=======
-    from lore.core.tasks import TaskResults
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 
 
 @dataclass

@@ -50,10 +50,7 @@ class FasterqDumpOutputs:
 def fasterq_dump_handler(
     ctx: lore.ExecutionContext,
     srr_accession: list[str],
-<<<<<<< HEAD
     sra_lite: bool,
-=======
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 ):
     """
     Downloads and extracts FASTQ files from the specified SRR accession in the 
@@ -67,11 +64,7 @@ def fasterq_dump_handler(
     threads = str(sra_config.get("default_threads", 6))
 
     fasterq_dump_binary = get_sra_binary(sra_config, "fasterq-dump")
-<<<<<<< HEAD
     prefetch_binary = get_sra_binary(sra_config, "prefetch")
-=======
-    threads = str(sra_config.get("default_threads", 6))
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 
     # 2. The materializer hands the handler a list of accessinos
     if not srr_accession:
@@ -99,7 +92,6 @@ def fasterq_dump_handler(
         cmd_prefetch.append("--eliminate-quals")
 
     # 3. Execute
-<<<<<<< HEAD
     # --split-3 means paired-end reads will be split into _1 and _2 files, while any orphaned reads are _3
     # cmd = [
     #     fasterq_dump_binary,
@@ -110,19 +102,6 @@ def fasterq_dump_handler(
     #     "--threads", threads,
     #     "--force",
     # ]
-=======
-    # --split-files means paired-end reads will be split into _1 and _2 files
-    cmd = [
-        fasterq_dump_binary,
-        clean_accession,
-        "--split-files",
-        "--outdir", str(out_dir),
-        "--temp", str(out_dir),
-        "--threads", threads,
-        "--force",
-        "--progress",
-    ]
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
 
     with isolated_vdb_env(sra_config, ctx) as safe_env:
         try:
