@@ -62,16 +62,15 @@ class CsvAdapter(TabularAdapter):
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
 
-        # 3. Header handling
+        # 3. Header handling: If headerless and no name supplied
         has_header = kwconfig.get("header", True)
         if not has_header and "fieldnames" not in csv_kwargs:
             # Peek at first row to count columns
             first_row = next(csv.reader([raw_data[0]], **csv_kwargs))
             csv_kwargs["fieldnames"] = [f"column_{i}" for i in range(len(first_row))]
-        elif "fieldnames" not in csv_kwargs:
-            raw_data = raw_data[1:]
 
-        # 4. Memory-efficient skipping of header line if needed
+        # 4. Skip the file's header row only when explicit fieldnames override it.
+        # Use iterator rather than slicing (raw_data[1:]) to avoid copying large data
         data_iterator = iter(raw_data)
         if has_header and "fieldnames" in csv_kwargs:
             try:
@@ -91,9 +90,6 @@ class CsvAdapter(TabularAdapter):
         """
         Yields parsed CSV records from an input text stream
         """
-        # TODO: Should I decide with utf-8-sig here as well to handle BOM in streaming cases?
-        # It would add complexity to already-expensive streaming handling
-        # TODO: strip out the header from the raw stream so it doesn't get incorporated directly in the table
         kwconfig = self._prepare_config(config, **kwargs)
         ext = kwconfig.get("ext", "")
         csv_kwargs = self._prepare_csv_kwargs(kwconfig, ext)
