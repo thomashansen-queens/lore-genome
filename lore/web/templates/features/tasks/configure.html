@@ -65,10 +65,11 @@
                 </button>
 
                 {% if task_def.preview_mode.is_allowed %}
-                <button id="preview-button" class="btn secondary"
+                <button id="preview-button" type="button" class="btn secondary"
                     hx-post="{{ preview_api_url }}"
                     hx-target="#preview-target"
                     hx-indicator="#preview-loader"
+                    hx-sync="this:replace"
                     hx-swap="innerHTML"
                     {% if task_def.preview_mode.is_live %}
                         hx-trigger="click, input delay:400ms from:#task-config-form"
@@ -84,7 +85,14 @@
     <section class="column fill padded"
              style="position: relative; background: var(--secondary); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.1); ">
         
-        <div id="preview-loader" style="display: none; position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
+        <style>
+            /* HTMX adds .htmx-request to the hx-indicator element (#preview-loader)
+               for the duration of any preview request, and ref-counts it so it
+               survives abort-and-restart. */
+            #preview-loader { display: none; }
+            #preview-loader.htmx-request { display: block; }
+        </style>
+        <div id="preview-loader" style="position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
             <span class="badge warning pulsing">⏳︎ Computing...</span>
         </div>
 
@@ -95,8 +103,6 @@
                     that only executes when committed and run.
                 {% elif task_def.preview_mode.is_live %}
                     Change a parameter to generate preview...
-                {% elif task_def.preview_mode.value == 'dry_run' %}
-                    Click "Preview" to validate inputs without running the task...
                 {% elif task_def.preview_mode.value == 'dry_run' %}
                     Click "Preview" to validate inputs without running the task...
                 {% else %}
@@ -118,7 +124,7 @@ document.addEventListener("DOMContentLoaded", function() {
     const strategyInput = document.getElementById('config-strategy');
     const sortAscInput = document.getElementById('config-sort-asc');
     const sortByInput = document.getElementById('config-sort-by');
-    const form = document.getElementById('task-config-form');
+    const previewButton = document.getElementById('preview-button');
 
     target.addEventListener('click', function(e) {
         let shouldFetch = false;
@@ -143,12 +149,11 @@ document.addEventListener("DOMContentLoaded", function() {
             shouldFetch = true;
         }
 
-        // 3. Trigger HTMX manually if user clicked on actionable element
-        if (shouldFetch) {
-            htmx.ajax('POST', '{{ preview_api_url }}', {
-                target: '#preview-target',
-                source: form
-            });
+        // 3. Route through the Preview button so every preview request shares the
+        //    same "Computing..." indicator (hx-indicator) and abort-and-restart
+        //    behaviour (hx-sync). Programmatic .click() fires HTMX's click trigger.
+        if (shouldFetch && previewButton) {
+            previewButton.click();
         }
     });
 });
