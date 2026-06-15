@@ -51,7 +51,7 @@ def test_table_reader_preview_jsonl(dummy_jsonl_file):
 
     assert len(preview) == 2
     assert metadata["file_eof_hit"] is False
-    assert metadata["strategy"] == "Streamed (peek)"
+    assert metadata["io_strategy"] == "Streamed (peek)"
     assert metadata["total_rows"] is None
 
     assert preview[0]["id"] == 1

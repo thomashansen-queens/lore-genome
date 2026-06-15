@@ -1,11 +1,20 @@
 """
 Tests for worker execution of Tasks, including materialization and error handling
 """
+import json
+
 import pytest
 
 from lore.core.bindings import LiteralBinding
 from lore.core.execution.preview import PreviewOutput
-from lore.core.tasks import TaskStatus, ValueInput, TaskOutput
+from lore.core.tasks import (
+    ArtifactInput,
+    Cardinality,
+    Materialization,
+    TaskStatus,
+    ValueInput,
+    TaskOutput,
+)
 from lore.core.execution import run_preview_worker, run_task_worker, ExecutionContext, PreviewPayload
 
 # --- DUMMY TASK CONTRACTS ---
@@ -113,8 +122,71 @@ def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_task_p
     assert isinstance(primary_data, PreviewOutput)
     assert primary_data.data[0] == "Processed: Previewing is fun!"
 
+    # The input was a literal (consumed in full) and the tiny text output was
+    # read to EOF, so this preview represents the complete result.
+    assert primary_data.io_metadata["file_eof_hit"] is True
+    assert primary_data.io_metadata.get("total_rows") is None
+
     with temp_runtime.open_session(closed_session.id, read_only=True) as s:
         assert len(s.list_tasks()) == initial_task_count
         assert len(s.list_artifacts()) == initial_artifact_count
         ghost_tasks = [t for t in s.list_tasks() if t.id.startswith("preview_")]
         assert len(ghost_tasks) == 0
+
+
+def test_run_preview_worker_propagates_input_truncation(
+    tmp_path, temp_runtime, closed_session, isolated_task_registry
+):
+    """
+    When an input is peeked (more rows than the peek limit), the derived output
+    must be flagged as a partial preview — even though the small output file is
+    itself read to EOF. This proves the input IO is propagated to the output.
+    """
+    # 1. Register a tabular artifact with more rows than the peek limit
+    peek_limit = temp_runtime.settings.preview_peek_limit
+    records = [{"id": i, "val": f"row_{i}"} for i in range(peek_limit + 50)]
+    src = tmp_path / "big.jsonl"
+    src.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    with temp_runtime.open_session(closed_session.id) as s:
+        artifact_id = s.register_artifact(src, name="big_table", data_type="jsonl").id
+
+    # 2. A task that echoes its (peeked) input straight back out as the output
+    class EchoInputs:
+        records = ArtifactInput(
+            accepted_data=["*"],
+            select=Cardinality.SINGLE,
+            load_as=Materialization.RAW,
+        )
+
+    class EchoOutputs:
+        table = TaskOutput(data_type="table", label="Echoed", is_primary=True)
+
+    @isolated_task_registry.register(
+        key="test.echo_table",
+        inputs=EchoInputs,
+        outputs=EchoOutputs,
+        name="Echo Table",
+        preview_mode="full",
+    )
+    def handler(ctx: ExecutionContext, records):
+        payload = "\n".join(json.dumps(r) for r in records)
+        ctx.materialize_content(payload, output_key="table", extension="jsonl")
+
+    # 3. Preview in PEEK mode (what the workbench sends for a live preview)
+    preview_payload = run_preview_worker(
+        rt=temp_runtime,
+        session_id=closed_session.id,
+        task_key="test.echo_table",
+        raw_inputs={"records": [LiteralBinding(value=artifact_id)]},
+        exec_config={"adapter": {"strategy": "peek"}},
+    )
+
+    assert preview_payload.error is None
+    out = preview_payload.output_previews["table"]
+
+    # Handler only saw the peeked slice...
+    assert len(out.data) == peek_limit
+    # ...so the result is partial despite the output file being read to EOF.
+    assert out.io_metadata["file_eof_hit"] is False
+    assert out.io_metadata["total_rows"] is None

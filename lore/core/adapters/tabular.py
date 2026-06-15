@@ -220,14 +220,15 @@ class TabularAdapter(BaseAdapter):
             result.data = result.data[:ui_limit]
             ui_limit_hit = True
 
-        # 5. Add truncation metadata for UI to display warning if needed
-        if result.metadata.get("total_rows") is None:
-            if io_metadata.get("file_eof_hit", True):
-                result.metadata["total_rows"] = len(raw_data)
-
-        io_ram_limit_hit = io_metadata.get("ram_limit_hit", False)
-        io_eof_hit = io_metadata.get("file_eof_hit", False)
-        result.metadata["is_truncated"] = ui_limit_hit or io_ram_limit_hit or not io_eof_hit
+        # 5. Add the adapter-level truncation flag plus a convenience summary.
+        #    The Reader's metadata (file_eof_hit, ram_limit_hit, total_rows) is
+        #    already carried over by super().preview(), so we don't re-copy it.
+        result.metadata["ui_limit_hit"] = ui_limit_hit
+        result.metadata["is_truncated"] = (
+            ui_limit_hit
+            or result.metadata.get("ram_limit_hit", False)
+            or not result.metadata.get("file_eof_hit", True)
+        )
 
         return result
 

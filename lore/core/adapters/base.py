@@ -15,7 +15,7 @@ class AdapterPreview(BaseModel):
     adapter_name: str = Field(description="The name of the Adapter that generated this preview")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Context about the data (e.g. total_rows, file_eof_reached)",
+        description="Context about the data (e.g. total_rows, file_eof_hit)",
     )
 
 
@@ -151,7 +151,7 @@ class BaseAdapter(ABC):
         final_metadata = io_metadata.copy()
 
         if final_metadata.get("total_rows") is None and isinstance(adapted_data, list):
-            if io_metadata.get("file_eof_reached", True):
+            if io_metadata.get("file_eof_hit", True):
                 final_metadata["total_rows"] = len(adapted_data)
 
         return AdapterPreview(

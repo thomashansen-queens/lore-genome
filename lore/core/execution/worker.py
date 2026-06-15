@@ -59,7 +59,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     try:
         with rt.open_session(session_id, read_only=True) as s:
             # Resolve references to concrete values (e.g. Artifact IDs to Artifacts)
-            resolved_kwargs, input_artifacts = materialize_task_inputs(
+            materialized = materialize_task_inputs(
                 s=s,
                 task_def=task_def,
                 bindings=task.inputs,
@@ -89,10 +89,10 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
             session_id=session_id,
             task=task,
             task_def=task_def,
-            input_artifacts=input_artifacts,
+            input_artifacts=materialized.artifacts,
         )
         rt.logger.info("Executing Task ID: '%s' with handler %s", task_id, task_def.handler.__name__)
-        task_def.handler(ctx=ctx, **resolved_kwargs)
+        task_def.handler(ctx=ctx, **materialized.data)
 
         # 3. Bottom bread (fast cleanup, short lock)
         with rt.open_session(session_id) as s:

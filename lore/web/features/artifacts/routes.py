@@ -178,7 +178,7 @@ async def view_artifact_explore(
     explore the full data with sorting and filtering as needed.
 
     Metadata used in the explore view:
-      file_eof_reached (bool): Indicates if the preview reached the end of the file
+      file_eof_hit (bool): Indicates if the preview reached the end of the file
       total_rows (int | None): Total number of rows in dataset (None if unknown/streamed)
       is_truncated (bool): If the preview is limited to avoid crashing the browser's DOM
       columns (list[str]): The keys available in the adapted records (for tabular data)
@@ -205,7 +205,7 @@ async def view_artifact_explore(
     # 2. Data loading
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
-    data, io_metadata = reader.preview(100)
+    data, io_metadata = reader.preview(peek_limit=s.runtime.settings.preview_peek_limit)
 
     config = {**(artifact.metadata or {}), "ext": artifact.extension}
     preview_result = adapter.preview(data, io_metadata, config=config)

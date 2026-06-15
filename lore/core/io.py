@@ -33,12 +33,14 @@ class DataReader(ABC):
                 "file_size_bytes": 0,
                 "extension": self.path.suffix.lower().lstrip("."),
                 "exists": False,
+                "reader": self.__class__.__name__,
             }
 
         return {
             "file_size_bytes": self.path.stat().st_size,
             "extension": self.path.suffix.lower().lstrip("."),
             "exists": True,
+            "reader": self.__class__.__name__,
         }
 
     @abstractmethod
@@ -60,9 +62,9 @@ class DataReader(ABC):
         pass
 
     @abstractmethod
-    def preview(self, limit: int, config: dict | None = None, **kwargs) -> tuple[Any, dict]:
+    def preview(self, peek_limit: int, config: dict | None = None, **kwargs) -> tuple[Any, dict]:
         """
-        Gets the first `limit` items (lines, dicts, bytes) and metadata about them.
+        Gets the first `peek_limit` items (lines, dicts, bytes) and metadata about them.
         Returns: (previewed_data, io_metadata_dict)
         Subclasses decide if this uses stream() or read_full().
         """
@@ -219,13 +221,13 @@ class TableReader(DataReader):
 
         metadata.update(
             {
-                "strategy": io_strategy,
+                "io_strategy": io_strategy,
                 "file_eof_hit": eof_hit,
                 "preview_limit": peek_limit if strategy == "peek" else max_ram_rows,
                 "total_rows": io_total_rows,  # Will be None if streamed, which is correct!
                 "columns": columns,
                 "ram_limit_hit": ram_limit_hit,
-                "approx_ram_bytes": current_ram_bytes,
+                "preview_ram_bytes": current_ram_bytes,
             }
         )
 
@@ -256,7 +258,7 @@ class ImageReader(DataReader):
             return self.path.read_text(encoding="utf-8", errors="replace")
         return self.path.read_bytes()
 
-    def preview(self, limit: int = 0, config: dict | None = None, **kwargs) -> tuple[bytes | str, dict]:
+    def preview(self, peek_limit: int = 0, config: dict | None = None, **kwargs) -> tuple[bytes | str, dict]:
         """
         No image previews! Here, we just enforce a size limit and return full
         """
@@ -275,8 +277,8 @@ class ImageReader(DataReader):
 
         meta.update(
             {
-                "strategy_used": "read_full",
-                "file_eof_reached": False,
+                "io_strategy": "read_full",
+                "file_eof_hit": False,
             }
         )
 
@@ -307,18 +309,18 @@ class TextReader(DataReader):
 
     def preview(
         self,
-        limit: int = 100,
+        peek_limit: int = 100,
         config: dict | None = None,
         **kwargs,
     ) -> tuple[list[str], dict]:
         """
-        Smart preview: pulls exactly `limit` lines from the stream.
+        Smart preview: pulls exactly `peek_limit` lines from the stream.
         """
         lines = []
         hit_eof = True
 
         for i, line in enumerate(self.stream(config)):
-            if i >= limit:
+            if i >= peek_limit:
                 hit_eof = False
                 break
             lines.append(line)
@@ -326,9 +328,9 @@ class TextReader(DataReader):
         metadata = self.get_metadata()
         metadata.update(
             {
-                "strategy_used": "streamed lines",
-                "file_eof_reached": hit_eof,
-                "preview_limit": limit,
+                "io_strategy": "streamed lines",
+                "file_eof_hit": hit_eof,
+                "preview_limit": peek_limit,
                 "total_lines_previewed": len(lines),
             }
         )

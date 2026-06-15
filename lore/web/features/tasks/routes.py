@@ -6,7 +6,7 @@ from collections.abc import AsyncIterable
 import html
 from pathlib import Path
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -204,6 +204,25 @@ class TaskPayload(BaseModel):
     task_config: TaskConfig = Field(default_factory=TaskConfig)
     run_immediately: str | bool | None = None
     model_config = ConfigDict(extra="allow")  # Allow arbitrary keys for adapter config, etc.
+
+    @model_validator(mode="before")
+    @classmethod
+    def unflatten_htmx_payload(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        nested_data = {}
+        for key, value in data.items():
+            if "[" in key and key.endswith("]"):
+                parts = key.replace("]", "").split("[")
+                curr = nested_data
+                for part in parts[:-1]:
+                    curr = curr.setdefault(part, {})
+                curr[parts[-1]] = value
+            else:
+                nested_data[key] = value
+
+        return nested_data
 
     @property
     def inputs(self) -> dict[str, Any]:

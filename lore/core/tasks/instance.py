@@ -54,6 +54,18 @@ class AdapterConfig(BaseModel):
         description="kwargs to pass to the Adapter e.g. {'separator': '\\t'}",
     )
 
+    @field_validator("view_state", mode="after")
+    @classmethod
+    def _coerce_view_state(cls, v: dict) -> dict:
+        """
+        Normalize stringified UI flags. HTML form inputs always arrive as strings
+        (e.g. sort_asc='false'), and a non-empty string is truthy — so coerce
+        known boolean view flags to real bools for the adapter and viewer glyphs.
+        """
+        if isinstance(v.get("sort_asc"), str):
+            v["sort_asc"] = v["sort_asc"].strip().lower() not in ("false", "0", "")
+        return v
+
 
 class ExecutionConfig(BaseModel):
     """Task config for the Engine's execution behaviour"""

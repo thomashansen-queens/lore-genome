@@ -51,12 +51,19 @@ class DummyPreviewArtifact:
     data_type: str = "unknown"
 
 
+@dataclass
 class PreviewContext(ExecutionContext):
     """
     Specialized ExecutionContext for handling in-memory previews.
     Intercepts materialization to return UI-ready data payloads.
     Leaves the Manifest untouched.
+
+    `inputs_complete`: simple flag indicating whether the input to
+    the handler is delivered in full. If any input was 'peeked' (impartial load),
+    outputs derived from it are also partial previews.
     """
+    inputs_complete: bool = True
+
     def materialize_file(
         self,
         source_path: Path | str,
@@ -81,16 +88,24 @@ class PreviewContext(ExecutionContext):
         # 2. Delegate packaging
         adapter_config = self.task.exec_config.get("adapter", {})
         strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
+        peek_limit = self.runtime.settings.preview_peek_limit
         reader = get_reader_for(source_path)
 
         if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
             try:
-                raw_data = reader.read_full()
-                io_meta = {"file_eof_reached": True, "strategy_used": "Full load"}
+                raw_data = reader.read_full(config=adapter_config)
+                io_meta = {"file_eof_hit": True, "io_strategy": "Full load"}
             except NotImplementedError:
-                raw_data, io_meta = reader.preview(limit=100)
+                raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
         else:
-            raw_data, io_meta = reader.preview(limit=100)
+            raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
+            # 'file_eof_hit' means 'is this the complete result", which is only true
+            # when the the inputs were read to EOF (not peeked) and the output was
+            # read to EOF (not truncated)
+            output_eof_hit = io_meta.get("file_eof_hit", True)
+            io_meta["file_eof_hit"] = output_eof_hit and self.inputs_complete
+            if not io_meta["file_eof_hit"]:
+                io_meta["total_rows"] = None
 
         io_meta["extension"] = source_path.suffix.lstrip(".")
         io_meta["data_type"] = data_type
@@ -145,12 +160,20 @@ def run_preview_worker(
 
     # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
-        resolved_inputs, input_artifacts = materialize_task_inputs(
+        materialized = materialize_task_inputs(
             s=s,
             task_def=task_def,
             bindings=ephemeral_task.inputs,
             strategy=AdapterStrategy(strategy),
         )
+
+    # An input was peeked (delivered partially) if any of its reads did not hit
+    # EOF. If so, every output derived from it is a partial preview.
+    inputs_complete = all(
+        meta.get("file_eof_hit", True)
+        for slot_metas in materialized.io_metadata.values()
+        for meta in slot_metas
+    )
 
     # 4. Initialize preview payload
     preview = PreviewPayload(
@@ -170,10 +193,11 @@ def run_preview_worker(
             session_id=session_id,
             task=ephemeral_task,
             task_def=task_def,
-            input_artifacts=input_artifacts,
+            input_artifacts=materialized.artifacts,
+            inputs_complete=inputs_complete,
         )
     try:
-        task_def.handler(ctx, **resolved_inputs)
+        task_def.handler(ctx, **materialized.data)
 
         # 7. Extract preview outputs from the ephemeral context
         for key in ctx.results.output_keys:

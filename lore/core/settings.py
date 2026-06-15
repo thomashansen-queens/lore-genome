@@ -136,6 +136,23 @@ class Settings(BaseModel):
         return self.data_root / "workflows"
 
     # --- UI ---
+    preview_peek_limit: int = Field(
+        default=100,
+        ge=10,
+        le=10000,
+        description=(
+            "Number of records sampled from each input when generating a quick "
+            "Task preview. Smaller is snappier for live previews; larger gives a "
+            "more representative sample at the cost of speed."
+        ),
+        json_schema_extra={
+            "widget": "slider",
+            "min": 10,
+            "max": 10000,
+            "step": 10,
+        },
+        examples=["100"],
+    )
     explore_display_limit: int = Field(
         default=1000,
         ge=100,

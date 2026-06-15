@@ -37,6 +37,11 @@
                         view_state = payload.execution_config.get('adapter', {}).get('view_state', {})
                     %}
 
+                    {# Copy button #}
+                    <button type="button" class="btn badge secondary small push-right copy-preview-btn">
+                        Copy Preview
+                    </button>
+
                         {% if preview.view_mode == 'table' %}
                             {% include "components/viewers/table.html" %}
                         {% elif preview.view_mode == 'svg' %}
@@ -59,22 +64,23 @@
             const wrapper = document.getElementById('preview-wrapper');
             if (!wrapper) return;
 
-            const buttons = wrapper.querySelectorAll('.btn-tab');
+            const btnTab = wrapper.querySelectorAll('.btn-tab');
             const tabs = wrapper.querySelectorAll('.out-tab');
 
             // Set initial active tab
-            if (buttons.length > 0) {
-                buttons[0].style.borderBottomColor = 'var(--primary)';
-                buttons[0].style.color = 'var(--primary)';
+            if (btnTab.length > 0) {
+                btnTab[0].style.borderBottomColor = 'var(--primary)';
+                btnTab[0].style.color = 'var(--primary)';
             }
 
-            buttons.forEach(btn => {
+            // --- Output tab switcher ---
+            btnTab.forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();  // Prevent form submission just in case
                     if (btn.classList.contains('active')) return;  // No action if already active
                     
                     // 1. Reset all buttons and hide all tabs
-                    buttons.forEach(b => {
+                    btnTab.forEach(b => {
                         b.classList.remove('active');
                         b.style.borderBottomColor = 'transparent';
                         b.style.color = 'var(--text-muted)';
@@ -92,6 +98,36 @@
                     if (targetTab) {
                         targetTab.style.display = 'flex';
                     }
+                });
+            });
+
+            // --- Copy buttons ---
+            wrapper.querySelectorAll('.copy-preview-btn').forEach(btn => {
+                const region = btn.closest('.out-tab')?.querySelector('[data-copyable]');
+
+                // Viewer tab has no element with a data-copyable attribute
+                if (!region) {
+                    btn.style.display = 'none';
+                    return;
+                }
+
+                btn.addEventListener('click', async () => {
+                    // Check for custom copy behaviour in the viewer, default to copy innerText
+                    const detail = { result: null };
+                    const ev = new CustomEvent('preview:copy', { cancelable: true, detail });
+                    region.dispatchEvent(ev);
+
+                    try {
+                        if (ev.defaultPrevented) {
+                            await detail.result;
+                        } else {
+                            await navigator.clipboard.writeText(region.innerText);
+                        }
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                    }
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => btn.textContent = 'Copy Preview', 2000);
                 });
             });
         })();

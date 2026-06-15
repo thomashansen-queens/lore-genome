@@ -6,7 +6,7 @@ data transformation, ETL, or heavy lifting should be done in Task handlers.
 Slicing and dicing of data are done here according to DSL instructions and
 semantic types.
 """
-
+from dataclasses import dataclass, field
 import io
 import itertools
 import types
@@ -25,19 +25,29 @@ if TYPE_CHECKING:
     from lore.core.artifacts import Artifact
 
 
+@dataclass
+class MaterializedInputs:
+    """Data transfer object for materialized dependencies and associated data"""
+    data: dict[str, Any] = field(default_factory=dict)
+    artifacts: dict[str, list["Artifact"]] = field(default_factory=dict)
+    io_metadata: dict[str, list[dict]] = field(default_factory=dict)
+
+
 def materialize_task_inputs(
     s: "Session",
     task_def: "TaskDefinition",
     bindings: dict[str, list[Binding]],
     strategy: AdapterStrategy = AdapterStrategy.AUTO,
-) -> tuple[dict, dict]:
+) -> MaterializedInputs:
     """
     Resolves raw input references (i.e. Artifacts) to actual data based on the
     TaskDefinition's DSL instructions (Materialization, series extraction) and
     available Adapters.
+
+    Returns: MaterializedInputs object containing the materialized inputs and
+    associated metadata.
     """
-    resolved = {}
-    input_artifacts_snapshot = {}  # key: input_name, value: list[Artifact] or Artifact
+    dto = MaterializedInputs()
 
     for key, binding_list in bindings.items():
         # 1. Get input field metadata from TaskDefinition
@@ -51,7 +61,7 @@ def materialize_task_inputs(
             ]
             try:
                 if is_collection_type(field_info.annotation):
-                    resolved[key] = TypeAdapter(field_info.annotation).validate_python(vals)
+                    dto.data[key] = TypeAdapter(field_info.annotation).validate_python(vals)
                 else:
                     if len(vals) >  1:
                         raise ValueError(
@@ -60,9 +70,9 @@ def materialize_task_inputs(
                         )
                     raw_val = vals[0] if vals else None
                     if raw_val is not None:
-                        resolved[key] = TypeAdapter(field_info.annotation).validate_python(raw_val)
+                        dto.data[key] = TypeAdapter(field_info.annotation).validate_python(raw_val)
                     else:
-                        resolved[key] = None
+                        dto.data[key] = None
             except Exception as e:
                 raise ValueError(
                     f"Failed to cast input '{key}' to type {field_info.annotation}: {e}"
@@ -127,13 +137,15 @@ def materialize_task_inputs(
                             _materialize_manual_input(b.value, materialization, field_info)
                         )
 
-        input_artifacts_snapshot[key] = artifacts
+        dto.artifacts[key] = artifacts
 
         # 5. Process each Artifact according to the instructions.
         # Prepare for auto-concatenate if multiple items are provided.
         processed_artifacts = []
+        slot_io_metadata = []
+
         for a in artifacts:
-            item_data = _materialize_single_artifact(
+            item_data, io_meta = _materialize_single_artifact(
                 session=s,
                 artifact=a,
                 materialization=materialization,
@@ -141,12 +153,13 @@ def materialize_task_inputs(
                 strategy=strategy,
             )
             processed_artifacts.append(item_data)
+            slot_io_metadata.append(io_meta)
 
         # 6. Handle packaging & concatenation
         # Auto-concatenate if it's a series type and multiple items are allowed
         if allows_multiple:
             if processed_artifacts and isinstance(processed_artifacts[0], types.GeneratorType):
-                resolved[key] = itertools.chain(*processed_artifacts)
+                dto.data[key] = itertools.chain(*processed_artifacts)
             else:
                 flattened = []
                 for item in manual_inputs + processed_artifacts:
@@ -154,7 +167,7 @@ def materialize_task_inputs(
                         flattened.extend(item)
                     else:
                         flattened.append(item)
-                resolved[key] = flattened
+                dto.data[key] = flattened
         else:
             total_inputs = len(manual_inputs) + len(processed_artifacts)
             if total_inputs > 1:
@@ -164,11 +177,14 @@ def materialize_task_inputs(
                 )
 
             if manual_inputs:
-                resolved[key] = manual_inputs[0]  # manual input takes precedence
+                dto.data[key] = manual_inputs[0]  # manual input takes precedence
             else:
-                resolved[key] = processed_artifacts[0] if processed_artifacts else None
+                dto.data[key] = processed_artifacts[0] if processed_artifacts else None
 
-    return resolved, input_artifacts_snapshot
+        # Store IO ledger for this slot
+        dto.io_metadata[key] = slot_io_metadata
+
+    return dto
 
 
 def _materialize_single_artifact(
@@ -177,14 +193,21 @@ def _materialize_single_artifact(
     materialization: str,
     accepted_data: list[str],
     strategy: AdapterStrategy = AdapterStrategy.AUTO,
-) -> Any:
+) -> tuple[Any, dict]:
     """
     Helper to Materialize an Artifact into real data per DSL instructions
     If loading as CONTENT, will prioritize the narrowest type of accepted data
     i.e. Series > Adapted > Raw
+
+    returns: Tuple of (materialized data, io_metadata)
+    io_metadata is a dict that can include info like total_rows, truncated, etc.
+    that is currently only populated for PEEK previews. Could be useful in the
+    future to include io metadata for other materialization strategies.
     """
     m = Materialization(materialization)
     path = session.get_artifact_path(artifact.id)
+    peek_limit = session.runtime.settings.preview_peek_limit
+    io_meta = {}
 
     # --- Adapter can override Task contract ---
 
@@ -193,8 +216,8 @@ def _materialize_single_artifact(
             m = Materialization.PREVIEW
         elif m in (Materialization.RAW, Materialization.RAW_STREAM):
             reader = get_reader_for(path)
-            raw_data, _ = reader.preview(limit=100)
-            return raw_data
+            raw_data, io_meta = reader.preview(peek_limit=peek_limit)
+            return raw_data, io_meta
 
     elif strategy == AdapterStrategy.LAZY:
         if m == Materialization.ADAPTED:
@@ -212,20 +235,20 @@ def _materialize_single_artifact(
 
     # 1. Pure Manifest lookup
     if m == Materialization.ARTIFACT:
-        return artifact
+        return artifact, io_meta
 
     # 2. The handler will access the filepath directly
     if m == Materialization.PATH:
-        return str(path)
+        return str(path), io_meta
 
     # 3. Read data for the handler
     reader = get_reader_for(path)
 
     if m == Materialization.RAW:
-        return reader.read_full()
+        return reader.read_full(), {"io_strategy": "Full load"}
 
     if m == Materialization.RAW_STREAM:
-        return reader.stream()
+        return reader.stream(), {"io_strategy": "Streamed"}
 
     # 4. Adapt the data for the handler - metadata is passed as config
     adapters = artifact.get_adapters()
@@ -234,32 +257,34 @@ def _materialize_single_artifact(
 
     if m == Materialization.ADAPTED_STREAM:
         raw_generator = reader.stream()
-        return adapter.adapt_stream(raw_generator, config=config) if adapter else raw_generator
+        data = adapter.adapt_stream(raw_generator, config=config) if adapter else raw_generator
+        return data, {"io_strategy": "Streamed (Adapted)"}
 
     if m == Materialization.PREVIEW:
-        raw_data, metadata = reader.preview(limit=100)
+        raw_data, io_meta = reader.preview(peek_limit=peek_limit)
         if adapter:
-            return adapter.adapt(raw_data, config=config)
-        return raw_data
+            return adapter.adapt(raw_data, config=config), io_meta
+        return raw_data, io_meta
 
     if m == Materialization.ADAPTED:
         raw_data = reader.read_full()
+        io_meta = {"io_strategy": "Full load (Adapted)"}
 
         # A. Try to provide a series (only for TabularAdapters)
         for adapter in adapters:
             for accepted in accepted_data:
                 series = adapter.get_series(raw_data, accepted, config=config)
                 if series is not None:
-                    return series
+                    return series, io_meta
 
             # B. If no series, try adapting the entire payload
             adapted_data = adapter.adapt(raw_data, config=config)
-            return adapted_data
+            return adapted_data, io_meta
 
         # C. Fallback to raw content if no adapters worked
-        return raw_data
+        return raw_data, io_meta
 
-    return artifact.id  # fallback to ID if no instructions
+    return artifact.id, io_meta  # fallback to ID if no instructions
 
 
 def _materialize_manual_input(
