@@ -50,7 +50,7 @@ class Inputs:
 
 class Outputs:
     fasta = lore.TaskOutput(
-        data_type="protein_fasta",
+        data_type="fasta",
         label="Protein FASTA",
         description="A simplified FASTA file of just WP protein accessions and their associated sequences.",
         is_primary=True,
