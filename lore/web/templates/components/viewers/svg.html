@@ -18,8 +18,38 @@
         z-index: 1000;
     }
     
+    #copy-toast {
+        position: fixed;
+        display: none;
+        transform: translateX(-50%) translateY(10px);
+        background: white;
+        padding: 3px;
+        z-index: 1001;
+        opacity: 0;
+        transition:
+            opacity 0.3s ease,
+            transform 0.3s ease;
+    }
+
     .gene-container:hover {
+        transition: filter 0.2s;
         filter: brightness(0.85);
+        cursor: pointer;
+    }
+
+    .selected,
+    .parents-tooltip:hover {
+        transition: filter 0.2s;
+        filter: brightness(0.85);
+        cursor: pointer;
+    }
+
+    .copy-text {
+        width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
     }
 </style>
 
@@ -35,34 +65,141 @@
     
     <div class="scroll-area">
         {{ data | safe }}
-        <div id="tooltip"></div>    
+        <div id="tooltip"></div>   
+        <div id="copy-toast">Copied!</div> 
+        <div id="selection-box"></div>
     </div>
 </div>
 
 <script>    
     (() => {  // This is neccessary to maintain local scope so that the script can be re-injected in the same page
-
+        
         // Tooltip rendering on click
         const tooltip = document.getElementById("tooltip");  // Get template tooltip off of page to work with
         const svg = document.querySelector("svg");  
+        const toast = document.getElementById("copy-toast");
         let activeTooltip = null;
+        
+        // Makes the tooltip visible and does collision math to place the tooltip at the given coordinates without squashing it.
+        function placeTooltip(x, y) {
+            tooltip.style.display = "block";
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const offset = 10;
+            
+            // Default position (bottom)
+            y = y + offset;
+            x = x + offset;
+
+            // Collision Detection
+            const isOffRight = x + tooltipRect.width > window.innerWidth;
+            const isOffBottom = y + tooltipRect.height > window.innerHeight;
+
+            // Adjust for Collisions (Flip logic)
+            if (isOffBottom) {
+                y = window.innerHeight - tooltipRect.height; // Flip to top
+            }
+            
+            if (isOffRight) {
+                x = window.innerWidth - tooltipRect.width - offset; 
+            }
+
+            // Apply Styles
+            tooltip.style.top = `${y + window.scrollY}px`;
+            tooltip.style.left = `${x + window.scrollX}px`;
+        }
 
         if (svg) {
+            let selected = [];
+            let selected_min = Infinity;
+            let selected_max = 0;
+            function clearSelected() {
+                selected.forEach(element => {
+                    element.classList.remove("selected");
+                });
+                selected = [];
+            }
+
             svg.addEventListener("click", event => {
                 const polygon = event.target.closest(".gene-container");  // Get the clicked-on gene
+                const tooltipContainerParent = event.target.closest(".parents-tooltip");  // Get the clicked-on tooltip container
+
+                // Gene tooltips
                 if (polygon && activeTooltip !== polygon){  
                     activeTooltip = polygon;
                     const gene = polygon.querySelector(".gene-arrow");
                     tooltip.textContent = gene.dataset.title;
-                    tooltip.style.display = "block";
-                    tooltip.style.left = `${event.clientX + 10}px`;
-                    tooltip.style.top = `${event.clientY + 10}px`;
-                } else {
-                    // Hide the tooltip if the gene is clicked on again
-                    activeTooltip = null;
+                    placeTooltip(event.clientX, event.clientY);
+                }
+                // Protein domain tooltips
+                else if (tooltipContainerParent && (!selected.includes(tooltipContainerParent) || event.ctrlKey)){  
+                    const tooltipContainer = tooltipContainerParent.querySelector(".has-tooltip");                    
+                    const proteinAcc = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".protein-accession");
+                    const proteinSeq = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".copy-text");
+                    const start = tooltipContainer.dataset.start - 1;
+                    const end = tooltipContainer.dataset.end;
+                    tooltipContainerParent.classList.add("selected");
+                    if (proteinSeq) {
+                        copyDiv = document.createElement("div");
+                        copyDiv.className = "copy-text";
+                        // Multi-select domains to get the sequence spanning them
+                        if (event.ctrlKey) {
+                            selected_min = Math.min(selected_min, start);
+                            selected_max = Math.max(selected_max, end);
+                            copyDiv.textContent = proteinSeq.dataset.title.substring(selected_min, selected_max);
+                            tooltip.textContent = `${proteinAcc.textContent}\nStart: ${selected_min + 1}\nEnd: ${selected_max}\nTotal Length: ${selected_max - selected_min}`;
+                            selected.push(tooltipContainerParent);
+                        // Single-select domains
+                        } else {
+                            clearSelected();
+                            selected = [tooltipContainerParent];
+                            selected_min = start;
+                            selected_max = end;
+                            copyDiv.textContent = proteinSeq.dataset.title.substring(start, end);
+                            tooltip.textContent = tooltipContainer.dataset.title;
+                        }
+                        tooltip.append(copyDiv);
+                    // Proteins where a sequence could not be found from the given FASTA
+                    } else {
+                        clearSelected();
+                        selected = [tooltipContainerParent];
+                        tooltip.textContent = tooltipContainer.dataset.title;
+                    }
+
+                    placeTooltip(event.clientX, event.clientY);
+                }
+                else {
+                    // Hide the tooltip if the outside is clicked
+                    clearSelected();
                     tooltip.style.display = "none";
                 }
             });
+
+            // Copyable text snippets
+            tooltip.addEventListener("click", event => {
+                const copyText = event.target.closest(".copy-text");
+                
+                if (copyText) {
+                    navigator.clipboard.writeText(copyText.textContent);
+                    toast.style.left = `${event.clientX + 30}px`;
+                    toast.style.top = `${event.clientY - 30}px`;
+                    toast.style.display = "block";
+                    toast.style.opacity = 1;
+
+                    setTimeout(() => {
+                        toast.style.opacity = 0;
+                        setTimeout(() => toast.style.display = "none", 300);
+                    }, 2000);
+                }
+            });
+
+            // Elements which follow the window as it scrolls (like the residue location indicator)
+            const marker = document.querySelector(".marker");
+            if (marker){
+                const scrollMenu = document.querySelector(".scroll-area");
+                scrollMenu.addEventListener("scroll", () => {
+                    marker.style.transform = `translateY(${scrollMenu.scrollTop}px)`;
+                });
+            }
         }
     })();
 </script>
