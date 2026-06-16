@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 import tempfile
 
+from lore.core.artifacts.manager import TransferMode
 from lore.core.tasks import TaskResults
 
 if TYPE_CHECKING:
@@ -167,16 +168,21 @@ class ExecutionContext:
         data_type = self._resolve_data_type(output_key, data_type)
         name = name or self._generate_default_name(output_key, data_type)
 
+        # Catch stray kwargs
+        final_metadata = metadata or {}
+        if kwargs:
+            final_metadata.update(kwargs)
+
         with self.runtime.open_session(self.session_id) as s:
             artifact = s.register_artifact(
                 source=source_path,
+                transfer_mode=TransferMode.MOVE if move else TransferMode.COPY,
                 name=name,
+                data_type=data_type,
                 created_by_task_id=self.task.id,
                 created_by_output_key=output_key,
-                data_type=data_type,
-                metadata=metadata,
                 parent_artifact_ids=self._get_inferred_parents(),
-                **kwargs,
+                metadata=final_metadata,
             )
 
             try:

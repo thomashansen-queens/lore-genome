@@ -24,7 +24,7 @@
 
 <div class="column">
 
-    {# --- Preview info and full load --- #}
+    {# --- Preview info (display-level only; wrapper renders the "load full" button --- #}
     <div class="row gapped muted small" style="flex-shrink: 0;">
         <p>
             Showing {{ '{:,}'.format(data|length) }} records
@@ -38,32 +38,12 @@
             {% endif %}
         </p>
 
-        <div class="push-right">
-            {% if metadata.get('total_rows') is none %}
-                
-                {# Peek preview #}
-                <button id="btn-load-full" class="btn badge primary small push-right">
-                    PREVIEW (Click to load full)
-                </button>
-
-            {% else %}
-                
-                {# Full preview requested #}
-                {% if metadata.get('ram_limit_hit') %}
-                    <div class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
-                        File too large for full preview.
-                    </div>
-                {% endif %}
-
-                {% if metadata.get('ui_limit_hit') %}
-                    {# DOM-truncated preview #}
-                    <div class="badge small info" title="Data truncated to prevent browser performance issues.">
-                        Showing: Top {{ '{:,}'.format(data|length) }}
-                    </div>
-                {% endif %}
-
-            {% endif %}
-        </div>
+        {% if metadata.get('ui_limit_hit') %}
+            {# DOM display cap — distinct from data completeness #}
+            <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
+                Showing: Top {{ '{:,}'.format(data|length) }}
+            </div>
+        {% endif %}
     </div>
 
     {# --- Data viewer --- #}
@@ -131,6 +111,7 @@
         let startCell = null;
         let sel_rows = 0
         let sel_cols = 0
+        let tableActive = false;  // user has clicked into this table (gates Ctrl+A)
 
         // Helper to get row and column index of a TD element
         function getIndices(cell) {
@@ -146,6 +127,7 @@
                 clearSelection();
                 sel_cols = 0;
                 sel_rows = 0;
+                tableActive = false;
             }
         });
 
@@ -154,6 +136,7 @@
             if (!cell) return;
 
             isDragging = true;
+            tableActive = true;
             startCell = getIndices(cell);
 
             // Clear previous selections
@@ -199,7 +182,29 @@
             const selectedCells = table.querySelectorAll('td.selected');
             selectedCells.forEach(cell => cell.classList.remove('selected'));
         }
-        
+
+        // Ctrl+A support to select whole table
+        function selectAll() {
+            clearSelection();
+            const body = table.tBodies[0];
+            if (!body || body.rows.length === 0) return;
+
+            for (const tr of body.rows) {
+                for (const td of tr.cells) td.classList.add('selected');
+            }
+            // select whole table
+            sel_rows = body.rows.length;
+            sel_cols = body.rows[0].cells.length;
+        }
+
+        // If click has activated table, listen for Ctrl+A to select all
+        document.addEventListener('keydown', (event) => {
+            if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') return;
+            if (!tableActive || table.offsetParent === null) return;
+            event.preventDefault();
+            selectAll();
+        });
+
         // Ctrl+C copy support for selected cells
         document.addEventListener('copy', (event) => {
             // Ignore if no cells selected or table 'display: none;''

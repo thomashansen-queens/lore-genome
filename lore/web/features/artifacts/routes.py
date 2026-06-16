@@ -338,7 +338,7 @@ def api_explore_data(
 
         # 4. Truncate for display
         display_limit = s.runtime.settings.explore_display_limit or _DEFAULT_EXPLORE_DISPLAY_LIMIT
-        is_truncated = filtered_row_count > display_limit
+        ui_limit_hit = filtered_row_count > display_limit
         df_display = df.head(display_limit)
 
         display_records = df_display.to_dict(orient="records")
@@ -348,7 +348,8 @@ def api_explore_data(
             "columns": columns,
             "total_rows": total_rows,
             "filtered_rows": filtered_row_count,
-            "is_truncated": is_truncated,
+            # The viewer (table.html) and the preview path both key off ui_limit_hit
+            "ui_limit_hit": ui_limit_hit,
             "numeric_maxes": numeric_maxes,
             **reader.get_base_metadata(),
         }
