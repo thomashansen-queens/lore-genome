@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 
+from lore.core.io import TextReader
 from lore.core.tasks import AdapterConfig
 from lore.core.io import get_reader_for
 from lore.core.utils import filter_and_sort

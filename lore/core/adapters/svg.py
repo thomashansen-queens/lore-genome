@@ -64,6 +64,8 @@ class SvgAdapter(BaseAdapter):
         # 3. Return the Standardized Payload
         return AdapterPreview(
             data=raw_data,
+            view_mode="svg",
+            adapter_name="SvgAdapter",
             metadata=final_metadata
         )
 
