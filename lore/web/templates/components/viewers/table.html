@@ -205,35 +205,45 @@
             selectAll();
         });
 
-        // Ctrl+C copy support for selected cells
-        document.addEventListener('copy', (event) => {
-            // Ignore if no cells selected or table 'display: none;''
-            if (sel_cols === 0 || table.offsetParent === null) return;
-            // Prevent the default copy action
-            event.preventDefault(); 
-
+        // Build TSV for the current selection, optionally including headers
+        function buildSelectionTSV(includeHeaders) {
             const cells = table.querySelectorAll('td.selected');
             const out = [];
 
-            // Header row for the selected columns
-            // Maps cellIndex 1:1 to matching <th> element
-            const headerCells = table.tHead ? table.tHead.rows[0].cells : [];
-            const header = [];
-            for (let c = 0; c < sel_cols; c++) {
-                const th = headerCells[cells[c].cellIndex];
-                header.push(th ? th.textContent.replace(/[▲▼]/g, '').trim() : '');
+            if (includeHeaders) {
+                const headerCells = table.tHead ? table.tHead.rows[0].cells : [];
+                const header = [];
+                for (let c = 0; c < sel_cols; c++) {
+                    const th = headerCells[cells[c].cellIndex];
+                    header.push(th ? th.textContent.replace(/[▲▼]/g, '').trim() : '');
+                }
+                out.push(header.join('\t'));
             }
-            out.push(header.join('\t'));
 
             for (let r = 0; r < sel_rows; r++) {
-                let row = [];
-
+                const row = [];
                 for (let c = 0; c < sel_cols; c++) {
                     row.push(cells[r * sel_cols + c].innerText.trim());
                 }
                 out.push(row.join('\t'));  // TSV format for clipboard into Excel etc.
             }
-            event.clipboardData.setData('text/plain', out.join('\n'));
+            return out.join('\n');
+        }
+
+        // Ctrl+C: copy the selected cells (no headers).
+        document.addEventListener('copy', (event) => {
+            // Ignore if no cells selected or table 'display: none;''
+            if (sel_cols === 0 || table.offsetParent === null) return;
+            event.preventDefault();
+            event.clipboardData.setData('text/plain', buildSelectionTSV(false));
+        });
+
+        // Ctrl+Shift+C: copy *with* headers. Not a native copy command, so use keydown
+        document.addEventListener('keydown', (event) => {
+            if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.key.toLowerCase() !== 'c') return;
+            if (sel_cols === 0 || table.offsetParent === null) return;
+            event.preventDefault();
+            navigator.clipboard.writeText(buildSelectionTSV(true));
         });
 
         // "Copy preview" button support
