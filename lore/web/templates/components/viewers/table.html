@@ -215,6 +215,16 @@
             const cells = table.querySelectorAll('td.selected');
             const out = [];
 
+            // Header row for the selected columns
+            // Maps cellIndex 1:1 to matching <th> element
+            const headerCells = table.tHead ? table.tHead.rows[0].cells : [];
+            const header = [];
+            for (let c = 0; c < sel_cols; c++) {
+                const th = headerCells[cells[c].cellIndex];
+                header.push(th ? th.textContent.replace(/[▲▼]/g, '').trim() : '');
+            }
+            out.push(header.join('\t'));
+
             for (let r = 0; r < sel_rows; r++) {
                 let row = [];
 
