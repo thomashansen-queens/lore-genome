@@ -50,7 +50,7 @@ class Inputs:
 
 class Outputs:
     fasta = lore.TaskOutput(
-        data_type="fasta",
+        data_type="protein_fasta",
         label="Protein FASTA",
         description="A simplified FASTA file of just WP protein accessions and their associated sequences.",
         is_primary=True,
@@ -85,7 +85,7 @@ def wp_to_fasta(
             has_api_key = True
         
     acc_list = re.split(r"[,\s]+", accessions)
-    out_path = ctx.get_temp_path("wp_protein.FASTA")
+    out_path = ctx.get_temp_path("wp_protein.faa")
     all_matches = pd.DataFrame()
     
     if table:
