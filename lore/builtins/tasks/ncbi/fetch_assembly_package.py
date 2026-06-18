@@ -56,22 +56,31 @@ class NcbiAssemblyPackageInputs:
     fetch_limit = lore.ValueInput(
         int | None,
         default=None,
-        description="Maximum number of assembly packages to fetch. Stop fetching after this number. If None, fetch all available.",
+        description=(
+            "Maximum number of assembly packages to fetch. Stop fetching after "
+            "this number. If None, fetch all available."
+        ),
         label="Fetch limit",
     )
-    save_map = lore.ValueInput(
-        bool,
-        default=False,
-        description="Whether to save a mapping of genome accessions to the protein "
-        "accessions that were fetched for them. This is useful for downstream analysis "
-        "to know which proteins came from which genomes. Not needed if you also have "
-        "the annotation packages, which contain the same information (and more).",
-        label="Save genome-to-protein map",
-    )
+    # save_map = lore.ValueInput(
+    #     bool,
+    #     default=False,
+    #     description=(
+    #         "Whether to save a mapping of genome accessions to the protein "
+    #         "accessions that were fetched for them. This is useful for downstream analysis "
+    #         "to know which proteins came from which genomes. Not needed if you also have "
+    #         "the annotation packages, which contain the same information (and more)."
+    #     ),
+    #     label="Save genome-to-protein map",
+    # )
     chromosomes = lore.ValueInput(
         list[str] | None,
         default=None,
-        description="The default setting is all chromosome. Specify individual chromosome by string (1,2,MT or chr1,chr2.chrMT). Unplaced sequences are treated like their own chromosome ('Un'). The filter only applies to fasta sequence.",
+        description=(
+            "The default setting is all chromosome. Specify individual chromosome by string "
+             "(1,2,MT or chr1,chr2.chrMT). Unplaced sequences are treated like their own "
+             "chromosome ('Un'). The filter only applies to fasta sequence."
+        ),
         label="Chromosomes to include",
     )
     include_annotation_type = lore.ValueInput(
@@ -152,7 +161,9 @@ def _fetch_assembly_package(api: httpx.Client, accessions: list[str], **kwargs) 
         f"/genome/accession/{','.join(accessions)}/download",
         params=kwargs,
         headers=headers,
+        timeout=120.0,
     )
+    result.raise_for_status()
     return result.read()
 
 
@@ -161,7 +172,6 @@ def _fetch_single_assembly_package(
     ctx: lore.ExecutionContext,
     api: httpx.Client,
     genome_accession: str,
-    extension: str = "faa",
     **kwargs,
 ) -> bytes | None:
     """
@@ -182,6 +192,23 @@ def _fetch_single_assembly_package(
     if not response:
         return None
     return response
+
+
+def _log_bad_response(ctx: lore.ExecutionContext, zip_bytes: bytes, genome_acc: str):
+    """On a failed attempt to read a zip file from the server, log what the server sent."""
+    try:
+        text_response = zip_bytes.decode("utf-8")
+        ctx.logger.error(
+            "Non-zip response for '%s'. Raw response:\n%s",
+            genome_acc,
+            text_response[:3000],
+        )
+    except UnicodeDecodeError:
+        ctx.logger.error(
+            "Non-zip response for '%s'. Hex header:\n%s",
+            genome_acc,
+            zip_bytes[:20].hex(),
+        )
 
 
 @lore.task(
@@ -237,28 +264,33 @@ def fetch_assembly_package(
                     failed_accessions.append(genome_acc)
                     continue
 
-                with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
-                    namelist = z.namelist()
+                try:
+                    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+                        namelist = z.namelist()
 
-                    for req_type in requested_types:
-                        if req_type not in NCBI_TYPE_MAP:
-                            ctx.logger.warning("Requested annotation type %s is not yet implemented.", req_type)
-                            continue
+                        for req_type in requested_types:
+                            if req_type not in NCBI_TYPE_MAP:
+                                ctx.logger.warning("Requested annotation type %s is not yet implemented.", req_type)
+                                continue
 
-                        filename, output_key = NCBI_TYPE_MAP[req_type]
-                        target_files = [f for f in namelist if filename in f]
+                            filename, output_key = NCBI_TYPE_MAP[req_type]
+                            target_files = [f for f in namelist if filename in f]
 
-                        for target_file in target_files:
-                            with z.open(target_file) as f:
-                                content = f.read()
-                                safe_name = f"{genome_acc}_{filename}"
+                            for target_file in target_files:
+                                with z.open(target_file) as f:
+                                    content = f.read()
+                                    safe_name = f"{genome_acc}_{filename}"
 
-                                ctx.materialize_content(
-                                    content=content,
-                                    output_key=output_key,
-                                    name=safe_name,
-                                    extension=filename.split(".")[-1],
-                                )
+                                    ctx.materialize_content(
+                                        content=content,
+                                        output_key=output_key,
+                                        name=safe_name,
+                                        extension=filename.split(".")[-1],
+                                    )
+                except zipfile.BadZipFile:
+                    _log_bad_response(ctx, zip_bytes, genome_acc)
+                    failed_accessions.append(genome_acc)
+                    continue
 
             except Exception as e:
                 ctx.logger.error("Failed to process %s: %s", genome_acc, e, exc_info=True)

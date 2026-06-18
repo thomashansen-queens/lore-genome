@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import httpx
 from importlib.metadata import version
 
-NCBI_DATASETS_BASE_URL = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha"
+NCBI_DATASETS_BASE_URL = "https://api.ncbi.nlm.nih.gov/datasets/v2"
 
 
 @contextmanager
