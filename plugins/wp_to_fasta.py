@@ -19,7 +19,7 @@ class Inputs:
     table = lore.ArtifactInput(
         label="Protein Accession and Sequence Table",
         accepted_data=["clustered_summary", "csv", "tsv"],
-        select="single",
+        select="optional",
         load_as="path",
         default="",
         description="A table containing at least two columns: one with the WP accessions and one with the corresponding protein sequences. The column names or indices can be specified in the next two fields.\nThis can be left empty if 'Index from NCBI' is set to True.",
