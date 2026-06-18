@@ -25,7 +25,7 @@ class SraToolsConfig:
         label="Path to 'sratoolkit' binaries",
         description="Provide the full path to the the SRA Toolkit binaries (e.g. C:/sratoolkit.3.0.0-win64/bin)",
     )
-    temp_dir = lore.ValueInput(
+    cache_dir = lore.ValueInput(
         str | None,
         default=None,
         examples=["Leave blank to use LoRē's default cache directory"],

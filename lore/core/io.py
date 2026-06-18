@@ -11,7 +11,7 @@ ACCEPTED_BINARY_FILES = {"bam", "vcf", "hdf5", "h5"}
 ACCEPTED_IMAGE_FILES = {"png", "jpg", "jpeg", "svg"}
 ACCEPTED_TABLE_FILES = {"csv", "tsv", "parquet", "jsonl", "json"}
 ACCEPTED_TEXT_FILES = {
-    "fasta", "faa", "fa", "fastq", "fq",
+    "fasta", "faa", "fa", "fna", "fastq", "fq",
     "pdb", "aln", "txt", "log", "md", "info", "nfo", "raw",
 }
 

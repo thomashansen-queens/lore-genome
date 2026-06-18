@@ -23,12 +23,12 @@ class ESearchInputs:
         label="Database",
         description="The NCBI Entrez database to search.",
     )
-    
+
 
 class ESearchOutputs:
     """Outputs for ESearch Task"""
     search_results = lore.TaskOutput(
-        data_type="entrez_uid",
+        data_type="uid",
         label="Search Results",
         is_primary=True,
     )
