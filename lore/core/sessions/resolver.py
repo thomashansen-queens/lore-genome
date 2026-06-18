@@ -2,12 +2,15 @@
 Resolves inputs and outputs from Tasks
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, TYPE_CHECKING
 from pydantic import BaseModel
 
 from lore.core.artifacts import BaseArtifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
-from lore.core.tasks import task_registry
+from lore.core.tasks import Cardinality, task_registry, TaskStatus
+
+if TYPE_CHECKING:
+    from .session import Session
 
 
 class ResolvedField(BaseModel):
@@ -33,14 +36,14 @@ class ResolvedField(BaseModel):
     ui_label: str | None = None
 
 
-def _format_reference_label(session, binding: ReferenceBinding) -> str:
+def _format_reference_label(session: "Session", binding: ReferenceBinding) -> str:
     """Helper to generate a human-readable label for a ReferenceBinding."""
     upstream_task = session.get_task(binding.source_id)
     task_name = upstream_task.name if upstream_task else binding.source_id[:8]
     return f"{task_name} ({binding.output_key})"
 
 
-def resolve_task_inputs(session, task_id: str) -> dict[str, ResolvedField]:
+def resolve_task_inputs(session: "Session", task_id: str) -> dict[str, ResolvedField]:
     """
     Resolves Task Inputs for UI presentation.
     Performs JIT resolution on ReferenceBindings to peek at upstream data.
@@ -58,8 +61,10 @@ def resolve_task_inputs(session, task_id: str) -> dict[str, ResolvedField]:
     for key, bindings in task.inputs.items():
         _, extra = task_def.field_meta(key)
 
+        # field_meta stores cardinality as its string value, so coerce back to
+        # the enum (mirrors the materializer) before reading allows_multiple.
         cardinality = extra.get("cardinality")
-        allows_multiple = cardinality.allows_multiple if cardinality is not None else False
+        allows_multiple = Cardinality(cardinality).allows_multiple if cardinality else False
 
         resolved_list = []
         is_ready = True
@@ -73,10 +78,10 @@ def resolve_task_inputs(session, task_id: str) -> dict[str, ResolvedField]:
                 binding_type = "reference"
                 upstream_task = session.get_task(binding.source_id)
                 ui_label = _format_reference_label(session, binding)
-                
-                if upstream_task and upstream_task.status == "COMPLETED":
+
+                if upstream_task and upstream_task.status == TaskStatus.COMPLETED:
                     # Peek: Look at the data from the completed upstream task
-                    peek_values = upstream_task.get(binding.output_key, [])
+                    peek_values = upstream_task.outputs.get(binding.output_key, [])
                     if extra.get("is_artifact"):
                         resolved_list.extend([session.get_artifact(aid) for aid in peek_values])
                     else:
@@ -126,7 +131,7 @@ def resolve_task_inputs(session, task_id: str) -> dict[str, ResolvedField]:
     return resolved_inputs
 
 
-def resolve_task_outputs(session, task_id: str) -> dict[str, ResolvedField]:
+def resolve_task_outputs(session: "Session", task_id: str) -> dict[str, ResolvedField]:
     """
     Resolves Task outputs into standard ResolvedFields for UI presentation.
     """
