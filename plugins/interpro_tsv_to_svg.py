@@ -10,19 +10,18 @@ import csv
 
 class InterproVizInputs:
     """Inputs for InterproScan TSV to SVG visualization Task"""
-    source_tsv = lore.ArtifactInput(
+    source_tsvs = lore.ArtifactInput(
         label="InterproScan TSV",
         accepted_data=["interpro_tsv", "tsv"],
-        select="single",
+        select="multiple",
         load_as="path",
     )
     
-    source_fasta = lore.ArtifactInput(
+    source_fastas = lore.ArtifactInput(
         label="Protein FASTA",
         accepted_data=["protein_fasta", "fasta"],
-        select="single",
+        select="optional_multiple",
         load_as="path",
-        default="",
         description="The FASTA you inputted into InterProScan. Needed to be able to interactively access the protein sequences from the visualized domains."
     )
     
@@ -76,9 +75,9 @@ TSV_HEADER_INDEX = {
 }
     
 # Helpers
-def parse_interpro_tsv(tsv_path: Path, undefined_domain_size=20):
+def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
     """
-    Parses InterproScan TSV file into a list of dictionaries containing domain annotations.
+    Parses a list of InterproScan TSV files into a list of dictionaries containing domain annotations.
     
     Return format:
     [
@@ -105,87 +104,91 @@ def parse_interpro_tsv(tsv_path: Path, undefined_domain_size=20):
     
     parsed_result = []
     prev_protein = None
-    with open(tsv_path, 'r', newline='') as f:
-        reader = csv.reader(f, delimiter='\t')
-        
-        for row in reader:
-            if row[0].startswith("#"):  # Skip comment lines
-                continue
+    for path in tsv_paths:
+        tsv_path = Path(path)
+        with open(tsv_path, 'r', newline='') as f:
+            reader = csv.reader(f, delimiter='\t')
             
-            entry = dict()
-            
-            protein_accession = row[TSV_HEADER_INDEX["protein_accession"]]
-            
-            # Tooltip text is displayed in the order of these entries
-            entry["interpro_domain"] = row[TSV_HEADER_INDEX["interpro_domain"]]
-            entry["interpro_accession"] = row[TSV_HEADER_INDEX["interpro_accession"]]
-            entry["signature_domain"] = row[TSV_HEADER_INDEX["signature_domain"]]
-            entry["signature_accession"] = row[TSV_HEADER_INDEX["signature_accession"]]
-            entry["source_database"] = row[TSV_HEADER_INDEX["source_database"]]
-            entry["start"] = int(row[TSV_HEADER_INDEX["start"]])
-            entry["end"] = int(row[TSV_HEADER_INDEX["end"]])
-            entry["total_length"] = entry["end"] - entry["start"] + 1
-            entry["e_value"] = row[TSV_HEADER_INDEX["e_value"]]
-            
-            if prev_protein != protein_accession:
-                protein_length = int(row[TSV_HEADER_INDEX["protein_length"]])
-                if prev_protein is not None:
-                    # Identify undefined regions by gaps in between labelled regions
-                    sorted_domains = sorted(curr_entry["domains"], key=lambda x: x["start"])
-                    
-                    curr_entry["domains"] = sorted_domains
-                    left = {"end": 0}
-                    domain_qty = len(sorted_domains) + 1
-                    for i in range(domain_qty):
-                        if i == domain_qty:
-                            right = {"start": protein_length + 1, "end": protein_length + 1}
-                        else:
-                            right = sorted_domains[i] 
-                        diff = right["start"] - left["end"] + 1
-                        if diff >= undefined_domain_size:
-                            sorted_domains.append({
-                                "domain": "UNDEFINED REGION", 
-                                "start": left["end"] + 1,
-                                "end": right["start"] - 1,
-                                "total_length": right["start"] - left["end"] - 1
-                            })
-                        if left["end"] < right["end"]:
-                            left = right
-                        
-                        
-                    parsed_result.append(curr_entry)
+            for row in reader:
+                if row[0].startswith("#"):  # Skip comment lines
+                    continue
                 
-                prev_protein = protein_accession
-                curr_entry = {
-                    "protein_accession": protein_accession, 
-                    "protein_length": protein_length, 
-                    "domains": []
-                }
-            
-            curr_entry["domains"].append(entry)
+                entry = dict()
+                
+                protein_accession = row[TSV_HEADER_INDEX["protein_accession"]]
+                
+                # Tooltip text is displayed in the order of these entries
+                entry["interpro_domain"] = row[TSV_HEADER_INDEX["interpro_domain"]]
+                entry["interpro_accession"] = row[TSV_HEADER_INDEX["interpro_accession"]]
+                entry["signature_domain"] = row[TSV_HEADER_INDEX["signature_domain"]]
+                entry["signature_accession"] = row[TSV_HEADER_INDEX["signature_accession"]]
+                entry["source_database"] = row[TSV_HEADER_INDEX["source_database"]]
+                entry["start"] = int(row[TSV_HEADER_INDEX["start"]])
+                entry["end"] = int(row[TSV_HEADER_INDEX["end"]])
+                entry["total_length"] = entry["end"] - entry["start"] + 1
+                entry["e_value"] = row[TSV_HEADER_INDEX["e_value"]]
+                
+                if prev_protein != protein_accession:
+                    protein_length = int(row[TSV_HEADER_INDEX["protein_length"]])
+                    if prev_protein is not None:
+                        # Identify undefined regions by gaps in between labelled regions
+                        sorted_domains = sorted(curr_entry["domains"], key=lambda x: x["start"])
+                        
+                        curr_entry["domains"] = sorted_domains
+                        left = {"end": 0}
+                        domain_qty = len(sorted_domains) + 1
+                        for i in range(domain_qty):
+                            if i == domain_qty - 1:
+                                right = {"start": protein_length + 1, "end": protein_length + 1}
+                            else:
+                                right = sorted_domains[i] 
+                            diff = right["start"] - left["end"] + 1
+                            if diff >= undefined_domain_size:
+                                sorted_domains.append({
+                                    "domain": "UNDEFINED REGION", 
+                                    "start": left["end"] + 1,
+                                    "end": right["start"] - 1,
+                                    "total_length": right["start"] - left["end"] - 1
+                                })
+                            if left["end"] < right["end"]:
+                                left = right
+                            
+                            
+                        parsed_result.append(curr_entry)
+                    
+                    prev_protein = protein_accession
+                    curr_entry = {
+                        "protein_accession": protein_accession, 
+                        "protein_length": protein_length, 
+                        "domains": []
+                    }
+                
+                curr_entry["domains"].append(entry)
     
     return parsed_result
 
-def parse_fasta(fasta_path: Path):
-    '''Parses a fasta file into a dictionary containing {accession: sequence} key-value pairs.'''
+def parse_fastas(fasta_paths: list[str]):
+    '''Parses a list of fasta files into a dictionary containing {accession: sequence} key-value pairs.'''
     proteins = dict()
-    with open(fasta_path, "r") as f:
-        line = f.readline()
-        accession = None
-        sequence_fragments = []
-        while line:
-            if line[0] == "#":
-                continue
-            elif line[0] == ">":
-                if accession:
-                    proteins[accession] = "".join(sequence_fragments)
-                sequence_fragments = []
-                accession = line[1:].split()[0]
-            else:
-                sequence_fragments.append(line)
-            line = f.readline() 
-    if accession:
-        proteins[accession] = "".join(sequence_fragments)
+    for path in fasta_paths:
+        fasta_path = Path(path)
+        with open(fasta_path, "r") as f:
+            line = f.readline()
+            accession = None
+            sequence_fragments = []
+            while line:
+                if line[0] == "#":
+                    continue
+                elif line[0] == ">":
+                    if accession:
+                        proteins[accession] = "".join(sequence_fragments)
+                    sequence_fragments = []
+                    accession = line[1:].split()[0]
+                else:
+                    sequence_fragments.append(line)
+                line = f.readline() 
+        if accession:
+            proteins[accession] = "".join(sequence_fragments)
     return proteins
     
 # --- Main Task ---
@@ -201,18 +204,16 @@ def parse_fasta(fasta_path: Path):
 )
 def interpro_viz_handler(
     ctx: lore.ExecutionContext,
-    source_tsv: str,
+    source_tsvs: list[str],
     undefined_domain_size: int,
     residue_interval: int,
     horizontal_scale: float,
     hide_context_in_tooltip: bool,
-    source_fasta: str = "",
+    source_fastas: list[str],
 ):
-    parsed_data = parse_interpro_tsv(Path(source_tsv), undefined_domain_size)
-    if not source_fasta == "":
-        proteins = parse_fasta(Path(source_fasta))
-    else:
-        proteins = dict()
+    """Visualizes the TSV output of InterProScan, allowing for multiple proteins and their domains to be visually compared and specific domain sequences to be extracted for further analysis."""
+    parsed_data = parse_interpro_tsvs(source_tsvs, undefined_domain_size)
+    proteins = parse_fastas(source_fastas)
     
     config = SVG_CONFIG.copy()
     row_height = config["row_height"]

@@ -446,11 +446,14 @@ def api_task_preview(
                 )
                 continue
     
+            config = payload.task_config.adapter.model_dump()
+            config["ext"] = ext
+    
             # C. Adapt the raw output data for frontend preview
             adapted_previews[key] = adapter.preview(
                 raw_data=output.data,
                 io_metadata=output.io_metadata,
-                config=payload.task_config.adapter.model_dump(),
+                config=config,
             )
 
         # 5. Render the preview with Jinja
