@@ -12,7 +12,7 @@ from typing import Any, TYPE_CHECKING
 
 from .context import ExecutionContext
 from .materializer import materialize_task_inputs
-from lore.core.io import get_reader_for
+from lore.core.readers import get_reader_for
 from lore.core.tasks import AdapterStrategy, Task
 
 if TYPE_CHECKING:
