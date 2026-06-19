@@ -187,6 +187,7 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
     # Identify undefined regions by gaps in-between labelled regions
     for protein in parsed_result.values():
         sorted_domains = sorted(protein["domains"], key=lambda x: x["start"])
+        protein_length = protein["protein_length"]
         
         protein["domains"] = sorted_domains
         left = {"end": 0}
