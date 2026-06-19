@@ -117,6 +117,8 @@
                     element.classList.remove("selected");
                 });
                 selected = [];
+                selected_min = Infinity;
+                selected_max = 0;
             }
 
             svg.addEventListener("click", event => {
@@ -168,9 +170,11 @@
                     placeTooltip(event.clientX, event.clientY);
                 }
                 else {
-                    // Hide the tooltip if the outside is clicked
-                    clearSelected();
-                    tooltip.style.display = "none";
+                    if (!event.ctrlKey) {
+                        // Hide the tooltip if the outside is clicked
+                        clearSelected();
+                        tooltip.style.display = "none";
+                    }
                 }
             });
 
