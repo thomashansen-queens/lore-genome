@@ -124,8 +124,9 @@ def test_run_preview_worker_isolation(temp_runtime, closed_session, dummy_task_p
 
     # The input was a literal (consumed in full) and the tiny text output was
     # read to EOF, so this preview represents the complete result.
-    assert primary_data.io_metadata["file_eof_hit"] is True
-    assert primary_data.io_metadata.get("total_rows") is None
+    assert primary_data.result_complete is True
+    assert primary_data.display_complete is True
+    assert primary_data.truncation_reason is None
 
     with temp_runtime.open_session(closed_session.id, read_only=True) as s:
         assert len(s.list_tasks()) == initial_task_count
@@ -187,6 +188,10 @@ def test_run_preview_worker_propagates_input_truncation(
 
     # Handler only saw the peeked slice...
     assert len(out.data) == peek_limit
-    # ...so the result is partial despite the output file being read to EOF.
-    assert out.io_metadata["file_eof_hit"] is False
+    # ...so the RESULT is a sample, even though the small output file was itself
+    # read to EOF (the display is complete).
+    assert out.result_complete is False
+    assert out.display_complete is True
+    assert out.truncation_reason == "sampled"
+    # The output's own row count isn't the result's total, so total_rows is unknown
     assert out.io_metadata["total_rows"] is None

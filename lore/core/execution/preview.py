@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 from pydantic import BaseModel
 from pydantic.fields import Field
-from typing import Any, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 
 from .context import ExecutionContext
 from .materializer import materialize_task_inputs
@@ -20,9 +20,21 @@ if TYPE_CHECKING:
 
 
 class PreviewOutput(BaseModel):
-    """Structured output for a single previewed output slot."""
+    """
+    Structured output for a single previewed output slot.
+    - data: the raw output data, whatever was returned by the handler
+    - data_type: the semantic data type. TODO: Note to self, Is this actually the semantic type or the view type?
+    - result_complete: were the inputs to the handler fully loaded? (false if 'peeked' or hit RAM ceiling)
+    - display_complete: was the output itself fully loaded? (false if truncated for display or hit RAM ceiling)
+    - truncation_reason: 'sampled' if intentional, 'capped' if RAM ceiling, null if complete.
+    - io_metadata: any relevant metadata from the materialization layer (file format, row count, etc)
+    If truncation_reason is 'sampled', the UI can offer an escalation: "Show full result"
+    """
     data: Any
     data_type: str
+    result_complete: bool = True
+    display_complete: bool = True
+    truncation_reason: Literal["sampled", "capped"] | None = None
     io_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -94,23 +106,24 @@ class PreviewContext(ExecutionContext):
         if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
             try:
                 raw_data = reader.read_full(config=adapter_config)
-                io_meta = {"file_eof_hit": True, "io_strategy": "Full load"}
+                io_meta = {"io_strategy": "Full load", "file_eof_hit": True}
             except NotImplementedError:
                 raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
         else:
             raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
-            # 'file_eof_hit' means 'is this the complete result", which is only true
-            # when the the inputs were read to EOF (not peeked) and the output was
-            # read to EOF (not truncated)
-            output_eof_hit = io_meta.get("file_eof_hit", True)
-            io_meta["file_eof_hit"] = output_eof_hit and self.inputs_complete
-            if not io_meta["file_eof_hit"]:
-                io_meta["total_rows"] = None
+
+        # io_meta["file_eof_hit"] now means exactly what the reader reports: did
+        # the OUTPUT read reach EOF (the display axis). The result axis — were the
+        # inputs delivered in full? — is carried separately by the worker; the two
+        # are no longer fused. When the result is a sample, the output's own row
+        # count is not the result's total, so don't present it as one.
+        if not self.inputs_complete:
+            io_meta["total_rows"] = None
 
         io_meta["extension"] = source_path.suffix.lstrip(".")
         io_meta["data_type"] = data_type
 
-        # 3. Store in ephemeral results object
+        # 4. Store in ephemeral results object
         self.results.add(output_key, (raw_data, io_meta))
         self.logger.debug("Preview intercepted file materialization for slot: %s", output_key)
 
@@ -167,15 +180,17 @@ def run_preview_worker(
             strategy=AdapterStrategy(strategy),
         )
 
-    # An input was peeked (delivered partially) if any of its reads did not hit
-    # EOF. If so, every output derived from it is a partial preview.
-    inputs_complete = all(
-        meta.get("file_eof_hit", True)
+    # 4. Completeness check. Was every input delivered to the handler in full? If not, was
+    # it an intentional 'peek' (escalation works) or a hard RAM ceiling (it won't)?
+    input_metas = [
+        meta
         for slot_metas in materialized.io_metadata.values()
         for meta in slot_metas
-    )
+    ]
+    inputs_complete = all(meta.get("file_eof_hit", True) for meta in input_metas)
+    input_capped = any(meta.get("ram_limit_hit", False) for meta in input_metas)
 
-    # 4. Initialize preview payload
+    # 5. Initialize preview payload
     preview = PreviewPayload(
         task_key=task_key,
         is_dry_run=not task_def.preview_mode.executes_handler,
@@ -183,11 +198,11 @@ def run_preview_worker(
         execution_config=ephemeral_task.exec_config,
     )
 
-    # 5. "Dry Run" logic: No handler execution, just return the validated config
+    # 6. "Check" logic: No handler execution, just return the validated config
     if not task_def.preview_mode.executes_handler:
         return preview
 
-    # 6. Execute handler
+    # 7. Execute handler
     ctx = PreviewContext(
             runtime=rt,
             session_id=session_id,
@@ -199,7 +214,7 @@ def run_preview_worker(
     try:
         task_def.handler(ctx, **materialized.data)
 
-        # 7. Extract preview outputs from the ephemeral context
+        # 8. Extract preview outputs from the ephemeral context
         for key in ctx.results.output_keys:
             data_list = ctx.results[key]
             if not data_list:
@@ -219,9 +234,24 @@ def run_preview_worker(
                 _, field_extra = task_def.field_meta(key, is_output=True)
                 data_type = field_extra.get("data_type", "unknown")
 
+            # Full result is always returned from the worker, but the UI may truncate for display
+            output_eof = io_meta.get("file_eof_hit", True)
+            output_ram = io_meta.get("ram_limit_hit", False)
+            display_complete = output_eof and not output_ram
+
+            if not inputs_complete:
+                truncation_reason = "capped" if input_capped else "sampled"
+            elif not display_complete:
+                truncation_reason = "capped"
+            else:
+                truncation_reason = None
+
             preview.output_previews[key] = PreviewOutput(
                 data=data,
                 data_type=data_type,
+                result_complete=inputs_complete,
+                display_complete=display_complete,
+                truncation_reason=truncation_reason,
                 io_metadata=io_meta,
             )
 

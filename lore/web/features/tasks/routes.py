@@ -447,11 +447,23 @@ def api_task_preview(
                 continue
     
             # C. Adapt the raw output data for frontend preview
-            adapted_previews[key] = adapter.preview(
+            adapted = adapter.preview(
                 raw_data=output.data,
                 io_metadata=output.io_metadata,
                 config=payload.task_config.adapter.model_dump(),
             )
+
+            # D. Finalize display by checking if the adapter hit its preview limit
+            display_complete = output.display_complete and not adapted.metadata.get("ui_limit_hit", False)
+            truncation_reason = output.truncation_reason
+            if output.result_complete and not display_complete:
+                truncation_reason = "capped"
+
+            adapted.metadata["result_complete"] = output.result_complete
+            adapted.metadata["display_complete"] = display_complete
+            adapted.metadata["truncation_reason"] = truncation_reason
+
+            adapted_previews[key] = adapted
 
         # 5. Render the preview with Jinja
         return templates.TemplateResponse(
