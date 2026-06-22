@@ -169,7 +169,7 @@ def run_preview_worker(
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
     adapter_config = ephemeral_task.exec_config.get("adapter", {})
-    strategy = adapter_config.get("strategy", AdapterStrategy.PEEK)
+    strategy = AdapterStrategy.FULL
 
     # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:

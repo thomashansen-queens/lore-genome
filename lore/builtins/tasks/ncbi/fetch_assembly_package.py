@@ -225,7 +225,6 @@ def fetch_assembly_package(
     genome_accession: list[str],
     fetch_limit: int | None = None,
     extract_catalog: bool = False,
-    save_map: bool = False,  # TODO: Maybe implement this if it's useful to users?
     **kwargs,
 ):
     """
