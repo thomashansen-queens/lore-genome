@@ -1,15 +1,20 @@
-{% set data = data | default({}) %}
-{% set metadata = metadata | default({}) %}
+{% set data = data | default("") %}
+{% set metadata = metadata | default({}, true) %}
 
 <div class="column">
     
-    {# --- Preview info (display-level only; wrapper renders the "load full" button) ---
-       Display axis: only a truncated render needs the "showing top N" note. #}
-    {% set display_complete = metadata.get("display_complete", True) %}
+    {# --- Preview info (display-level only; wrapper renders the "load full" button) --- #}
+    {% set display_complete = metadata.get("display_complete", true) %}
     {% if not display_complete and metadata.get("total_lines_previewed") %}
-    <div style="flex-shrink: 0; min-height: 0; margin-bottom: var(--spacing-sm);">
-        <span class="badge small info push-right">Showing top: {{ metadata.get("total_lines_previewed") }} lines</span>
-    </div>
+
+        {% set previewed = '{:,}'.format(metadata.get("total_lines_previewed")) %}
+        {% set total_rows = metadata.get("total_rows") %}
+        <div style="flex-shrink: 0; min-height: 0; margin-bottom: var(--spacing-sm);">
+            <span class="badge small info push-right">
+                Showing top: {{ previewed }}{% if total_rows is not none %} of {{ '{:,}'.format(total_rows) }}{% endif %} lines
+            </span>
+        </div>
+
     {% endif %}
 
     <div class="scroll-area" data-copyable>

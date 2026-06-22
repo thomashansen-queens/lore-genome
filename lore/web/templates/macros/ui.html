@@ -132,28 +132,31 @@
 </form>
 {% endmacro %}
 
-{# === Preview truncation notice ===
-   Used in viewer wrappers (preview / explore) to indicate data completeness.
-   - ram_limit_hit: a full load was attempted but cut off by RAM — no point
-     offering "load full"; just show a warning
+{# === Preview truncation notice === #}
+{# Usage: {{ ui.truncation_notice(metadata, load_url=load_full_url) }}
+    Used n viewer wrappers (preview / explore) to indicate data completeness.
+   - ram_limit_hit: ful load hit RAM ceiling — no point offering "load full"
    - not file_eof_hit: only a peek was loaded — offer to load the full data.
 
    The load-full button uses a class (not an id) so a multi-output preview can
-   show one per output tab; the wrapper's own JS wires the click. #}
-{% macro truncation_notice(metadata) %}
-    {# Result axis: was the shown result computed from ALL the input data? #}
+   show one per output tab. If `load_url` is given, the button escalates via an
+   htmx DOM swap (explore's non-table viewers); otherwise the host page's JS
+   wires the `.btn-load-full` click (preview, explore table). #}
+{% macro truncation_notice(metadata, load_url=None) %}
+    {# Completeness: is the shown data computed from ALL the input data? (for previews) #}
     {% set result_complete = metadata.get('result_complete', True) %}
     {% set is_capped = metadata.get('truncation_reason') == 'capped' %}
     {% if not result_complete %}
         {% if is_capped %}
-            {# Hard ceiling — escalating to a full load won't help #}
+            {# RAM ceiling: escalating to a full load won't help #}
             <span class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
                 File too large for full preview
             </span>
         {% else %}
-            {# Intentional sample — offer the escalation to a full computation #}
+            {# Intentional sample: offer the escalation to a full computation #}
             <button type="button" style="display: block; width: fit-content;"
-                class="btn-load-full btn badge primary small">
+                class="btn-load-full btn badge primary small"
+                {% if load_url %}hx-get="{{ load_url }}" hx-target="#viewer-target" hx-swap="innerHTML" hx-indicator="#preview-loader"{% endif %}>
                 PREVIEW (Click to load full)
             </button>
         {% endif %}

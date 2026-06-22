@@ -19,24 +19,42 @@ class BamReader(lore.BaseReader):
     def stream(self, config: dict | None = None, **kwargs):
         """Memory-safe generator. Yields coverage pileup or raw reads"""
         io_config = {**(config or {}), **kwargs}
-        mode = io_config.get("mode", "coverage")  # 'coverage' or 'reads'
+        mode = io_config.get("mode", "reads")  # 'coverage' or 'reads' (default)
 
         bam = pysam.AlignmentFile(self.path, "rb")
 
-        # Get a target contig/chromosome to pile up on; default to first reference seuqence
-        contig = io_config.get("contig", bam.references[0])
+        # Get a target contig/chromosome to pile up on; default to first reference sequence
+        contig = io_config.get("contig")
         start = io_config.get("start")
         stop = io_config.get("stop")
 
         if mode == "coverage":
-            for pileupcolumn in bam.pileup(contig, start=start, stop=stop, truncate=True):
+            if not bam.has_index():
+                raise RuntimeError(
+                    f"Cannot compute coverage: BAM index (.bai) is missing "
+                    f" or not adjacent to BAM file: '{self.path}'"
+                )
+
+            target_contig = contig or bam.references[0]
+
+            for pileupcolumn in bam.pileup(target_contig, start=start, stop=stop, truncate=True):
                 yield {
                     "position": pileupcolumn.reference_pos,
-                    "depth": pileupcolumn.get_num_aligned,
+                    "depth": pileupcolumn.get_num_aligned(),
                 }
 
         elif mode == "reads":
-            for read in bam.fetch(contig, start=start, stop=stop):
+            if contig:
+                if not bam.has_index():
+                    raise RuntimeError(
+                        f"Cannot fetch reads for contig '{contig}': BAM index (.bai) is missing "
+                        f" or not adjacent to BAM file: '{self.path}'"
+                    )
+                read_iterator = bam.fetch(contig, start=start, stop=stop)
+            else:
+                read_iterator = bam.fetch(until_eof=True)
+
+            for read in read_iterator:
                 yield {
                     "id": read.query_name,
                     "contig": read.reference_name,
@@ -54,42 +72,3 @@ class BamReader(lore.BaseReader):
 
         else:
             raise ValueError(f"Unknown BAM streaming mode: {mode}")
-
-    def read_full(self, config: dict | None = None, **kwargs):
-        """Full read into memory. Probably a bad idea for large BAMs"""
-        # re-use preview logic to prevent server crashes
-        io_config = {**(config or {}), **kwargs}
-        io_config["strategy"] = "full"
-
-        data, _ = self.preview(config=io_config, peek_limit=10_000_000)  # Arbitrary large number
-        return data
-
-    def preview(self, peek_limit: int, config: dict | None = None, **kwargs):
-        """Safely peeks at the top N records or coverage points"""
-        io_config = {**(config or {}), **kwargs}
-        strategy = io_config.get("preview_strategy", "peek")
-
-        data = []
-        rows_read = 0
-        eof_hit = True
-
-        try:
-            for record in self.stream(io_config):
-                data.append(record)
-                rows_read += 1
-
-                if strategy == "peek" and rows_read >= peek_limit:
-                    eof_hit = False
-                    break
-
-        except Exception as e:
-            raise RuntimeError(f"Error while previewing BAM file '{self.path.name}': {e}")
-
-        metadata = self.get_metadata()
-        metadata.update({
-            "io_strategy": f"Preview ({strategy})",
-            "file_eof_hit": eof_hit,
-            "preview_limit": peek_limit,
-            "columns": list(data[0].keys()) if data else [],
-        })
-        return data, metadata

@@ -4,6 +4,11 @@ Core Reader for text-based formats.
 from .base import BaseReader
 from typing import Iterator
 
+TEXT_EXTS = {
+    "fasta", "faa", "fa", "fna", "fastq", "fq",
+    "pdb", "aln", "txt", "log", "md", "info", "nfo", "raw",
+}
+
 
 class TextReader(BaseReader):
     """
@@ -27,32 +32,3 @@ class TextReader(BaseReader):
         """Loads the entire file into memory as a single string."""
         return self.path.read_text(encoding="utf-8", errors="replace")
 
-    def preview(
-        self,
-        peek_limit: int = 100,
-        config: dict | None = None,
-        **kwargs,
-    ) -> tuple[list[str], dict]:
-        """
-        Smart preview: pulls exactly `peek_limit` lines from the stream.
-        """
-        lines = []
-        hit_eof = True
-
-        for i, line in enumerate(self.stream(config)):
-            if i >= peek_limit:
-                hit_eof = False
-                break
-            lines.append(line)
-
-        metadata = self.get_metadata()
-        metadata.update(
-            {
-                "io_strategy": "streamed lines",
-                "file_eof_hit": hit_eof,
-                "preview_limit": peek_limit,
-                "total_lines_previewed": len(lines),
-            }
-        )
-
-        return lines, metadata

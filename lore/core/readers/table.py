@@ -5,6 +5,8 @@ import json
 from typing import Iterator
 from .base import BaseReader
 
+TABLE_EXTS = {"csv", "tsv", "parquet", "jsonl", "json"}
+
 
 class TableReader(BaseReader):
     """
@@ -84,74 +86,3 @@ class TableReader(BaseReader):
             pass  # not JSON, give up
 
         return []
-
-    def preview(
-        self,
-        peek_limit: int = 100,
-        config: dict | None = None,
-        **kwargs,
-    ) -> tuple[list[str | dict], dict]:
-        """
-        Smart preview with graceful monolithic fallback.
-        Returns: tuple[preview_data, preview_metadata]
-        """
-        io_config = {**(config or {}), **kwargs}
-        strategy = io_config.get("strategy", "peek")
-        max_ram_rows = io_config.get("max_ram_rows", 10000)
-        max_ram_bytes = io_config.get("max_ram_bytes", 50 * 1024 * 1024)  # 50 MB default
-
-        data = []
-        eof_hit = True
-        rows_read = 0
-        current_ram_bytes = 0
-        ram_limit_hit = False
-
-        try:
-            for record in self.stream(io_config):
-                rows_read += 1
-
-                if strategy == "peek" and rows_read > peek_limit:
-                    eof_hit = False
-                    break
-
-                if len(data) < max_ram_rows and not ram_limit_hit:
-                    # Some efficiency could be gained here by sampling size, but probably not worth the milliseconds
-                    record_size = len(str(record))
-                    if current_ram_bytes + record_size > max_ram_bytes:
-                        ram_limit_hit = True
-                    else:
-                        data.append(record)
-                        current_ram_bytes += record_size
-
-            io_strategy = f"Streamed ({strategy})"
-            io_total_rows = rows_read if (strategy in ("full", "eager") or eof_hit) else None
-
-        except NotImplementedError:
-            # fallback to monolithic load
-            all_records = self.read_full(io_config)
-            io_total_rows = len(all_records)
-            data = all_records[:max_ram_rows]
-            eof_hit = io_total_rows <= max_ram_rows
-            ram_limit_hit = not eof_hit
-            io_strategy = f"Monolithic fallback ({strategy})"
-
-        metadata = self.get_metadata()
-
-        # CSV/TSV can be headerless, so only assume columns if we have a dict
-        columns = []
-        if data and isinstance(data[0], dict):
-            columns = list(data[0].keys())
-
-        metadata.update(
-            {
-                "io_strategy": io_strategy,
-                "file_eof_hit": eof_hit,
-                "preview_limit": peek_limit if strategy == "peek" else max_ram_rows,
-                "total_rows": io_total_rows,  # Will be None if streamed, which is correct!
-                "columns": columns,
-                "ram_limit_hit": ram_limit_hit,
-                "preview_ram_bytes": current_ram_bytes,
-            }
-        )
-
-        return data, metadata

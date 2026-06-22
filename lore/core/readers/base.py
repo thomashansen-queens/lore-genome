@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
+# Standalone fallback for the preview RAM ceiling.
+# `max_ram_bytes` in config overrides this (sourced from settings.preview_max_ram_bytes)
+DEFAULT_MAX_RAM_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
 class BaseReader(ABC):
     """
     Abstract foundation.
@@ -40,24 +45,110 @@ class BaseReader(ABC):
         """
         pass
 
-    @abstractmethod
     def stream(self, config: dict | None = None, **kwargs) -> Iterator[Any]:
-        """Yields small, memory-safe chunks (lines, dicts, byte-chinks)"""
-        pass
+        """
+        Yield the file's records (lines, dicts, byte-chunks) lazily.
 
-    @abstractmethod
+        By default, raises NotImplementedError so a reader for a monolithic
+        format (e.g. JSON parsed with the standard `json` lib) can leave streaming
+        un-overridden and provide read_full() instead. preview() detects the
+        missing stream method and falls back to the whole-file read automatically.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support streaming; "
+            "implement read_full() instead."
+        )
+
     def read_full(self, config: dict | None = None, **kwargs) -> Any:
-        """Loads the entire file into memory (or raises MemoryError if too big)"""
-        pass
+        """
+        Load the entire file into memory. Defaults to draining stream() iterator.
+        Override for monolithic formats (e.g. a JSON array, an image).
+        """
+        return list(self.stream(config, **kwargs))
 
-    @abstractmethod
-    def preview(self, peek_limit: int, config: dict | None = None, **kwargs) -> tuple[Any, dict]:
+    def _record_size(self, record: Any) -> int:
         """
-        Gets the first `peek_limit` items (lines, dicts, bytes) and metadata about them.
-        Returns: (previewed_data, io_metadata_dict)
-        Subclasses decide if this uses stream() or read_full().
+        Rough in-memory size of one streamed record, used to enforce the preview
+        byte ceiling. Defaults to string length; override for binary records.
         """
-        pass
+        return len(str(record))
+
+    def preview(
+        self,
+        peek_limit: int = 100,
+        config: dict | None = None,
+        **kwargs,
+    ) -> tuple[Any, dict]:
+        """
+        Universal early-stop preview algorithm.
+
+        Subclasses need only provide how to stream() one record (or, for
+        monolithic formats, read_full()). This (BaseReader) takes care of peek/
+        eager/RAM-limit behaviour. Presents the UI with what it needs to report
+        preview completeness and whether or not the file is too large to preview.
+
+        - strategy "peek" (default): stop the instant the window is full — fast,
+          but the grand total stays unknown (total_rows is None).
+        - strategy "full"/"eager": stream to EOF, counting every record, but only
+          hold up to the RAM ceiling. Basis for "top N of M".
+        - non-streamable readers (stream() raises NotImplementedError): fall back
+          to a whole-file read_full(), then slice the display window.
+        """
+        io_config = {**(config or {}), **kwargs}
+        strategy = io_config.get("strategy", "peek")
+        max_ram_bytes = io_config.get("max_ram_bytes", DEFAULT_MAX_RAM_BYTES)
+
+        data: list = []
+        eof_hit = True
+        rows_read = 0
+        ram_bytes = 0
+        ram_limit_hit = False
+
+        try:
+            for record in self.stream(io_config):
+                rows_read += 1
+
+                # A. Peek: bail once peek limit is reached.
+                if strategy == "peek" and rows_read > peek_limit:
+                    eof_hit = False
+                    break
+
+                # B. Otherwise keep streaming (to count), but only keep up to RAM ceiling.
+                if not ram_limit_hit:
+                    size = self._record_size(record)
+                    if ram_bytes + size > max_ram_bytes:
+                        ram_limit_hit = True
+                    else:
+                        data.append(record)
+                        ram_bytes += size
+
+            io_strategy = f"Streamed ({strategy})"
+            total_rows = rows_read if (strategy in ("full", "eager") or eof_hit) else None
+
+        except NotImplementedError:
+            # Non-streamable format (e.g. a JSON document parsed whole)
+            # Let read_full() loads everything. A streaming parser (e.g.
+            # ijson) is the only real fix for one too big for RAM.
+            data = self.read_full(io_config)
+            total_rows = len(data)
+            ram_limit_hit = False
+            eof_hit = True
+            io_strategy = f"Monolithic ({strategy})"
+
+        metadata = self.get_metadata()
+        # Tables/dicts expose columns; line-based records (text) don't.
+        columns = list(data[0].keys()) if data and isinstance(data[0], dict) else []
+        metadata.update({
+            "io_strategy": io_strategy,
+            "file_eof_hit": eof_hit,
+            "preview_limit": peek_limit if strategy == "peek" else None,
+            "total_rows": total_rows,
+            "total_lines_previewed": len(data),
+            "columns": columns,
+            "ram_limit_hit": ram_limit_hit,
+            "preview_ram_bytes": ram_bytes,
+        })
+        return data, metadata
 
     def read_text_chunk(self, max_chars: int = 5000) -> str:
         """

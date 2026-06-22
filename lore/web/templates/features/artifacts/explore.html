@@ -61,7 +61,12 @@
          data-session-id="{{ session.id }}"
          data-artifact-id="{{ artifact.id }}">
 
-        <div id="preview-loader" style="display: none; position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
+        <style>
+            /* Loading indicator. Shown by JS inline style or HTMX hx-indicator (.htmx-request) class */
+            #preview-loader { display: none; }
+            #preview-loader.htmx-request { display: block; }
+        </style>
+        <div id="preview-loader" style="position: absolute; top: var(--spacing-sm); left: var(--spacing-sm); z-index: 50;">
             <span class="badge warning pulsing">⏳︎ Computing...</span>
         </div>
 
@@ -71,38 +76,21 @@
             <input type="text" id="query-input"
                 placeholder="pandas query e.g. symbol == 'ctxA' and name.str.contains('toxin')"
                 style="flex: 1; font-family: var(--font-mono); font-size: 0.85rem;" />
-            
+
             <label class="checkbox" style="white-space: nowrap; margin: 0;">
                 <input type="checkbox" id="regex-toggle"> Regex
             </label>
-            
+
             <div id="row-counter" class="badge small muted">
                 {# Gets updated with filtered row count by JavaScript #}
             </div>
         </div>
-        
-        {# Wrapper-level load-full / RAM-limit notice (shared with preview) #}
-        {{ ui.truncation_notice(metadata) }}
         {% endif %}
 
         {# === Viewer === #}
+        {# Because 'load full' button is inside the viewer, swapping this outer div also replaces the button #}
         <div id="viewer-target" class="column" style="transition: opacity 0.2s ease;">
-            {% if view_mode == 'table' %}
-                {% include 'components/viewers/table.html' %}
-
-            {% elif view_mode in ['svg', 'image'] %}
-                {% include 'components/viewers/svg.html' ignore missing %}
-                {% include 'components/viewers/image.html' ignore missing %}
-
-            {% elif view_mode == 'raw' %}
-                {% include 'components/viewers/raw.html' %}
-
-            {% else %}
-                <div>
-                    <h4 class="muted">Unsupported view mode: <code>{{ view_mode }}</code></h4>
-                    <p class="muted small">No viewer partial found for this adapter type.</p>
-                </div>
-            {% endif %}
+            {% include 'components/viewers/_explore_viewer.html' %}
         </div>
 
     </div>
