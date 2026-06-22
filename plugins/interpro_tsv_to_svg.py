@@ -1,5 +1,5 @@
 """
-Task for visualizing InterproScan tsv results as an svg
+Task for visualizing InterproScan OR NCBI CD-Search tsv results as an svg
 """
 from pathlib import Path
 
@@ -9,20 +9,20 @@ import lore.core.dsl as lore
 import csv
 
 class InterproVizInputs:
-    """Inputs for InterproScan TSV to SVG visualization Task"""
-    source_tsv = lore.ArtifactInput(
-        label="InterproScan TSV",
-        accepted_data=["interpro_tsv", "tsv"],
-        select="single",
+    """Inputs for protein domain TSV to SVG visualization Task"""
+    source_tsvs = lore.ArtifactInput(
+        label="Protein Domain TSV",
+        accepted_data=["interpro_tsv", "tsv", "ncbi_cd_search_tsv"],
+        description=".tsv files from InterProScan or NCBI-CD Search",
+        select="multiple",
         load_as="path",
     )
     
-    source_fasta = lore.ArtifactInput(
+    source_fastas = lore.ArtifactInput(
         label="Protein FASTA",
         accepted_data=["protein_fasta", "fasta"],
-        select="single",
+        select="optional_multiple",
         load_as="path",
-        default="",
         description="The FASTA you inputted into InterProScan. Needed to be able to interactively access the protein sequences from the visualized domains."
     )
     
@@ -76,9 +76,9 @@ TSV_HEADER_INDEX = {
 }
     
 # Helpers
-def parse_interpro_tsv(tsv_path: Path, undefined_domain_size=20):
+def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
     """
-    Parses InterproScan TSV file into a list of dictionaries containing domain annotations.
+    Parses a list of InterproScan TSV files into a list of dictionaries containing domain annotations.
     
     Return format:
     [
@@ -103,89 +103,135 @@ def parse_interpro_tsv(tsv_path: Path, undefined_domain_size=20):
     ]
     """
     
-    parsed_result = []
+    parsed_result = dict()
     prev_protein = None
-    with open(tsv_path, 'r', newline='') as f:
-        reader = csv.reader(f, delimiter='\t')
-        
-        for row in reader:
-            if row[0].startswith("#"):  # Skip comment lines
-                continue
-            
-            entry = dict()
-            
-            protein_accession = row[TSV_HEADER_INDEX["protein_accession"]]
-            
-            # Tooltip text is displayed in the order of these entries
-            entry["interpro_domain"] = row[TSV_HEADER_INDEX["interpro_domain"]]
-            entry["interpro_accession"] = row[TSV_HEADER_INDEX["interpro_accession"]]
-            entry["signature_domain"] = row[TSV_HEADER_INDEX["signature_domain"]]
-            entry["signature_accession"] = row[TSV_HEADER_INDEX["signature_accession"]]
-            entry["source_database"] = row[TSV_HEADER_INDEX["source_database"]]
-            entry["start"] = int(row[TSV_HEADER_INDEX["start"]])
-            entry["end"] = int(row[TSV_HEADER_INDEX["end"]])
-            entry["total_length"] = entry["end"] - entry["start"] + 1
-            entry["e_value"] = row[TSV_HEADER_INDEX["e_value"]]
-            
-            if prev_protein != protein_accession:
-                protein_length = int(row[TSV_HEADER_INDEX["protein_length"]])
-                if prev_protein is not None:
-                    # Identify undefined regions by gaps in between labelled regions
-                    sorted_domains = sorted(curr_entry["domains"], key=lambda x: x["start"])
+    for path in tsv_paths:
+        tsv_path = Path(path)
+        with open(tsv_path, 'r', newline='') as f:
+            reader = csv.reader(f, delimiter='\t')
+            is_interpro_tsv = True
+            for row in reader:
+                if row[0].startswith("#"):  # Skip comment lines
+                    continue
+                # Read header for NCBI CD-Search tsv
+                elif row[0] == "Query":
+                    is_interpro_tsv = False
+                    entry_column_map = dict()
+                    metadata_column_map = dict()
                     
-                    curr_entry["domains"] = sorted_domains
-                    left = {"end": 0}
-                    domain_qty = len(sorted_domains) + 1
-                    for i in range(domain_qty):
-                        if i == domain_qty:
-                            right = {"start": protein_length + 1, "end": protein_length + 1}
+                    for idx, header in enumerate(row):
+                        # Re-map some entry names from ncbi for consistency with interproscan naming - elseif spam cuz lazy
+                        if header == "Query":
+                            metadata_column_map["protein_accession"] = idx
+                        elif header == "Protein Length":
+                            metadata_column_map["protein_length"] = idx
+                        elif header == "From":
+                            entry_column_map["start"] = idx
+                        elif header == "To":
+                            entry_column_map["end"] = idx
                         else:
-                            right = sorted_domains[i] 
-                        diff = right["start"] - left["end"] + 1
-                        if diff >= undefined_domain_size:
-                            sorted_domains.append({
-                                "domain": "UNDEFINED REGION", 
-                                "start": left["end"] + 1,
-                                "end": right["start"] - 1,
-                                "total_length": right["start"] - left["end"] - 1
-                            })
-                        if left["end"] < right["end"]:
-                            left = right
-                        
-                        
-                    parsed_result.append(curr_entry)
+                            entry_column_map[header] = idx     
+                    continue                       
+                            
+                    # protein_desc_available = "Definition" in column_map.keys()
                 
-                prev_protein = protein_accession
-                curr_entry = {
-                    "protein_accession": protein_accession, 
-                    "protein_length": protein_length, 
-                    "domains": []
-                }
-            
-            curr_entry["domains"].append(entry)
-    
-    return parsed_result
-
-def parse_fasta(fasta_path: Path):
-    '''Parses a fasta file into a dictionary containing {accession: sequence} key-value pairs.'''
-    proteins = dict()
-    with open(fasta_path, "r") as f:
-        line = f.readline()
-        accession = None
-        sequence_fragments = []
-        while line:
-            if line[0] == "#":
-                continue
-            elif line[0] == ">":
-                if accession:
-                    proteins[accession] = "".join(sequence_fragments)
-                sequence_fragments = []
-                accession = line[1:].split()[0]
+                entry = dict()
+                
+                if is_interpro_tsv:
+                    protein_accession = row[TSV_HEADER_INDEX["protein_accession"]]
+                    
+                    # Tooltip text is displayed in the order of these entries
+                    entry["interpro_domain"] = row[TSV_HEADER_INDEX["interpro_domain"]]
+                    entry["interpro_accession"] = row[TSV_HEADER_INDEX["interpro_accession"]]
+                    entry["signature_domain"] = row[TSV_HEADER_INDEX["signature_domain"]]
+                    entry["signature_accession"] = row[TSV_HEADER_INDEX["signature_accession"]]
+                    entry["source_database"] = row[TSV_HEADER_INDEX["source_database"]]
+                    entry["start"] = int(row[TSV_HEADER_INDEX["start"]])
+                    entry["end"] = int(row[TSV_HEADER_INDEX["end"]])
+                    entry["total_length"] = entry["end"] - entry["start"] + 1
+                    entry["e_value"] = row[TSV_HEADER_INDEX["e_value"]]
+                    entry["from"] = "InterProScan"
+                else:
+                    protein_accession = row[metadata_column_map["protein_accession"]]
+                    for header, idx in entry_column_map.items():
+                        if header in ("start", "end"):
+                            entry[header] = int(row[idx])
+                        else:
+                            entry[header] = row[idx]
+                    if "protein_length" not in metadata_column_map:
+                        raise ValueError('"Protein Length" not found in table header.')
+                    entry["from"] = "NCBI"
+                
+                if prev_protein != protein_accession:
+                    protein_length = int(row[TSV_HEADER_INDEX["protein_length"]]) if is_interpro_tsv else int(row[metadata_column_map["protein_length"]])
+                    if prev_protein is not None:
+                        # Append domains to the existing protein if the same accession has been parsed from another file
+                        if curr_entry["protein_accession"] in parsed_result.keys():
+                            protein = parsed_result[curr_entry["protein_accession"]]
+                            protein["domains"] += curr_entry["domains"]
+                            # Work off of the longest sequence if the two from the same accession are different lengths (can happen if one is a subsequence of another)
+                            if protein["protein_length"] < curr_entry["protein_length"]:
+                                protein["protein_length"] = curr_entry["protein_length"]
+                        else:
+                            parsed_result[curr_entry["protein_accession"]] = curr_entry
+                                        
+                    prev_protein = protein_accession
+                    curr_entry = {
+                        "protein_accession": protein_accession, 
+                        "protein_length": protein_length, 
+                        "domains": []
+                    }
+                
+                curr_entry["domains"].append(entry)
+                
+    # Identify undefined regions by gaps in-between labelled regions
+    for protein in parsed_result.values():
+        sorted_domains = sorted(protein["domains"], key=lambda x: x["start"])
+        protein_length = protein["protein_length"]
+        
+        protein["domains"] = sorted_domains
+        left = {"end": 0}
+        domain_qty = len(sorted_domains) + 1
+        for i in range(domain_qty):
+            if i == domain_qty - 1:
+                right = {"start": protein_length + 1, "end": protein_length + 1}
             else:
-                sequence_fragments.append(line)
-            line = f.readline() 
-    if accession:
-        proteins[accession] = "".join(sequence_fragments)
+                right = sorted_domains[i] 
+            diff = right["start"] - left["end"] + 1
+            if diff >= undefined_domain_size:
+                sorted_domains.append({
+                    "domain": "UNDEFINED REGION", 
+                    "start": left["end"] + 1,
+                    "end": right["start"] - 1,
+                    "total_length": right["start"] - left["end"] - 1
+                })
+            if left["end"] < right["end"]:
+                left = right
+    
+    return list(parsed_result.values())
+
+def parse_fastas(fasta_paths: list[str]):
+    '''Parses a list of fasta files into a dictionary containing {accession: sequence} key-value pairs.'''
+    proteins = dict()
+    for path in fasta_paths:
+        fasta_path = Path(path)
+        with open(fasta_path, "r") as f:
+            line = f.readline()
+            accession = None
+            sequence_fragments = []
+            while line:
+                if line[0] == "#":
+                    continue
+                elif line[0] == ">":
+                    if accession:
+                        proteins[accession] = "".join(sequence_fragments)
+                    sequence_fragments = []
+                    accession = line[1:].split()[0]
+                else:
+                    sequence_fragments.append(line)
+                line = f.readline() 
+        if accession:
+            proteins[accession] = "".join(sequence_fragments)
     return proteins
     
 # --- Main Task ---
@@ -194,25 +240,23 @@ def parse_fasta(fasta_path: Path):
     'interpro.tsv_to_svg',
     inputs=InterproVizInputs,
     outputs=InterproVizOutputs,
-    name="InterproScan TSV to SVG",
+    name="Protein Domain Visuallizer (TSV to SVG)",
     category="Visualization",
     icon="🐈︎",
-    preview_mode="full"
+    preview_mode="live"
 )
 def interpro_viz_handler(
     ctx: lore.ExecutionContext,
-    source_tsv: str,
+    source_tsvs: list[str],
     undefined_domain_size: int,
     residue_interval: int,
     horizontal_scale: float,
     hide_context_in_tooltip: bool,
-    source_fasta: str = "",
+    source_fastas: list[str],
 ):
-    parsed_data = parse_interpro_tsv(Path(source_tsv), undefined_domain_size)
-    if not source_fasta == "":
-        proteins = parse_fasta(Path(source_fasta))
-    else:
-        proteins = dict()
+    """Visualizes the TSV output of InterProScan and/or NCBI CD-Search, allowing for multiple proteins and their domains to be visually compared and specific domain sequences to be extracted for further analysis."""
+    parsed_data = parse_interpro_tsvs(source_tsvs, undefined_domain_size)
+    proteins = parse_fastas(source_fastas)
     
     config = SVG_CONFIG.copy()
     row_height = config["row_height"]
@@ -287,7 +331,7 @@ def interpro_viz_handler(
                 # Collision checking
                 collision_detected = False
                 for domain_range in track["domain_ranges"]:
-                    if (domain["end"] > domain_range[0] and domain["end"] < domain_range[1]) or (domain["start"] > domain_range[0] and domain["start"] < domain_range[1]):
+                    if (domain["end"] >= domain_range[0] and domain["end"] <= domain_range[1]) or (domain["start"] >= domain_range[0] and domain["start"] <= domain_range[1]):
                         if i == len(tracks) - 1:
                             y_center = top_y + config["same_protein_margin"]
                             tracks.append({"domain_ranges": [], "y_center":y_center})
@@ -320,7 +364,10 @@ def interpro_viz_handler(
                 if "domain" in domain.keys():
                     fill_color = config["color_anchor_text"]
                 else:
-                    fill_color = config["color_context_fill"]
+                    if domain["from"] == "InterProScan":
+                        fill_color = config["color_context_fill"]
+                    else:
+                        fill_color = config["color_ncbi_default"]
                 
                 stroke_color = config["color_context_stroke"]
                 
@@ -357,7 +404,10 @@ def interpro_viz_handler(
                 if "domain" in domain.keys():
                     domain_name = domain["domain"]
                 else:
-                    domain_name = domain["interpro_domain"] if domain["interpro_domain"] != "-" else domain["signature_domain"]
+                    if domain["from"] == "InterProScan":
+                        domain_name = domain["interpro_domain"] if domain["interpro_domain"] != "-" else domain["signature_domain"]
+                    else:
+                        domain_name = domain["Short name"]
                 text_label = _trim_label(domain_name, abs(int(end - start)))
                 if text_label:
                     # Use white text on the dark anchor background for readability
@@ -435,6 +485,7 @@ SVG_CONFIG = {
     "color_backbone": "#64748B",
     "color_anchor_fill": "#318686",
     "color_anchor_stroke": "#2A6B6B",
+    "color_ncbi_default": "#ECCF91",
     "color_context_fill": "#ADD8E6",
     "color_context_stroke": "#8BB4C2",
     "color_anchor_text": "#FAFFFF",

@@ -155,12 +155,6 @@
             "value": null
           }
         ],
-        "save_map": [
-          {
-            "type": "literal",
-            "value": "false"
-          }
-        ],
         "hydrated": [
           {
             "type": "literal",
