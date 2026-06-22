@@ -21,10 +21,10 @@ from .parsers.text import TextAdapter
 # Instantiate the global registry and register base adapters.
 adapter_registry = AdapterRegistry()
 
-adapter_registry.add(CsvAdapter())
-adapter_registry.add(JsonAdapter())
-adapter_registry.add(SvgAdapter())
-adapter_registry.add(TextAdapter())
+adapter_registry._register_core(CsvAdapter())
+adapter_registry._register_core(JsonAdapter())
+adapter_registry._register_core(SvgAdapter())
+adapter_registry._register_core(TextAdapter())
 
 
 __all__ = [

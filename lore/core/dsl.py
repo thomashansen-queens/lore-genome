@@ -43,7 +43,17 @@ from lore.core.adapters import (
     TextAdapter,
 )
 
-# 5. Decorators
+# 5. Readers
+from lore.core.readers import (
+    reader_registry,
+    BaseReader,
+    TextReader,
+    TableReader,
+    ImageReader,
+)
+
+# 6. Decorators
+reader = reader_registry.register
 adapter = adapter_registry.register
 task = task_registry.register
 config = config_registry.register
@@ -64,6 +74,12 @@ __all__ = [
     # Execution
     "ExecutionContext",
     "memoize",
+    # Reader layer
+    "BaseReader",
+    "TextReader",
+    "TableReader",
+    "ImageReader",
+    "reader_registry",
     # Adapter layer
     "AdapterPreview",
     "BaseAdapter",
@@ -72,6 +88,7 @@ __all__ = [
     "JsonAdapter",
     "TextAdapter",
     # Decorator aliases
+    "reader",
     "adapter",
     "task",
     "config",

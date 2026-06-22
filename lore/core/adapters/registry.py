@@ -65,7 +65,7 @@ class AdapterRegistry:
                 )
 
             # Instantiate, register, and optionally override default key
-            self.add(adapter_cls(), custom_key=key)
+            self._register_core(adapter_cls(), custom_key=key)
             return adapter_cls
 
         # If called with parentheses, return the wrapper
@@ -75,7 +75,7 @@ class AdapterRegistry:
         # If naked decorator, cls is passed directly
         return wrapper(cls)
 
-    def add(self, adapter: BaseAdapter, custom_key: str | None = None) -> None:
+    def _register_core(self, adapter: BaseAdapter, custom_key: str | None = None) -> None:
         """
         Manually register an instance of an Adapter. Used internally for
         fundamental adapters like CsvAdapter. For plug-ins, the decorator

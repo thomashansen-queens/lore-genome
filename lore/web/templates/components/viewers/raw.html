@@ -1,25 +1,34 @@
-{% set data = data | default({}) %}
-{% set metadata = metadata | default({}) %}
+{% set data = data | default("") %}
+{% set metadata = metadata | default({}, true) %}
 
 <div class="column">
-    
-    {# --- Preview info (display-level only; wrapper renders the "load full" button --- #}
-    {% if not metadata.get("file_eof_hit") and metadata.get("total_lines_previewed") %}
+
+    {# --- Preview info (display-level only; wrapper renders the "load full" button) --- #}
+    {% set display_complete = metadata.get("display_complete", True) %}
+    {% if not display_complete and metadata.get("total_lines_previewed") %}
+
     <div style="flex-shrink: 0; min-height: 0; margin-bottom: var(--spacing-sm);">
         <span class="badge small info push-right">Showing top: {{ metadata.get("total_lines_previewed") }} lines</span>
     </div>
     {% endif %}
 
-    <div class="scroll-area" data-copyable>
+    <div class="scroll-area" data-copyable tab-index="0">
         <pre style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap;">{{ data }}</pre>
     </div>
 </div>
 
 <script>
     (() => {
-        const copyArea = document.querySelector(".scroll-area");
+        // Scope to this panel
+        const root = document.currentScript.previousElementSibling;
+        const copyArea = root?.querySelector("[data-copyable]");
+        const copyTarget = copyArea?.querySelector("pre");
+        
+        if (!copyArea || !copyTarget) {
+            return;
+        }
 
-        document.addEventListener('keydown', function(e) {
+        copyArea.addEventListener('keydown', function(e) {
             // Check if Ctrl+A (Windows/Linux) or Cmd+A (Mac) is pressed
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
                 // Prevent the default browser select-all action
@@ -28,11 +37,11 @@
                 // Create a selection range
                 const selection = window.getSelection();
                 const range = document.createRange();
-                range.selectNodeContents(copyArea);
-
+              
+                range.selectNodeContents(copyTarget);
                 selection.removeAllRanges();
                 // Select the previewed contents of the raw text data 
-                selection.addRange(range)
+                selection.addRange(range);
             }
         });
     })();

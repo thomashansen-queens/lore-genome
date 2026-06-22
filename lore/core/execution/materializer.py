@@ -15,7 +15,7 @@ from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
 
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
-from lore.core.io import get_reader_for
+from lore.core.readers import get_reader_for
 from lore.core.tasks import AdapterStrategy, Materialization, Cardinality, TaskDefinition
 from lore.core.utils.pydantic import is_collection_type
 

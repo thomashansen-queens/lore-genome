@@ -38,8 +38,10 @@
             {% endif %}
         </p>
 
-        {% if metadata.get('ui_limit_hit') %}
-            {# DOM display cap — distinct from data completeness #}
+        {# Display axis: were all output rows rendered? #}
+        {% set display_complete = metadata.get('display_complete', True) %}
+        {% if not display_complete %}
+            {# Display cap (DOM/RAM) — distinct from result completeness #}
             <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
                 Showing: Top {{ '{:,}'.format(data|length) }}
             </div>

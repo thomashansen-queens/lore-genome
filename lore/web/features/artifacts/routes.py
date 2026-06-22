@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 
-from lore.core.io import TextReader
+from lore.core.readers import TextReader
 from lore.core.tasks import AdapterConfig
-from lore.core.io import get_reader_for
+from lore.core.readers import get_reader_for
 from lore.core.utils import filter_and_sort
 from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.forms import get_form_str
@@ -179,11 +179,12 @@ async def view_artifact_explore(
     explore the full data with sorting and filtering as needed.
 
     Metadata used in the explore view:
-      file_eof_hit (bool): Indicates if the preview reached the end of the file
+      result_complete (bool): Was the entire artifact read for the preview?
+      display_complete (bool): Of the rows read, were they all rendered for presentation?
+      truncation_reason ("sampled" | "capped" | None): If incomplete, why?
+        ("sampled": escalating to a full load helps; "capped": it won't).
       total_rows (int | None): Total number of rows in dataset (None if unknown/streamed)
-      is_truncated (bool): If the preview is limited to avoid crashing the browser's DOM
       columns (list[str]): The keys available in the adapted records (for tabular data)
-      header (bool): Whether the first row of the dataset is a header (if applicable)
     """
     artifact = s.get_artifact(artifact_id)
     if not artifact:
@@ -210,6 +211,19 @@ async def view_artifact_explore(
 
     config = {**(artifact.metadata or {}), "ext": artifact.extension}
     preview_result = adapter.preview(data, io_metadata, config=config)
+
+    # 3. Completeness:
+    #   result_complete  — did the peek read the whole artifact?
+    #   display_complete — were all the read rows rendered (DOM cap)?
+    md = preview_result.metadata
+    md["result_complete"] = md.get("file_eof_hit", True)
+    md["display_complete"] = not md.get("ui_limit_hit", False)
+    if not md["result_complete"]:
+        md["truncation_reason"] = "sampled"
+    elif not md["display_complete"]:
+        md["truncation_reason"] = "capped"
+    else:
+        md["truncation_reason"] = None
 
     ctx.generate_breadcrumbs({
         s.id: s.name,
@@ -348,8 +362,10 @@ def api_explore_data(
             "columns": columns,
             "total_rows": total_rows,
             "filtered_rows": filtered_row_count,
-            # The viewer (table.html) and the preview path both key off ui_limit_hit
-            "ui_limit_hit": ui_limit_hit,
+            # Explore always loads the full dataset, but display may be limited for DOM performance
+            "result_complete": True,
+            "display_complete": not ui_limit_hit,
+            "truncation_reason": "capped" if ui_limit_hit else None,
             "numeric_maxes": numeric_maxes,
             **reader.get_base_metadata(),
         }

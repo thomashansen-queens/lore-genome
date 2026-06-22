@@ -1,9 +1,9 @@
 """
-Tests for I/O operations.
+Tests for the Reader layer (lore.core.readers).
 """
 from typing import cast
 
-from lore.core.io import TableReader, get_reader_for
+from lore.core.readers import ImageReader, TableReader, TextReader, get_reader_for
 
 
 def test_table_reader_json_array(dummy_json_file):
@@ -73,7 +73,40 @@ def test_table_reader_metadata(dummy_jsonl_file):
     assert metadata["file_size_bytes"] > 0
 
 
-def test_get_reader_factory_routing(dummy_jsonl_file):
-    """Proves the factory correctly routes based on file extensions."""
-    reader = get_reader_for(dummy_jsonl_file)
-    assert isinstance(reader, TableReader)
+def test_get_reader_factory_routing(dummy_jsonl_file, tmp_path):
+    """Proves the factory correctly routes based on file extension."""
+    assert isinstance(get_reader_for(dummy_jsonl_file), TableReader)
+    assert isinstance(get_reader_for(tmp_path / "seq.fasta"), TextReader)
+    assert isinstance(get_reader_for(tmp_path / "plot.svg"), ImageReader)
+    assert isinstance(get_reader_for(tmp_path / "plot.png"), ImageReader)
+
+
+def test_get_reader_factory_unsupported():
+    """An unregistered extension raises rather than returning None."""
+    import pytest
+    with pytest.raises(ValueError):
+        get_reader_for("mystery.zzz")
+
+
+def test_image_reader_svg_returns_text(tmp_path):
+    """SVG is vector markup, so it reads back as a string and is a complete read."""
+    svg = tmp_path / "icon.svg"
+    svg.write_text("<svg viewBox='0 0 10 10'></svg>", encoding="utf-8")
+
+    data, metadata = ImageReader(svg).preview()
+
+    assert isinstance(data, str)
+    assert data.startswith("<svg")
+    assert metadata["is_vector"] is True
+    assert metadata["file_eof_hit"] is True  # whole file loaded
+
+
+def test_image_reader_raster_returns_bytes(tmp_path):
+    """Raster formats (e.g. PNG) read back as bytes."""
+    png = tmp_path / "pixel.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n fake bytes")
+
+    data, metadata = ImageReader(png).preview()
+
+    assert isinstance(data, bytes)
+    assert metadata["is_vector"] is False

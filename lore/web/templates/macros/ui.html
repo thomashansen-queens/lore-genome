@@ -141,14 +141,21 @@
    The load-full button uses a class (not an id) so a multi-output preview can
    show one per output tab; the wrapper's own JS wires the click. #}
 {% macro truncation_notice(metadata) %}
-    {% if metadata.get('ram_limit_hit') %}
-        <span class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
-            File too large for full preview
-        </span>
-    {% elif not metadata.get('file_eof_hit') %}
-        <button type="button" style="display: block; width: fit-content;"
-            class="btn-load-full btn badge primary small">
-            PREVIEW (Click to load full)
-        </button>
+    {# Result axis: was the shown result computed from ALL the input data? #}
+    {% set result_complete = metadata.get('result_complete', True) %}
+    {% set is_capped = metadata.get('truncation_reason') == 'capped' %}
+    {% if not result_complete %}
+        {% if is_capped %}
+            {# Hard ceiling — escalating to a full load won't help #}
+            <span class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
+                File too large for full preview
+            </span>
+        {% else %}
+            {# Intentional sample — offer the escalation to a full computation #}
+            <button type="button" style="display: block; width: fit-content;"
+                class="btn-load-full btn badge primary small">
+                PREVIEW (Click to load full)
+            </button>
+        {% endif %}
     {% endif %}
 {% endmacro %}
