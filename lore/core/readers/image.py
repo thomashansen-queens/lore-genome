@@ -5,6 +5,8 @@ from typing import Iterator
 
 from .base import BaseReader
 
+IMAGE_EXTS = {"png", "jpg", "jpeg", "svg"}
+
 
 class ImageReader(BaseReader):
     """

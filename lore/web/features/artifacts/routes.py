@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 
-from lore.core.readers import TextReader
 from lore.core.tasks import AdapterConfig
 from lore.core.readers import get_reader_for
 from lore.core.utils import filter_and_sort
@@ -26,6 +25,38 @@ _DEFAULT_EXPLORE_DISPLAY_LIMIT = 1000
 
 
 router = APIRouter(prefix="/sessions/{session_id}/artifacts", tags=["artifacts"])
+
+
+def _viewer_completeness(metadata: dict, shown: int) -> dict:
+    """
+    Lift a reader/adapter's low-level flags into two completeness checks:
+      result_complete  — did this read reach the end of the source?
+      display_complete — is everything that exists actually on screen?
+    """
+    file_eof_hit = metadata.get("file_eof_hit", True)
+    total = metadata.get("total_rows")
+    ui_limit_hit = metadata.get("ui_limit_hit", False)
+    shown = metadata.get("total_lines_previewed", shown)
+
+    result_complete = file_eof_hit
+    display_complete = (
+        file_eof_hit
+        and not ui_limit_hit
+        and (total is None or shown >= total)
+    )
+
+    if not result_complete:
+        reason = "sampled"
+    elif not display_complete:
+        reason = "capped"
+    else:
+        reason = None
+
+    return {
+        "result_complete": result_complete,
+        "display_complete": display_complete,
+        "truncation_reason": reason,
+    }
 
 # --- Artifact views ---
 
@@ -204,26 +235,21 @@ async def view_artifact_explore(
             message_type="warning",
     )
 
-    # 2. Data loading
+    # 2. Data loading (initial peek)
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
-    data, io_metadata = reader.preview(peek_limit=s.runtime.settings.preview_peek_limit)
-
-    config = {**(artifact.metadata or {}), "ext": artifact.extension}
+    config = {
+        **(artifact.metadata or {}),
+        "ext": artifact.extension,
+        "max_ram_bytes": s.runtime.settings.preview_max_ram_bytes,
+    }
+    data, io_metadata = reader.preview(peek_limit=s.runtime.settings.preview_peek_limit, config=config)
     preview_result = adapter.preview(data, io_metadata, config=config)
 
-    # 3. Completeness:
-    #   result_complete  — did the peek read the whole artifact?
-    #   display_complete — were all the read rows rendered (DOM cap)?
+    # 3. Two-axis completeness + the htmx escalation URL for non-table viewers
     md = preview_result.metadata
-    md["result_complete"] = md.get("file_eof_hit", True)
-    md["display_complete"] = not md.get("ui_limit_hit", False)
-    if not md["result_complete"]:
-        md["truncation_reason"] = "sampled"
-    elif not md["display_complete"]:
-        md["truncation_reason"] = "capped"
-    else:
-        md["truncation_reason"] = None
+    md.update(_viewer_completeness(md, shown=len(preview_result.data)))
+    load_full_url = _explore_load_full_url(s.id, artifact_id, adapter)
 
     ctx.generate_breadcrumbs({
         s.id: s.name,
@@ -239,9 +265,93 @@ async def view_artifact_explore(
             available_adapters=adapters,
             view_mode=adapter.view_mode,
             data=preview_result.data,
-            keys=preview_result.metadata.get("columns", []),
-            metadata=preview_result.metadata,
+            keys=md.get("columns", []),
+            metadata=md,
+            load_full_url=load_full_url,
         )
+    )
+
+
+def _explore_load_full_url(session_id: str, artifact_id: str, adapter: "BaseAdapter") -> str | None:
+    """
+    The htmx 'load full' URL for a viewer's "load full" button, or None if the
+    viewer escalates by another means.
+
+    NOTE: Why tables are the exception for now: Rather than just 'load more', tables
+    carry server-side query, regex filter, sort, and CSV/artifact export, all of
+    which need the dataset materialized as a cached pandas dataframe. (see
+    '_get_explore_df' / 'api_explore_data'). That JS+JSON layer was written before
+    this htmx-fragment path and already handles the table's "load full"
+    (its '.btn-load-full' triggers 'fetchData()'), so we return None.
+
+    Every other view_mode (raw / svg / image / future pkl/cryoEM array) has gets
+    the dedicated fragment endpoint below.
+    """
+    if adapter.view_mode == "table":
+        return None
+    return (
+        f"/sessions/{session_id}/artifacts/{artifact_id}/explore/view"
+        f"?adapter_key={adapter.name}&strategy=full"
+    )
+
+
+@router.get("/{artifact_id}/explore/view", response_class=HTMLResponse)
+def explore_view_fragment(
+    artifact_id: str,
+    s: ReadOnlySession,
+    adapter_key: str | None = None,
+    strategy: str = "peek",
+    ctx: PageContext = Depends(),
+):
+    """
+    Re-render the explore viewer body (completeness badge + viewer) for a
+    given load strategy, as an htmx DOM swap into #viewer-target. Allows
+    non-table viewers to escalate a peek to a full, counted load. (tables
+    use their own JS query path — see '_explore_load_full_url').
+
+    'full'/'eager' streams to EOF (counting the rest) while holding only up to the
+    RAM ceiling, so a 3 GB file becomes "top N of M" at bounded memory.
+    """
+    artifact = s.get_artifact(artifact_id)
+    if not artifact:
+        raise HTTPException(404, detail="Artifact not found")
+
+    adapters = artifact.get_adapters()
+    adapter = next((a for a in adapters if a.name == adapter_key), None) if adapter_key else (adapters[0] if adapters else None)
+    if not adapter:
+        raise HTTPException(404, detail="No adapter available for this Artifact")
+
+    path = s.get_artifact_path(artifact_id)
+    reader = get_reader_for(path)
+    config = {
+        **(artifact.metadata or {}),
+        "ext": artifact.extension,
+        "max_ram_bytes": s.runtime.settings.preview_max_ram_bytes,
+    }
+
+    if strategy in ("full", "eager"):
+        # Eager: stream to EOF (counting every record), holding only up to the RAM
+        # ceiling in `config`. Capping *rows* is the adapter/display's job, not the
+        # reader's — the reader bounds memory, the viewer bounds what's rendered.
+        data, io_metadata = reader.preview(config={**config, "strategy": "eager"})
+    else:
+        data, io_metadata = reader.preview(peek_limit=s.runtime.settings.preview_peek_limit, config=config)
+
+    preview_result = adapter.preview(data, io_metadata, config=config)
+    md = preview_result.metadata
+    md.update(_viewer_completeness(md, shown=len(preview_result.data)))
+
+    return templates.TemplateResponse(
+        request=ctx.request,
+        name="components/viewers/_explore_viewer.html",
+        context={
+            "request": ctx.request,
+            "view_mode": adapter.view_mode,
+            "data": preview_result.data,
+            "keys": md.get("columns", []),
+            "metadata": md,
+            "load_full_url": _explore_load_full_url(s.id, artifact_id, adapter),
+        },
     )
 
 # --- Explore AJAX ---

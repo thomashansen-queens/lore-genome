@@ -3,11 +3,15 @@ Core Data Readers for LoRē.
 
 This package defines the data ingestion layer of LoRē. The BaseReader is the
 abstract class that all readers must inherit from. It enables memory-safe streaming,
-metadata extraction, and full file reading.
+metadata extraction, and full file reading. It also implements the 'preview' logic,
+which allows for quick peeks of very large files.
 
-The registry allows for different strategies to be registered for different file
-types, and is plugin-enabled allowing various file formats to be supported. To
-register a new reader, the `register` decorator is used.
+Data-wise, one reader should be interchangeable with another! The plugin system
+allows dependencies to be kept to a minimum and for efficiency to be optimized per-
+format. E.g. a CSV reader using 'pandas' would be faster than one using the standard
+'csv' lib, and using 'polars' could be faster still.
+
+To register a new reader plugin, the `register` decorator is used.
 """
 from pathlib import Path
 
@@ -16,31 +20,27 @@ from .registry import ReaderRegistry
 from .image import ImageReader
 from .table import TableReader
 from .text import TextReader
+from .raw import RawReader
 
 
-ACCEPTED_BINARY_FILES = {"bam", "vcf", "hdf5", "h5"}
-ACCEPTED_IMAGE_FILES = {"png", "jpg", "jpeg", "svg"}
-ACCEPTED_TABLE_FILES = {"csv", "tsv", "parquet", "jsonl", "json"}
-ACCEPTED_TEXT_FILES = {
-    "fasta", "faa", "fa", "fna", "fastq", "fq",
-    "pdb", "aln", "txt", "log", "md", "info", "nfo", "raw",
-}
+from .image import IMAGE_EXTS
+from .table import TABLE_EXTS
+from .text import TEXT_EXTS
 
 # Safety check: Avoid reader collisions
 _all_extensions_ = (
-    list(ACCEPTED_BINARY_FILES) +
-    list(ACCEPTED_IMAGE_FILES) +
-    list(ACCEPTED_TABLE_FILES) +
-    list(ACCEPTED_TEXT_FILES)
+    list(IMAGE_EXTS) +
+    list(TABLE_EXTS) +
+    list(TEXT_EXTS)
 )
 if len(_all_extensions_) != len(set(_all_extensions_)):
     raise ValueError("Collision detected among accepted Reader file types.")
 
 
 reader_registry = ReaderRegistry()
-reader_registry._register_core(TableReader, extensions=list(ACCEPTED_TABLE_FILES))
-reader_registry._register_core(TextReader, extensions=list(ACCEPTED_TEXT_FILES))
-reader_registry._register_core(ImageReader, extensions=list(ACCEPTED_IMAGE_FILES))
+reader_registry._register_core(TableReader, extensions=list(TABLE_EXTS))
+reader_registry._register_core(TextReader, extensions=list(TEXT_EXTS))
+reader_registry._register_core(ImageReader, extensions=list(IMAGE_EXTS))
 
 
 def get_reader_for(path: Path | str) -> BaseReader:
@@ -64,6 +64,7 @@ __all__ = [
     "TableReader",
     "TextReader",
     "ImageReader",
+    "RawReader",
     "ReaderRegistry",
     "reader_registry",
     "get_reader_for",

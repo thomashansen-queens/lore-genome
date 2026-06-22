@@ -159,8 +159,9 @@ class Settings(BaseModel):
         le=10000,
         description=(
             "Max number of rows to display in the Explore view. This only "
-            "affects the display; all data is still accessible for queries and "
-            "sorting. Increase to see more, but with longer load times."
+            "affects the display and prevents giant scrollbars and browser"
+            "crashes; all data is still accessible for queries and sorting. "
+            "Increase to see more, but with longer load times."
         ),
         json_schema_extra={
             "widget": "slider",
@@ -170,6 +171,29 @@ class Settings(BaseModel):
         },
         examples=["1000"],
     )
+    preview_max_ram_mb: int = Field(
+        default=50,
+        ge=8,
+        le=1024,
+        description=(
+            "Memory ceiling for reading files to the UI. A reader keeps holding "
+            "rows until this much RAM is occupied, then keeps counting (without "
+            "holding) so a huge file quickly becomes 'top N of M' and avoids "
+            "out-of-memory crashes."
+        ),
+        json_schema_extra={
+            "widget": "slider",
+            "min": 8,
+            "max": 1024,
+            "step": 8,
+        },
+        examples=["50"],
+    )
+
+    @property
+    def preview_max_ram_bytes(self) -> int:
+        """Preview RAM ceiling in bytes (for engine use)"""
+        return self.preview_max_ram_mb * 1024 * 1024
 
     # --- Engine ---
     verbose: bool = False

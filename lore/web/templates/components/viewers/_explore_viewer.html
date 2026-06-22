@@ -1,0 +1,21 @@
+{# Explore viewer wrapper #}
+{% import "macros/ui.html" as ui %}
+
+{# Truncation notice/'load all' button #}
+{{ ui.truncation_notice(metadata, load_url=load_full_url) }}
+
+{% if view_mode == 'table' %}
+    {% include 'components/viewers/table.html' %}
+
+{% elif view_mode == 'svg' %}
+    {% include 'components/viewers/svg.html' %}
+
+{% elif view_mode == 'raw' %}
+    {% include 'components/viewers/raw.html' %}
+
+{% else %}
+    <div>
+        <h4 class="muted">Unsupported view mode: <code>{{ view_mode }}</code></h4>
+        <p class="muted small">No viewer template found for this adapter type.</p>
+    </div>
+{% endif %}

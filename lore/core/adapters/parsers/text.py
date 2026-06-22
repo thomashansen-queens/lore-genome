@@ -37,8 +37,11 @@ class TextAdapter(BaseAdapter):
             if not raw_data:
                 return ""
 
+            # Lines from a reader may or may not carry their own terminators
+            # (text lines do; hex-dump rows don't). Strip any trailing newline
+            # and re-join for consistent display
             if isinstance(raw_data[0], str):
-                return "\n".join(raw_data)
+                return "\n".join(line.rstrip("\r\n") for line in raw_data)
 
             # 3. A list of parsed objects (e.g., dicts from a JSON reader)
             try:
