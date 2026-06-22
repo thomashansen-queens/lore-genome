@@ -66,7 +66,6 @@ class BamReader(lore.BaseReader):
                     "cigar": read.cigarstring,
                     "mapping_quality": read.mapping_quality,
                     # Mapping quality and flags
-                    "query_name": read.query_name,
                     "is_unmapped": read.is_unmapped,
                 }
 

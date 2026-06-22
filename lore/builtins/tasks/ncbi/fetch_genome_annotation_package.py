@@ -221,7 +221,7 @@ def fetch_genome_annotation_package_handler(
     # 3. Materialize (Hand off to Session)
     ctx.materialize_file(
         output_key="report",
-        source_path=out_path,
+        source=out_path,
         metadata={
             "record_count": record_count,
             "accessions_failed": failed_accessions,
@@ -236,5 +236,5 @@ def fetch_genome_annotation_package_handler(
 
         ctx.materialize_file(
             output_key="failed_accessions",
-            source_path=failed_path,
+            source=failed_path,
         )

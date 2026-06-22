@@ -3,6 +3,7 @@ Task execution logic. Is the engine behind Session and TaskRecord.
 Uses Sandwich pattern (load -> run -> save) to manage task lifecycle within a session.
 Allows long-running tasks to run without holding locks on the session manifest.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Iterator, TYPE_CHECKING
 from pathlib import Path
@@ -150,20 +151,30 @@ class ExecutionContext:
 
     def materialize_file(
         self,
-        source_path: Path | str,
-        output_key: str,
+        source: Path | str | Mapping[str, Path | str],
+        output_key: str | None = None,
         name: str | None = None,
         data_type: str | None = None,
         metadata: dict | None = None,
         move: bool = True,
         **kwargs,
     ) -> "Artifact":
-        """Adopts an existing file (e.g. temp file) in the Session"""
-        source_path = Path(source_path)
-        if not source_path.exists():
-            raise FileNotFoundError(f"Source file for materialization not found: {source_path}")
+        """
+        Adopts an existing file (e.g. temp file) in the Session.
+        Accepts a single path (auto-assigned to 'main') or a dictionary mapping
+        artifact bundle keys to paths (must explicitly include 'main').
+        """
+        from lore.core.artifacts import normalize_sources
 
-        # If not specified, fill outputs positionally
+        # 1. Normalize source to dict[str, Path]
+        sources = normalize_sources(source)
+
+        # 2. Validate physical existence
+        for key, path in sources.items():
+            if not path.exists():
+                raise FileNotFoundError(f"Source file for key '{key}' does not exist: {path}")
+
+        # 3. If not specified, fill outputs positionally
         output_key = self._resolve_output_key(output_key)
         data_type = self._resolve_data_type(output_key, data_type)
         name = name or self._generate_default_name(output_key, data_type)
@@ -173,9 +184,10 @@ class ExecutionContext:
         if kwargs:
             final_metadata.update(kwargs)
 
+        # 4. Delegate to Session manager
         with self.runtime.open_session(self.session_id) as s:
             artifact = s.register_artifact(
-                source=source_path,
+                source=sources,
                 transfer_mode=TransferMode.MOVE if move else TransferMode.COPY,
                 name=name,
                 data_type=data_type,
@@ -192,10 +204,11 @@ class ExecutionContext:
                 raise
 
             self.logger.info(
-                "Task ID: %s emitted Artifact: %s to slot: %s",
+                "Task ID: %s emitted Artifact: %s to slot: %s (Files: %s)",
                 self.task.id,
                 artifact.id,
                 output_key,
+                list(sources.keys()),
             )
             return artifact
 
@@ -211,8 +224,7 @@ class ExecutionContext:
     ) -> "Artifact":
         """
         Write in-memory content to tempfile of specified type then register it
-        as an Artifact. Takes advantage of Session's atomic write and name
-        collision logic.
+        as an Artifact. Automatically becomes the 'main' file of the Artifact.
         """
         output_key = self._resolve_output_key(output_key)
         data_type = self._resolve_data_type(output_key, data_type)
@@ -225,7 +237,7 @@ class ExecutionContext:
 
         try:
             return self.materialize_file(
-                source_path=tmp_path,
+                source=tmp_path,  # single path -> 'main' file
                 name=name,
                 output_key=output_key,
                 data_type=data_type,
@@ -274,7 +286,7 @@ class ExecutionContext:
 
         try:
             return self.materialize_file(
-                source_path=tmp_path,
+                source=tmp_path,  # single path -> 'main' file
                 name=name,
                 output_key=output_key,
                 data_type=data_type,

@@ -182,7 +182,7 @@ def summarize_cluster_origins(
 
     ctx.materialize_file(
         output_key="clustered_summary",
-        source_path=out_path,
+        source=out_path,
         metadata={
             "columns": final_summary_df.columns.tolist(),
         }
@@ -281,7 +281,7 @@ def inspect_cluster(
                     f.write(f">{head}\n{seq}\n")
             ctx.materialize_file(
                 output_key="cluster_fasta",
-                source_path=fasta_path,
+                source=fasta_path,
                 metadata={
                     "source_accessions": ", ".join(protein_accession),
                 }
@@ -301,7 +301,7 @@ def inspect_cluster(
     ctx.materialize_file(
         name=str(protein_accession[0]) + "_cluster",
         output_key="cluster_report",
-        source_path=out_path,
+        source=out_path,
         metadata={
             "columns": cluster_df.columns.tolist(),
             "source_accessions": ", ".join(protein_accession),

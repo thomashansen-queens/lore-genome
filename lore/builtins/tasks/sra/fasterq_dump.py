@@ -197,7 +197,7 @@ def fasterq_dump_handler(
     extracted_files.sort()
     for fastq_file in extracted_files:
         ctx.materialize_file(
-            source_path=fastq_file,
+            source=fastq_file,
             output_key="fastq_files",
             name=fastq_file.name,
             metadata={

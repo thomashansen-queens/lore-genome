@@ -117,14 +117,14 @@ def sam_to_bam_handler(
 
     # --- Phase 3: Materialize ---
     ctx.materialize_file(
-        source_path=bam_out_path,
+        source=bam_out_path,
         output_key="bam_file",
         name=bam_out_path.name,
         move=True,
     )
 
     ctx.materialize_file(
-        source_path=bai_out_path,
+        source=bai_out_path,
         output_key="bai_index",
         name=bai_out_path.name,
         move=True,

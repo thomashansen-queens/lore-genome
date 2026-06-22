@@ -271,7 +271,6 @@ class WorkflowManager:
                 name=task.name,
                 description=task.description or "",
                 status=TaskStatus.TEMPLATE,
-                is_template=True,
             ))
 
         # 4. Check integrity of new Workflow

@@ -1,7 +1,10 @@
 """
 Module to manage physical storage and references to Artifacts.
+Artifacts can be single files or bundles of related files, so functions
+to handle both cases are included.
 """
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
@@ -16,10 +19,32 @@ from lore.core.utils import slugify
 
 class TransferMode(Enum):
     """How the handle files during registration"""
-
     MOVE = "move"  # fast, deletes source (use for temp files)
     COPY = "copy"  # safer, keeps source (use for user files)
     LINK = "link"  # space-efficient, symlinks in artifacts dir to source
+
+
+def normalize_sources(
+    source: "Mapping[str, Path | str] | Path | str",
+) -> dict[str, Path]:
+    """
+    Coerce an Artifact source into a bundle mapping {key: Path}.
+
+    A bare path/str becomes the bundle's single 'main' file; a mapping is used
+    as-is but must designate a 'main'.
+    """
+    if isinstance(source, (str, Path)):
+        return {"main": Path(source)}
+    if isinstance(source, Mapping):
+        if "main" not in source:
+            raise ValueError(
+                "A multi-file Artifact bundle must designate one file as 'main'. "
+                "Please include a 'main' key in the source mapping."
+            )
+        return {key: Path(value) for key, value in source.items()}
+    raise TypeError(
+        f"source must be a Path, str, or Mapping[str, Path | str]; got {type(source)}."
+    )
 
 
 class ArtifactManager:
@@ -51,130 +76,113 @@ class ArtifactManager:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    # --- Artifact management ---
+    # --- Bundle management ---
 
-    def ingest(
+    def ingest_bundle(
         self,
-        source: Path | str,
+        sources: Mapping[str, Path | str],
         *,
         name: str | None = None,
         transfer_mode: TransferMode = TransferMode.COPY,
     ) -> dict[str, Any]:
         """
-        Public dispatcher for ingesting data from a local file or remote URI.
+        Public dispatcher for ingesting a bundle of files.
+        Calculates individual file hashes and a master bundle hash. TODO: Merkle tree?
         """
-        source_str = str(source).strip()
+        if "main" not in sources:
+            raise ValueError("Artifact bundles must contain a 'main' key.")
 
-        # Route 1: Remote URI
-        if source_str.startswith(("http://", "https://", "s3://", "gs://", "ftp://")):
-            return self._ingest_remote_uri(source_str, name)
+        # 1. Pre-calculate hases and sizes (individual)
+        file_hashes = {}
+        for key, source_str in sources.items():
+            source_str = str(source_str).strip()
+            if source_str.startswith(("http://", "https://", "s3://", "gs://", "ftp://")):
+                file_hashes[key] = hashlib.sha256(source_str.encode("utf-8")).hexdigest()
+            else:
+                source_path = Path(source_str).resolve()
+                if not source_path.exists():
+                    raise FileNotFoundError(f"Artifact source file not found: {source_path}")
+                file_hashes[key] = self._calculate_hash(source_path)
 
-        # Route 2: Local Files
-        source_path = Path(source_str).resolve()
-        if not source_path.exists():
-            raise FileNotFoundError(f"Artifact source file not found: {source_path}")
+        # 2. Calculate deterministic master hash for the entire bundle
+        sorted_hashes = [f"{k}:{file_hashes[k]}" for k in sorted(file_hashes.keys())]
+        master_hash_input = "|".join(sorted_hashes).encode("utf-8")
+        master_hash = hashlib.sha256(master_hash_input).hexdigest()
+        artifact_id = master_hash[:12]
 
-        if transfer_mode == TransferMode.LINK:
-            if not source_path.is_file():
-                raise ValueError("Can only link regular files, not directories or special files.")
-            if not source_path.is_absolute():
-                raise ValueError("Source path must be absolute for linking to avoid ambiguity.")
-            return self._ingest_local_symlink(source_path, name)
+        # 3. Process each file using the common Master ID prefix
+        processed_files = {}
+        for key, source_str in sources.items():
+            source_str = str(source_str).strip()
 
-        return self._ingest_local_copy(source_path, name, transfer_mode)
+            # Extract natural extension for this specific file
+            if source_str.startswith(("http://", "https://", "s3://", "gs://", "ftp://")):
+                stats = self._ingest_remote_uri(source_str, artifact_id, file_hashes[key])
+            else:
+                source_path = Path(source_str).resolve()
+                ext = source_path.name.split(".", 1)[1] if "." in source_path.name else ""
+                target_path = self._generate_path(artifact_id, name or "unnamed", ext)
+                stats = self._process_local_file(
+                    source_path, target_path, transfer_mode, file_hashes[key],
+                )
 
-    def _ingest_remote_uri(self, uri: str, name: str | None) -> dict[str, Any]:
-        """
-        Registers a remote URI/external reference without downloading. Hash based on URI string.
-        """
-        artifact_hash = hashlib.sha256(uri.encode("utf-8")).hexdigest()
-        artifact_id = artifact_hash[:12]
-
-        clean_path = urlparse(uri).path
-        filename_part = posixpath.basename(clean_path)
-        ext = filename_part.split(".")[-1] if "." in filename_part else "data"
-
-        default_metadata = {}
-        if ext in ("csv", "tsv", "txt"):
-            # Assume headers present unless otherwise indicated in metadata
-            default_metadata["header"] = True
+            processed_files[key] = stats
 
         return {
             "id": artifact_id,
-            "hash": artifact_hash,
-            "size_bytes": 0,
-            "relative_path": uri,  # Store URI in path for resolution
-            "extension": ext,
-            "created_at": datetime.now(timezone.utc),
-            "metadata": default_metadata,
+            "hash": master_hash,
+            "files": processed_files,
+            "created_at": processed_files["main"]["created_at"],
+            "metadata": {},  # TODO: Could aggregate metadata if needed
         }
 
-    def _ingest_local_symlink(self, source_path: Path, name: str | None) -> dict[str, Any]:
-        """Creates a symlink in the artifacts directory pointing to a source."""
-        # 1. Calculate identity
-        artifact_hash = self._calculate_hash(source_path)
-        artifact_id = artifact_hash[:12]
+    def _ingest_remote_uri(self, uri: str, artifact_id: str, file_hash: str) -> dict[str, Any]:
+        """Registers a remote URI without downloading."""
+        clean_path = urlparse(uri).path
+        filename_part = posixpath.basename(clean_path)
+        ext = filename_part.split(".", 1)[1] if "." in filename_part else "data"
+        return {
+            "hash": file_hash,
+            "size_bytes": 0,
+            "relative_path": uri,
+            "extension": ext,
+            "original_source": uri,
+            "created_at": datetime.now(timezone.utc),
+        }
 
-        # 2. Path resolution
-        ext = source_path.suffix.lstrip(".")
-        target_path = self._generate_path(artifact_id, name or "unnamed", ext)
-
-        if source_path != target_path:
-            try:
-                target_path.symlink_to(source_path)
-            except OSError as e:
-                # self.logger.warning("Symlink failed for %s. Error: %s", source_path, e)
-                raise RuntimeError(f"Failed to create symlink for Artifact: {e}") from e
-
-        return self._build_stats_dict(artifact_id, artifact_hash, target_path, ext)
-
-    def _ingest_local_copy(
+    def _process_local_file(
         self,
         source_path: Path,
-        name: str | None,
+        target_path: Path,
         mode: TransferMode,
+        file_hash: str,
     ) -> dict[str, Any]:
-        """
-        Physically copies/moves a file into the Artifact directory. Returns file stats.
-        """
-        # 1. Calculate identity (Content Addressable-ish)
-        artifact_hash = self._calculate_hash(source_path)
-        artifact_id = artifact_hash[:12]
-
-        # 2. Path resolution
-        ext = source_path.suffix.lstrip(".")
-        target_path = self._generate_path(artifact_id, name or "unnamed", ext)
-
-        # 3. Determine destination path and copy if needed
+        """Physically moves/copies/links a single file into the Artifacts directory."""
         if source_path != target_path:
-            tmp_target = target_path.with_suffix(target_path.suffix + ".tmp")
-            try:
-                if mode == TransferMode.MOVE:
-                    shutil.move(str(source_path), str(tmp_target))
-                else:
-                    shutil.copy2(str(source_path), str(tmp_target))
+            if mode == TransferMode.LINK:
+                if not source_path.is_file() or not source_path.is_absolute():
+                    raise ValueError("Links require aboslute paths to regular files.")
+                try:
+                    target_path.symlink_to(source_path)
+                except OSError as e:
+                    raise RuntimeError(f"Failed to create symlink for Artifact: {e}") from e
+            else:
+                tmp_target = target_path.with_suffix(target_path.suffix + ".tmp")
+                try:
+                    if mode == TransferMode.MOVE:
+                        shutil.move(str(source_path), str(tmp_target))
+                    else:
+                        shutil.copy2(str(source_path), str(tmp_target))
+                    tmp_target.replace(target_path)
+                except Exception as e:
+                    if tmp_target.exists():
+                        tmp_target.unlink()
+                    raise IOError(f"Failed to ingest Artifact: {e}") from e
 
-                # Atomic swap to final Artifacts dir
-                tmp_target.replace(target_path)
-            except Exception as e:
-                if tmp_target.exists():
-                    tmp_target.unlink()
-                raise IOError(f"Failed to ingest Artifact: {e}") from e
-
-        return self._build_stats_dict(artifact_id, artifact_hash, target_path, ext)
-
-    def _build_stats_dict(
-        self, artifact_id: str, artifact_hash: str, target_path: Path, ext: str,
-    ) -> dict[str, Any]:
-        """Populate Artifact metadata."""
-        default_metadata = {}
-        if ext in ("csv", "tsv", "txt"):
-            # Assume headers present unless otherwise indicated in metadata
-            default_metadata["header"] = True
+        ext = source_path.name.split(".", 1)[1] if "." in source_path.name else ""
 
         return {
-            "id": artifact_id,
-            "hash": artifact_hash,
+            "hash": file_hash,
             "size_bytes": target_path.stat().st_size,
             "relative_path": str(
                 target_path.relative_to(self.dir)
@@ -182,31 +190,49 @@ class ArtifactManager:
                 else target_path.resolve()
             ),
             "extension": ext,
-            "metadata": default_metadata,
+            "original_source": str(source_path),
             "created_at": datetime.fromtimestamp(target_path.stat().st_mtime, tz=timezone.utc),
         }
 
-    def rename_file(
-        self, artifact_id: str, old_relative_path: str, new_name: str, extension: str
-    ) -> str:
+    def rename_bundle(
+        self,
+        artifact_id: str,
+        files_dict: Mapping[str, Any],
+        new_name: str,
+    ) -> dict[str, str]:
         """
-        Renames an Artifact on disk to match (ID_Slug name).
-        Returns new relative path string
+        Renames all physical files in a bundle to match the new slug name.
+        Returns a dict of {bundle_key: new_relative_path}
         """
-        # 1. Calculate new path
-        current_path = self.dir / old_relative_path
-        if not current_path.exists():
-            return old_relative_path  # File not managed here
+        new_paths = {}
+        for key, artifact_file in files_dict.items():
+            old_path = self.dir / artifact_file.path
+            if not old_path.exists():
+                new_paths[key] = artifact_file.path
+                continue
 
-        new_path = self._generate_path(artifact_id, new_name, extension)
+            ext = artifact_file.extension
+            new_path = self._generate_path(artifact_id, new_name, ext)
 
-        if current_path != new_path:
-            try:
-                shutil.move(str(current_path), str(new_path))
-            except OSError as e:
-                raise RuntimeError(f"Failed to rename artifact file: {e}") from e
+            if old_path != new_path:
+                try:
+                    shutil.move(str(old_path), str(new_path))
+                except OSError as e:
+                    raise RuntimeError(f"Failed to rename artifact file: {e}") from e
 
-        return str(new_path.relative_to(self.dir))
+            new_paths[key] = str(new_path.relative_to(self.dir))
+
+        return new_paths
+
+    def delete_bundle(self, files_dict: Mapping[str, Any]) -> None:
+        """Physically delete all internal files in a bundle from disk."""
+        for artifact_file in files_dict.values():
+            path = Path(artifact_file.path)
+            if not path.is_absolute():
+                path = self.dir / path
+
+            if path.exists() and path.is_relative_to(self.dir):
+                path.unlink()
 
     def resolve_path(self, artifact_id: str, recorded_path: str) -> Path:
         """
@@ -225,19 +251,10 @@ class ArtifactManager:
 
         # 3. Self-healing: Try to find the file by hash if it's missing (crash corruption)
         id_prefix = artifact_id[:8]
-        candidates = list(self.dir.glob(f"{id_prefix}_*"))
+        candidates = list(self.dir.glob(f"{id_prefix}_*{path.suffix}"))
         candidates = [c for c in candidates if not c.name.endswith((".tmp", ".bak"))]
 
         if len(candidates) == 1:
             return candidates[0].resolve()
 
-        raise FileNotFoundError(f"File for Artifact ID: {artifact_id} is missing.")
-
-    def delete_file(self, relative_path: str) -> None:
-        """Physically delete file from disk if it is internal."""
-        path = Path(relative_path)
-        if not path.is_absolute():
-            path = self.dir / path
-
-        if path.exists() and path.is_relative_to(self.dir):
-            path.unlink()
+        raise FileNotFoundError(f"File not found for Artifact ID: {artifact_id}")

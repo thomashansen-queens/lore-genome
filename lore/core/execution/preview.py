@@ -3,6 +3,7 @@ Preview execution logic for Tasks. Previews are meant to be fast, responsive
 checks that can be used in the UI to validate inputs and get a sense of how a
 Task will execute and should be configured.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -78,7 +79,7 @@ class PreviewContext(ExecutionContext):
 
     def materialize_file(
         self,
-        source_path: Path | str,
+        source: Path | str | Mapping[str, Path | str],
         name: str | None = None,
         output_key: str | None = None,
         data_type: str | None = None,
@@ -89,19 +90,19 @@ class PreviewContext(ExecutionContext):
         """
         Intercepts file materialization to return preview payload in RAM
         """
-        source_path = Path(source_path)
-        if not source_path.exists():
-            raise FileNotFoundError(f"Source file not found: {source_path}")
+        # 1. Normalize source to dict[str, Path] (shared with the real engine path)
+        from lore.core.artifacts import normalize_sources
+        sources = normalize_sources(source)
 
-        # 1. Resolve output keys
+        # 2. Resolve output keys
         output_key = self._resolve_output_key(output_key)
         data_type = self._resolve_data_type(output_key, data_type)
 
-        # 2. Delegate packaging
+        # 3. Delegate packaging
         adapter_config = self.task.exec_config.get("adapter", {})
         strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
         peek_limit = self.runtime.settings.preview_peek_limit
-        reader = get_reader_for(source_path)
+        reader = get_reader_for(sources["main"])
 
         if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
             try:
@@ -112,15 +113,11 @@ class PreviewContext(ExecutionContext):
         else:
             raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
 
-        # io_meta["file_eof_hit"] now means exactly what the reader reports: did
-        # the OUTPUT read reach EOF (the display axis). The result axis — were the
-        # inputs delivered in full? — is carried separately by the worker; the two
-        # are no longer fused. When the result is a sample, the output's own row
-        # count is not the result's total, so don't present it as one.
+        # Can't know total row count of the output if the inputs were not fully loaded
         if not self.inputs_complete:
             io_meta["total_rows"] = None
 
-        io_meta["extension"] = source_path.suffix.lstrip(".")
+        io_meta["extension"] = sources["main"].suffix.lstrip(".")
         io_meta["data_type"] = data_type
 
         # 4. Store in ephemeral results object
@@ -169,7 +166,7 @@ def run_preview_worker(
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
     adapter_config = ephemeral_task.exec_config.get("adapter", {})
-    strategy = AdapterStrategy.FULL
+    strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
 
     # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
@@ -177,7 +174,7 @@ def run_preview_worker(
             s=s,
             task_def=task_def,
             bindings=ephemeral_task.inputs,
-            strategy=AdapterStrategy(strategy),
+            strategy=strategy,
         )
 
     # 4. Completeness check. Was every input delivered to the handler in full? If not, was

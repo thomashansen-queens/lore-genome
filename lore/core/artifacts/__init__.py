@@ -2,14 +2,14 @@
 Module for Artifacts
 """
 
-from .manager import TransferMode, ArtifactManager
-from .models import Artifact, BaseArtifact, FutureArtifact
+from .manager import TransferMode, ArtifactManager, normalize_sources
+from .artifact import Artifact, ArtifactFile
 
 
 __all__ = [
     "Artifact",
-    "BaseArtifact",
-    "FutureArtifact",
+    "ArtifactFile",
     "TransferMode",
     "ArtifactManager",
+    "normalize_sources",
 ]

@@ -273,7 +273,7 @@ def mmseqs2_handler(
         raise RuntimeError("Expected MMseqs2 output files not found.")
 
     ctx.materialize_file(
-        source_path=tsv_path,
+        source=tsv_path,
         output_key="cluster_tsv",
         data_type="mmseqs2_cluster_map",
         metadata={
@@ -284,14 +284,14 @@ def mmseqs2_handler(
 
     if keep_representative_fasta:
         ctx.materialize_file(
-            source_path=rep_path,
+            source=rep_path,
             output_key="representative_fasta",
             data_type="protein_fasta",
         )
 
     if keep_truncated and cluster_window and cluster_window.strip():
         ctx.materialize_file(
-            source_path=target_fasta,
+            source=target_fasta,
             output_key="truncated_fasta",
             data_type="protein_fasta",
         )

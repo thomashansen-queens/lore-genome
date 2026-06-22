@@ -1,6 +1,7 @@
 """
 Session management for LoRe Genome.
 """
+from collections.abc import Mapping
 from contextlib import AbstractContextManager
 import json
 import logging
@@ -413,19 +414,25 @@ class Session(AbstractContextManager):
 
     # --- Artifact helpers ---
 
-    def get_artifact_path(self, artifact_id: str) -> Path:
+    def get_artifact_path(self, artifact_id: str, key: str = "main") -> Path:
         """
-        Get fully resolved path to an Artifact by ID (self-healing for missing files)
+        Get fully resolved path to an Artifact by ID and artifact bundle key.
+        Defaults to the 'main' file. Self-healing for missing files.
         """
         artifact = self.get_artifact(artifact_id)
         if not artifact:
             raise ValueError(f"Artifact ID: {artifact_id} not found in manifest.")
-        path = self.artifacts.resolve_path(artifact_id, recorded_path=artifact.path)
+
+        artifact_file = artifact.files.get(key)
+        if not artifact_file:
+            raise ValueError(f"Artifact ID: {artifact_id} does not have a file for key: '{key}'.")
+
+        path = self.artifacts.resolve_path(artifact_id, recorded_path=artifact_file.path)
         return path
 
     def register_artifact(
         self,
-        source: Path,
+        source: "Mapping[str, Path | str] | Path | str",
         transfer_mode: TransferMode = TransferMode.COPY,
         name: str | None = None,
         data_type: str = "unknown",
@@ -434,22 +441,49 @@ class Session(AbstractContextManager):
         parent_artifact_ids: list[str] | None = None,
         metadata: dict | None = None,
     ) -> "Artifact":
-        """Factory method to create and register a new Artifact"""
+        """
+        Factory method to create and register a new Artifact.
+
+        `source` may be a single path (becomes the bundle's 'main' file) or a
+        mapping of bundle keys to paths (must include 'main').
+        """
+        from lore.core.artifacts import normalize_sources
+
         # 1. Perform file operations
-        disk_stats = self.artifacts.ingest(source, name=name, transfer_mode=transfer_mode)
+        sources = normalize_sources(source)
+        disk_stats = self.artifacts.ingest_bundle(
+            sources, name=name, transfer_mode=transfer_mode,
+        )
 
-        # 2. Merge metadata
-        default_metadata = disk_stats.get("metadata", {})
-        final_metadata = {**default_metadata, **(metadata or {})}
+        # 2. Build the inner artifact modles
+        from lore.core.artifacts import ArtifactFile
+        artifact_files = {}
+        for file_key, file_stats in disk_stats["files"].items():
+            artifact_files[file_key] = ArtifactFile(
+                path=file_stats["relative_path"],
+                size_bytes=file_stats["size_bytes"],
+                hash=file_stats["hash"],
+            )
 
-        # 3. Build state model
+        # 3. Determine base name and type
+        main_file_stats = disk_stats["files"]["main"]
+        final_name = name or Path(main_file_stats["original_source"]).stem
+        final_data_type = data_type or (
+            "unknown"
+            if main_file_stats["extension"] == ""
+            else main_file_stats["extension"].lstrip(".")
+        )
+
+        # 4. Merge metadata
+        final_metadata = {**disk_stats.get("metadata", {}), **(metadata or {})}
+
+        # 5. Build state model
         artifact = Artifact(
             id=disk_stats["id"],
-            name=name or Path(source).stem,
-            path=disk_stats["relative_path"],
-            size_bytes=disk_stats["size_bytes"],
+            name=final_name,
+            files=artifact_files,            
             hash=disk_stats["hash"],
-            data_type=data_type if data_type != "unknown" else disk_stats["extension"],
+            data_type=final_data_type,
             created_by_task_id=created_by_task_id,
             created_by_output_key=created_by_output_key,
             parent_artifact_ids=parent_artifact_ids or [],
@@ -489,7 +523,7 @@ class Session(AbstractContextManager):
         return matches
 
     def rename_artifact(self, artifact_id: str, new_name: str) -> str:
-        """Renames an Artifact in the Manifest AND moves the file on disk to
+        """Renames an Artifact in the Manifest AND moves bundled files on disk to
         match the new name (ID_Slug name strategy). Returns the new name.
         """
         artifact = self.manifest.get_artifact(artifact_id)
@@ -499,13 +533,14 @@ class Session(AbstractContextManager):
         if artifact.name == new_name:
             return new_name
 
-        new_path = self.artifacts.rename_file(
+        new_paths_dict = self.artifacts.rename_bundle(
             artifact_id,
-            old_relative_path=artifact.path,
+            files_dict=artifact.files,
             new_name=new_name,
-            extension=artifact.extension,
         )
-        new_name = self.manifest.rename_artifact(artifact_id, new_name, new_path=new_path)
+        new_name = self.manifest.rename_artifact(
+            artifact_id, new_name, new_paths=new_paths_dict,
+        )
         self.mark_dirty()
         return new_name
 
@@ -517,7 +552,7 @@ class Session(AbstractContextManager):
         if not artifact:
             raise ValueError(f"Cannot delete non-existent artifact ID: {artifact_id}")
 
-        self.artifacts.delete_file(artifact.path)
+        self.artifacts.delete_bundle(artifact.files)
         self.manifest.remove_artifact(artifact_id)
         self.mark_dirty()
         self.logger.info("Deleted artifact: '%s' (ID: %s)", artifact.name, artifact_id)

@@ -17,7 +17,7 @@ from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.forms import get_form_str
 
 if TYPE_CHECKING:
-    from lore.core.artifacts.models import Artifact
+    from lore.core.artifacts.artifact import Artifact
     from lore.core.adapters.base import BaseAdapter
 
 

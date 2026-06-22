@@ -184,7 +184,7 @@ def dummy_task_plugin(isolated_task_registry) -> str:
         out_path = ctx.get_temp_path("output.txt")
         out_path.write_text(f"Processed: {text_to_write}")
         ctx.materialize_file(
-            source_path=out_path,
+            source=out_path,
             output_key="greeting_file",
             name="test_greeting",
         )
