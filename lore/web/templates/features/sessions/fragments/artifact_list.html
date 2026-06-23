@@ -7,8 +7,18 @@
         <td><small class="muted">{{ loop_index }}</small></td>
         <td>
             <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}" class="code">
-                {{ a.name or a.path.split('/')[-1] }}
+                {{ a.name or a.filename }}
             </a>
+            {# A bundle-Artifact (more than just the 'main' file) reveals each of its slots #}
+            {% if a.files | length > 1 %}
+                <div class="row gapped" style="flex-wrap: wrap; margin-top: var(--spacing-sm);">
+                    {% for key, f in a.files.items() %}
+                        <span class="badge muted small" title="{{ f.filename }}">
+                            {{ key }} &middot; {{ f.extension }} &middot; {{ f.size_bytes | filesizeformat }}
+                        </span>
+                    {% endfor %}
+                </div>
+            {% endif %}
         </td>
         <td>{{ a.data_type }}</td>
         <td>{{ a.display_size }}</td>
@@ -33,7 +43,7 @@
 
                     {# Section 2: Standard actions #}
                     <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
-                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.path.split('/')[-1]) }}
+                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.filename) }}
                     <hr />
                     {{ ui.delete_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/delete") }}
                 </div>
