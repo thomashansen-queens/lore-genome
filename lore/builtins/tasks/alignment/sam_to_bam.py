@@ -31,16 +31,10 @@ class SamToBamInputs:
 
 class SamToBamOutputs:
     """Outputs for SAM to BAM Task"""
-    bam_file = lore.TaskOutput(
+    bam = lore.TaskOutput(
         data_type="bam",
         label="Output BAM File",
         is_primary=True,
-        yields="single",
-    )
-    bai_index = lore.TaskOutput(
-        data_type="bai",
-        label="BAM Index File",
-        is_primary=False,
         yields="single",
     )
 
@@ -115,17 +109,15 @@ def sam_to_bam_handler(
     if not bai_out_path.exists() or bai_out_path.stat().st_size == 0:
         raise FileNotFoundError(f"Expected BAI index not found at {bai_out_path}")
 
+    # --- Phase 3: Build the artifact bundle ---
+    output_bundle = {}
+    output_bundle["main"] = bam_out_path
+    output_bundle["index"] = bai_out_path
+
     # --- Phase 3: Materialize ---
     ctx.materialize_file(
-        source=bam_out_path,
-        output_key="bam_file",
+        source=output_bundle,
         name=bam_out_path.name,
-        move=True,
-    )
-
-    ctx.materialize_file(
-        source=bai_out_path,
-        output_key="bai_index",
-        name=bai_out_path.name,
+        output_key="bam",
         move=True,
     )

@@ -22,8 +22,8 @@ from lore.core.tasks import (
 )
 from lore.core.settings import config_registry
 
-# 2. Topology & trait matching
-from lore.core.topology.traits import ANY, TABULAR
+# 2. Topology & trait matching (replaced with plain strings!)
+# from lore.core.topology.traits import ANY, TABULAR
 
 # 3. Execution State
 from lore.core.execution.context import (
@@ -69,8 +69,6 @@ __all__ = [
     "Materialization",
     "Passthrough",
     "PreviewMode",
-    # Traits
-    "ANY", "TABULAR",
     # Execution
     "ExecutionContext",
     "memoize",

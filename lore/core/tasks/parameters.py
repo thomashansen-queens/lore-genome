@@ -201,7 +201,7 @@ class ArtifactInput(TaskInput):
         - load_as (Materialization): How the data is delivered to the execution 
         handler (e.g. ADAPTED to a DataFrame, RAW_STREAM as an iterator)
         - Accepted data: The contract. Fuzzy search for LoRē data type which can be a 
-        broad trait (e.g. lore.TABULAR), a specific type (e.g. "genome_annotations") 
+        broad trait (e.g. "tabular"), a specific type (e.g. "genome_annotations") 
         or a slice of from a table (e.g. "genome_accessions"). If provided as a list, 
         any one match is sufficient.
     """
@@ -211,7 +211,7 @@ class ArtifactInput(TaskInput):
         select: CardinalityLiteral | Cardinality = Cardinality.SINGLE,
         load_as: MaterializationLiteral | Materialization = Materialization.ADAPTED,
         # Fuzzy Matching: ["json", "ncbi", "genome_accessions"]
-        accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = traits.ANY,
+        accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = "*",
         # Pydantic pass-throughs
         default: Any = PydanticUndefined,
         label: str | None = None,
@@ -226,7 +226,7 @@ class ArtifactInput(TaskInput):
             raise ValueError(f"Invalid ArtifactInput configuration: {e}")
 
         if accepted_data is None:
-            self.accepted_data = [traits.ANY]
+            self.accepted_data = ["*"]
         elif isinstance(accepted_data, list):
             self.accepted_data = accepted_data
         else:
@@ -240,8 +240,12 @@ class ArtifactInput(TaskInput):
                 "widget": self.cardinality.ui_widget().value,
                 "cardinality": self.cardinality.value,
                 "materialization": self.materialization.value,
-                # TODO: Stringify traits for serialization/UI
-                "accepted_data": self.accepted_data,
+                # Store traits as their keyword string so json_schema_extra stays JSON-serializable
+                # The matcher dynamically resolves keywords to traits.
+                "accepted_data": [
+                    d.keyword if isinstance(d, traits.DataTrait) else d
+                    for d in self.accepted_data
+                ],
             }
         )
 

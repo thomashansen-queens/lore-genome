@@ -1,17 +1,17 @@
 """
 Core execution engine
 """
-# 1. Orchestrator
-from .orchestrator import SequentialOrchestrator
-
-# 2. Worker
-from .worker import run_task_worker
-
-# 3. Executors
+# 1. Executors
 from .executors import (
     BaseExecutor,
     LocalSubprocessExecutor,
 )
+
+# 2. Orchestrator
+from .orchestrator import SequentialOrchestrator
+
+# 3. Worker
+from .worker import run_task_worker
 
 # 4. Context sandbox
 from .context import ExecutionContext

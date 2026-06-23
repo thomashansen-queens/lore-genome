@@ -18,7 +18,7 @@ class QueryInputs:
     """Input model for the filter by query task."""
     source = lore.ArtifactInput(
         label="Artifact(s) to filter",
-        accepted_data=lore.TABULAR,
+        accepted_data="tabular",  # LoRe 'trait' system will interpret this
         select="multiple",
         load_as="raw",
     )

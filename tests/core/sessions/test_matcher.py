@@ -108,14 +108,16 @@ def test_find_artifacts_for_field_structural():
 def test_find_artifacts_for_field_trait():
     """A trait requirement (TABULAR) matches via DataTrait.is_satisfied_by, which
     reads the artifact's data_type rather than the semantic-string set."""
-    from lore.core.topology.traits import TABULAR
+    from lore.core.topology.traits import TabularTrait
 
     mock_session = MagicMock()
     art_csv = create_mock_artifact("1", {"csv"}, data_type="csv")
     art_fasta = create_mock_artifact("2", {"fasta"}, data_type="fasta")
     mock_session.list_artifacts.return_value = [art_csv, art_fasta]
 
-    field_extra = {"is_artifact": True, "accepted_data": [TABULAR]}
+    # accepted_data is stored as keyword strings (what the DSL serializes), and
+    # the matcher resolves the keyword back to the trait.
+    field_extra = {"is_artifact": True, "accepted_data": [TabularTrait.keyword]}
     result = find_artifacts_for_field(mock_session, field_extra)
     assert [a.id for a in result] == ["1"]
 

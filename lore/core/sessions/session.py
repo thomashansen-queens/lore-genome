@@ -501,7 +501,11 @@ class Session(AbstractContextManager):
         """Retrieve an ArtifactRecord by ID"""
         return self.manifest.get_artifact(artifact_id)
 
-    def list_artifacts(self, sort_by: str = "created_at", reverse: bool = True) -> list["Artifact"]:
+    def list_artifacts(
+        self,
+        sort_by: str = "created_at",
+        reverse: bool = True,
+    ) -> list["Artifact"]:
         """Returns a list of all Artifacts in the session."""
         return self.manifest.list_artifacts(sort_by=sort_by, reverse=reverse)
 

@@ -37,15 +37,15 @@ class NcbiPostHocOutputs:
     )
 
 
-@lore.task(
-    "ncbi.filter_post_hoc",
-    inputs=NcbiPostHocInputs,
-    outputs=NcbiPostHocOutputs,
-    name="Post-hoc filter NCBI Genome Reports",
-    category="NCBI",
-    icon="🗐>",
-    preview_mode="live",
-)
+# @lore.task(
+#     "ncbi.filter_post_hoc",
+#     inputs=NcbiPostHocInputs,
+#     outputs=NcbiPostHocOutputs,
+#     name="Post-hoc filter NCBI Genome Reports",
+#     category="NCBI",
+#     icon="🗐>",
+#     preview_mode="live",
+# )
 def ncbi_post_hoc_handler(
     ctx: lore.ExecutionContext,
     source: Any,
