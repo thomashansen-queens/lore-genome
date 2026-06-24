@@ -204,7 +204,10 @@ def _materialize_single_artifact(
     that is currently only populated for PEEK previews. Could be useful in the
     future to include io metadata for other materialization strategies.
     """
+    # Track requested materialization to honour type contracts
     m = Materialization(materialization)
+    requested_m = m
+
     path = session.get_artifact_path(artifact.id)
     peek_limit = session.runtime.settings.preview_peek_limit
     io_meta = {}
@@ -217,6 +220,9 @@ def _materialize_single_artifact(
         elif m in (Materialization.RAW, Materialization.RAW_STREAM):
             reader = get_reader_for(path)
             raw_data, io_meta = reader.preview(peek_limit=peek_limit)
+            if requested_m == Materialization.RAW_STREAM:
+                # Wrap data in an iterator for streaming handlers
+                return iter(raw_data), io_meta
             return raw_data, io_meta
 
     elif strategy == AdapterStrategy.LAZY:
@@ -262,8 +268,9 @@ def _materialize_single_artifact(
 
     if m == Materialization.PREVIEW:
         raw_data, io_meta = reader.preview(peek_limit=peek_limit)
-        if adapter:
-            return adapter.adapt(raw_data, config=config), io_meta
+        data = adapter.adapt(raw_data, config=config) if adapter else raw_data
+        if requested_m == Materialization.ADAPTED_STREAM:
+            return iter(data), io_meta  # wrap in iterator for streaming handlers
         return raw_data, io_meta
 
     if m == Materialization.ADAPTED:

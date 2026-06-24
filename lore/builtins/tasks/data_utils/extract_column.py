@@ -46,7 +46,7 @@ class ExtractColumnOutputs:
 )
 def extract_column(
     ctx: lore.ExecutionContext,
-    table: Iterator[list],
+    table: Iterator[dict],
     column_name: str,
     deduplicate: bool = False,
 ):
@@ -66,7 +66,6 @@ def extract_column(
             f"Column '{column_name}' not found in the table. Available columns: {first_row}"
         )
 
-    col_index = first_row.index(column_name)
     unique_values = set()
 
     # 2. Stream column to disk
@@ -81,7 +80,7 @@ def extract_column(
                 continue
 
             # Get value and skip if empty or duplicate and deduplicate is True
-            val = str(row[col_index]).strip()
+            val = str(row.get(column_name, "")).strip()
             if not val:
                 continue
             if deduplicate:
