@@ -4,6 +4,7 @@ Routes for managing individual Tasks within a Session.
 import asyncio
 from collections.abc import AsyncIterable
 import html
+import traceback
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -480,10 +481,17 @@ def api_task_preview(
 
     except Exception as e:
         rt.logger.error("Preview API Error: %s", str(e), exc_info=True)
+        # TODO(security): traceback exposes internal paths/source. Fine for now
+        # gate behind a debug setting before HPC deploy
+        tb = html.escape(traceback.format_exc())
         err_html = f"""
         <div class="card" style="background: var(--danger-bg); border-color: var(--danger);">
             <h4 style="color: var(--danger); margin-top: 0;">Preview Failed</h4>
             <p class="small">{str(e)}</p>
+            <details class="small" style="margin-top: var(--spacing-sm);">
+                <summary style="cursor: pointer;">Traceback</summary>
+                <pre class="small" style="white-space: pre-wrap;">{tb}</pre>
+            </details>
         </div>
         """
         return HTMLResponse(content=err_html)

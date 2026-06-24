@@ -3,6 +3,7 @@ Preview execution logic for Tasks. Previews are meant to be fast, responsive
 checks that can be used in the UI to validate inputs and get a sense of how a
 Task will execute and should be configured.
 """
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +55,10 @@ class PreviewPayload(BaseModel):
 
     logs: str | None = None
     error: str | None = None
+    # TODO(security): `traceback` exposes internal file paths and source structure.
+    # Acceptable for now (local dev tool). Gate behind a debug setting before any
+    # multi-user / HPC deployment.
+    traceback: str | None = None
 
 
 @dataclass
@@ -254,6 +259,7 @@ def run_preview_worker(
 
     except Exception as e:
         preview.error = str(e)
+        preview.traceback = traceback.format_exc()
     finally:
         ctx.cleanup()
 

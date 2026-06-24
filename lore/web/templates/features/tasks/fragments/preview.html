@@ -3,9 +3,15 @@
 
 {# --- Error --- #}
 {% if payload.error %}
-    <div class="flash-message scroll-area" 
+    <div class="flash-message scroll-area"
         style="background: var(--danger-bg); border-color: var(--danger); margin-bottom: var(--spacing-md);">
         <pre class="small">{{ payload.error }}</pre>
+        {% if payload.traceback %}
+            <details class="small" style="margin-top: var(--spacing-sm);">
+                <summary style="cursor: pointer;">Traceback</summary>
+                <pre class="small" style="white-space: pre-wrap;">{{ payload.traceback }}</pre>
+            </details>
+        {% endif %}
     </div>
 {% endif %}
 
