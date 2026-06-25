@@ -6,10 +6,11 @@ data transformation, ETL, or heavy lifting should be done in Task handlers.
 Slicing and dicing of data are done here according to DSL instructions and
 semantic types.
 """
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import io
 import itertools
-import types
+import logging
 from typing import TYPE_CHECKING, Any, get_origin
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
@@ -23,6 +24,9 @@ from lore.core.utils.pydantic import is_collection_type
 if TYPE_CHECKING:
     from lore.core.sessions import Session
     from lore.core.artifacts import Artifact
+    from lore.core.readers import BaseReader
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -158,7 +162,10 @@ def materialize_task_inputs(
         # 6. Handle packaging & concatenation
         # Auto-concatenate if it's a series type and multiple items are allowed
         if allows_multiple:
-            if processed_artifacts and isinstance(processed_artifacts[0], types.GeneratorType):
+            # A lazy stream (generator, itertools.chain, ...) is chained lazily;
+            # materialized values (lists, scalars) fall through to flatten. Note a
+            # list is Iterable but not an Iterator, so it correctly takes the else.
+            if processed_artifacts and isinstance(processed_artifacts[0], Iterator):
                 dto.data[key] = itertools.chain(*processed_artifacts)
             else:
                 flattened = []
@@ -185,6 +192,44 @@ def materialize_task_inputs(
         dto.io_metadata[key] = slot_io_metadata
 
     return dto
+
+
+# Only warn on full-read fallbacks if the file is large enough to matter
+_FALLBACK_WARN_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _stream_with_fallback(
+    reader: "BaseReader",
+    config: dict | None = None,
+    *,
+    adapted: bool = False,
+) -> tuple[Iterator[Any], dict]:
+    """
+    Resolve a reader to (record_iterator, io_metadata), transparently falling
+    back to a whole-file read_full() for non-streamable formats (those whose
+    stream() raises NotImplementedError, e.g. a monolithic JSON document).
+    Checking first iteration raises here rather than inside handler code.
+    """
+    suffix = " (Adapted)" if adapted else ""
+    gen = reader.stream(config)
+    try:
+        first = next(gen)
+    except NotImplementedError:
+        # Warn only when the full in-memory load is large enough to matter
+        size = reader.path.stat().st_size if reader.path.exists() else 0
+        if size >= _FALLBACK_WARN_BYTES:
+            logger.warning(
+                "%s cannot stream '%s' (%.0f MB); fell back to a full in-memory read, "
+                "forfeiting streaming's memory efficiency. Consider a streaming reader "
+                "for this format.",
+                type(reader).__name__, reader.path.name, size / 1024 / 1024,
+            )
+        # Then read the whole file but wrap it in an iterator for streaming handlers
+        data = reader.read_full(config)
+        return iter(data), {"io_strategy": f"Full load{suffix}"}
+    except StopIteration:
+        return iter(()), {"io_strategy": f"Streamed{suffix}"}  # empty stream
+    return itertools.chain([first], gen), {"io_strategy": f"Streamed{suffix}"}
 
 
 def _materialize_single_artifact(
@@ -254,7 +299,7 @@ def _materialize_single_artifact(
         return reader.read_full(), {"io_strategy": "Full load"}
 
     if m == Materialization.RAW_STREAM:
-        return reader.stream(), {"io_strategy": "Streamed"}
+        return _stream_with_fallback(reader)
 
     # 4. Adapt the data for the handler - metadata is passed as config
     adapters = artifact.get_adapters()
@@ -262,9 +307,9 @@ def _materialize_single_artifact(
     config = {**(artifact.metadata or {}), "ext": artifact.extension}
 
     if m == Materialization.ADAPTED_STREAM:
-        raw_generator = reader.stream()
+        raw_generator, io_meta = _stream_with_fallback(reader, config, adapted=True)
         data = adapter.adapt_stream(raw_generator, config=config) if adapter else raw_generator
-        return data, {"io_strategy": "Streamed (Adapted)"}
+        return data, io_meta
 
     if m == Materialization.PREVIEW:
         raw_data, io_meta = reader.preview(peek_limit=peek_limit)

@@ -101,7 +101,7 @@ def extract_column(
         data_type=column_name.lower().strip(),
         extension="tsv",
         metadata={
-            "keys": [column_name],
+            "columns": [column_name],
             "deduplicate": deduplicate,
             "header": False,
         }

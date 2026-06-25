@@ -1,7 +1,7 @@
 """
 Tests for materializing artifacts from the engine
 """
-from types import GeneratorType
+from collections.abc import Iterator
 import pytest
 
 from lore.core.execution.materializer import _materialize_single_artifact
@@ -54,7 +54,7 @@ def test_materialization_raw(temp_session, staged_artifact):
 
 
 def test_materialization_raw_stream(temp_session, staged_artifact):
-    """Proves RAW_STREAM returns a lazy generator, not a list"""
+    """Proves RAW_STREAM returns a lazy iterator, not a list"""
     result, io_meta = _materialize_single_artifact(
         session=temp_session,
         artifact=staged_artifact,
@@ -62,9 +62,11 @@ def test_materialization_raw_stream(temp_session, staged_artifact):
         accepted_data=["*"],
     )
 
-    assert isinstance(result, GeneratorType)
+    # Lazy iterator (generator / itertools.chain), not a materialized list
+    assert isinstance(result, Iterator)
+    assert not isinstance(result, list)
 
-    # Exhaust the generator to prove it holds the data
+    # Exhaust the iterator to prove it holds the data
     streamed_data = list(result)
     assert len(streamed_data) == 3
 
