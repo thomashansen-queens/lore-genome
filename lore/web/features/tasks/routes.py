@@ -18,6 +18,7 @@ from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
 
@@ -447,17 +448,21 @@ def api_task_preview(
                 )
                 continue
     
-            config = payload.task_config.adapter.model_dump()
-            config["ext"] = ext
-    
-            # C. Adapt the raw output data for frontend preview
+            # C. Merge adapter config from source metadata, UI overrides, and call-site feedback
+            config = build_adapter_config(
+                source_metadata=output.source_metadata,
+                ui_config=payload.task_config.adapter.model_dump(),
+                ext=ext,
+            )
+
+            # D. Adapt the raw output data for frontend preview
             adapted = adapter.preview(
                 raw_data=output.data,
                 io_metadata=output.io_metadata,
                 config=config,
             )
 
-            # D. Finalize display by checking if the adapter hit its preview limit
+            # E. Finalize display by checking if the adapter hit its preview limit
             display_complete = output.display_complete and not adapted.metadata.get("ui_limit_hit", False)
             truncation_reason = output.truncation_reason
             if output.result_complete and not display_complete:

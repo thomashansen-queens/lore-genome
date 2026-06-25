@@ -38,6 +38,8 @@ class PreviewOutput(BaseModel):
     display_complete: bool = True
     truncation_reason: Literal["sampled", "capped"] | None = None
     io_metadata: dict[str, Any] = Field(default_factory=dict)
+    # Handler-declared metadata for this output (e.g. {"header": False}). The preview analog of Artifact.metadata
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PreviewPayload(BaseModel):
@@ -124,6 +126,12 @@ class PreviewContext(ExecutionContext):
 
         io_meta["extension"] = sources["main"].suffix.lstrip(".")
         io_meta["data_type"] = data_type
+
+        # Carry the handler's declared metadata. Preview has no Artifact.metadata, so we stash it here
+        source_metadata = dict(metadata or {})
+        if kwargs:
+            source_metadata.update(kwargs)
+        io_meta["source_metadata"] = source_metadata
 
         # 4. Store in ephemeral results object
         self.results.add(output_key, (raw_data, io_meta))
@@ -229,6 +237,9 @@ def run_preview_worker(
             else:
                 data, io_meta = raw_data, {}
 
+            # Handler metadata was stashed in io_meta purely for transport. Pop to store in PreviewOutput
+            source_metadata = io_meta.pop("source_metadata", {})
+
             # PreviewContext should always populate data_type in io_meta, but fall back to
             # field definition just in case
             data_type = io_meta.get("data_type")
@@ -255,6 +266,7 @@ def run_preview_worker(
                 display_complete=display_complete,
                 truncation_reason=truncation_reason,
                 io_metadata=io_meta,
+                source_metadata=source_metadata,
             )
 
     except Exception as e:

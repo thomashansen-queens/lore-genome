@@ -38,10 +38,10 @@
             {% endif %}
         </p>
 
-        {# Display axis: were all output rows rendered? #}
+        {# Display truncation: were all existing output rows rendered? #}
         {% set display_complete = metadata.get('display_complete', True) %}
         {% if not display_complete %}
-            {# Display cap (DOM/RAM) — distinct from result completeness #}
+            {# Display cap (DOM/RAM) which truncates to avoid browser issues, but doesn't affect result completeness #}
             <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
                 Showing: Top {{ '{:,}'.format(data|length) }}
             </div>

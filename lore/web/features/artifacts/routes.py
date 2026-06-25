@@ -14,6 +14,7 @@ from lore.core.tasks import AdapterConfig
 from lore.core.readers import get_reader_for
 from lore.core.utils import filter_and_sort
 from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
+from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.forms import get_form_str
 
 if TYPE_CHECKING:
@@ -238,11 +239,11 @@ async def view_artifact_explore(
     # 2. Data loading (initial peek)
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
-    config = {
-        **(artifact.metadata or {}),
-        "ext": artifact.extension,
-        "max_ram_bytes": s.runtime.settings.preview_max_ram_bytes,
-    }
+    config = build_adapter_config(
+        source_metadata=artifact.metadata,
+        ext=artifact.extension,
+        max_ram_bytes=s.runtime.settings.preview_max_ram_bytes,
+    )
     data, io_metadata = reader.preview(peek_limit=s.runtime.settings.preview_peek_limit, config=config)
     preview_result = adapter.preview(data, io_metadata, config=config)
 
@@ -323,11 +324,11 @@ def explore_view_fragment(
 
     path = s.get_artifact_path(artifact_id)
     reader = get_reader_for(path)
-    config = {
-        **(artifact.metadata or {}),
-        "ext": artifact.extension,
-        "max_ram_bytes": s.runtime.settings.preview_max_ram_bytes,
-    }
+    config = build_adapter_config(
+        source_metadata=artifact.metadata,
+        ext=artifact.extension,
+        max_ram_bytes=s.runtime.settings.preview_max_ram_bytes,
+    )
 
     if strategy in ("full", "eager"):
         # Eager: stream to EOF (counting every record), holding only up to the RAM
@@ -370,8 +371,11 @@ def _get_explore_df(
     reader = get_reader_for(path)
 
     def _compute():
-        base_config = {**(artifact.metadata or {}), "ext": artifact.extension}
-        final_config = {**base_config, **(config or {})}
+        final_config = build_adapter_config(
+            source_metadata=artifact.metadata,
+            ui_config=config,
+            ext=artifact.extension,
+        )
 
         records = adapter.adapt(reader.read_full(), config=final_config)
 

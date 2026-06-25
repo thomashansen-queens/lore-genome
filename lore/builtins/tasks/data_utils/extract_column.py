@@ -12,10 +12,11 @@ class ExtractColumnInputs:
         select="single",
         load_as="adapted_stream",
         accepted_data="tabular",
+        label="Input table",
     )
     column_name = lore.ValueInput(
         str,
-        label="Column Name",
+        label="Column to extract",
         description="The name of the column to extract from the table.",
     )
     deduplicate = lore.ValueInput(
@@ -53,7 +54,7 @@ def extract_column(
     """
     Extract a specific column/series from a table.
     """
-    out_path = ctx.get_temp_path(column_name + ".txt")
+    out_path = ctx.get_temp_path(column_name + ".tsv")
 
     # 1. Check if the column exists in the first row (header)
     try:
@@ -97,6 +98,11 @@ def extract_column(
     ctx.materialize_file(
         source=out_path,
         output_key="column",
-        data_type=column_name,
-        extension="txt",
+        data_type=column_name.lower().strip(),
+        extension="tsv",
+        metadata={
+            "keys": [column_name],
+            "deduplicate": deduplicate,
+            "header": False,
+        }
     )
