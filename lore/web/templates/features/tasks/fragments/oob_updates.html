@@ -76,14 +76,18 @@
 {% endif %}
 
 {% if error_changed %}
-    <div id="task-error-container"
+    {# Reveal the Error tab (detail page JS auto-focuses it on swap) #}
+    <button type="button" id="task-error-tab" class="btn-tab activity-tab" data-target="activity-error-panel"
+        style="border-bottom: 2px solid transparent; color: var(--danger);
+        {% if not task.error %} display: none;{% endif %}"
         hx-swap-oob="true">
-        <div class="card" style="background: var(--danger-bg); flex: 1;">
-            <header style="color: var(--danger);">Error</header>
-            <div class="scroll-area" id="task-error" style="flex: 1; min-height: 0;">
-                <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
-            </div>
-        </div>
+        Error ‽
+    </button>
+
+    {# Error body #}
+    <div class="scroll-area" id="task-error-container" style="background: var(--danger-bg);"
+        hx-swap-oob="true">
+        <pre class="small" data-copyable style="white-space: pre-wrap;">{{ task.error }}</pre>
     </div>
 {% endif %}
 
