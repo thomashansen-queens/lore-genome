@@ -19,18 +19,21 @@ from .base import BaseReader
 from .registry import ReaderRegistry
 from .image import ImageReader
 from .table import TableReader
+from .json import JsonReader
 from .text import TextReader
 from .raw import RawReader
 
 
 from .image import IMAGE_EXTS
 from .table import TABLE_EXTS
+from .json import JSON_EXTS
 from .text import TEXT_EXTS
 
 # Safety check: Avoid reader collisions
 _all_extensions_ = (
     list(IMAGE_EXTS) +
     list(TABLE_EXTS) +
+    list(JSON_EXTS) +
     list(TEXT_EXTS)
 )
 if len(_all_extensions_) != len(set(_all_extensions_)):
@@ -38,8 +41,9 @@ if len(_all_extensions_) != len(set(_all_extensions_)):
 
 
 reader_registry = ReaderRegistry()
-reader_registry._register_core(TableReader, extensions=list(TABLE_EXTS))
 reader_registry._register_core(TextReader, extensions=list(TEXT_EXTS))
+reader_registry._register_core(TableReader, extensions=list(TABLE_EXTS))
+reader_registry._register_core(JsonReader, extensions=list(JSON_EXTS))
 reader_registry._register_core(ImageReader, extensions=list(IMAGE_EXTS))
 
 
@@ -63,6 +67,7 @@ __all__ = [
     "BaseReader",
     "TableReader",
     "TextReader",
+    "JsonReader",
     "ImageReader",
     "RawReader",
     "ReaderRegistry",

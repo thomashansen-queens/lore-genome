@@ -7,18 +7,29 @@ from typing import cast
 from lore.core.adapters import TextAdapter
 from lore.core.readers import (
     ImageReader,
+    JsonReader,
     TableReader,
     TextReader,
     get_reader_for,
 )
 
 
-def test_table_reader_json_array(dummy_json_file):
+def test_table_reader_streams_csv_lines(tmp_path):
+    """TableReader frames delimited text as raw lines (the adapter parses fields)."""
+    f = tmp_path / "data.csv"
+    f.write_text("id,name\n1,alpha\n2,beta\n", encoding="utf-8")
+
+    lines = [line.rstrip("\n") for line in TableReader(f).stream()]
+
+    assert lines == ["id,name", "1,alpha", "2,beta"]
+    assert TableReader(f).read_full()[0].startswith("id,name")
+
+
+def test_json_reader_json_array(dummy_json_file):
     """
-    Tests that TableReader correctly yields individual dictionaries 
-    from a physical JSON (JSON array) file.
+    JsonReader reads a monolithic JSON array fully into a list of dicts.
     """
-    reader = TableReader(dummy_json_file)
+    reader = JsonReader(dummy_json_file)
 
     streamed_data = cast(list[dict], reader.read_full())
 
@@ -29,12 +40,11 @@ def test_table_reader_json_array(dummy_json_file):
     assert streamed_data[2]["nested"]["val"] == "C"
 
 
-def test_table_reader_streams_jsonl(dummy_jsonl_file):
+def test_json_reader_streams_jsonl(dummy_jsonl_file):
     """
-    Tests that TableReader correctly yields individual dictionaries 
-    from a physical JSONL (JSON lines) file.
+    JsonReader streams individual dictionaries from a JSONL (JSON lines) file.
     """
-    reader = TableReader(dummy_jsonl_file)
+    reader = JsonReader(dummy_jsonl_file)
 
     # Turn stream generator into a list to check its contents
     streamed_data = cast(list[dict], list(reader.stream()))
@@ -46,12 +56,11 @@ def test_table_reader_streams_jsonl(dummy_jsonl_file):
     assert streamed_data[2]["nested"]["val"] == "C"
 
 
-def test_table_reader_preview_jsonl(dummy_jsonl_file):
+def test_json_reader_preview_jsonl(dummy_jsonl_file):
     """
-    Tests that TableReader correctly yields a preview (first N lines) from a 
-    physical JSONL (JSON lines) file.
+    JsonReader yields a preview (first N records) from a JSONL file.
     """
-    reader = TableReader(dummy_jsonl_file)
+    reader = JsonReader(dummy_jsonl_file)
 
     preview, metadata = reader.preview(peek_limit=2)
     preview = cast(list[dict], preview)
@@ -66,12 +75,12 @@ def test_table_reader_preview_jsonl(dummy_jsonl_file):
     assert preview[1]["nest_list"][1][0]["genus"] == "Mus"
 
 
-def test_table_reader_metadata(dummy_jsonl_file):
+def test_json_reader_metadata(dummy_jsonl_file):
     """
-    Tests that the reader correctly identifies the file properties 
+    Tests that the reader correctly identifies the file properties
     without reading the whole thing.
     """
-    reader = TableReader(dummy_jsonl_file)
+    reader = JsonReader(dummy_jsonl_file)
     metadata = reader.get_metadata()
 
     assert metadata["exists"] is True
@@ -82,7 +91,8 @@ def test_table_reader_metadata(dummy_jsonl_file):
 
 def test_get_reader_factory_routing(dummy_jsonl_file, tmp_path):
     """Proves the factory correctly routes based on file extension."""
-    assert isinstance(get_reader_for(dummy_jsonl_file), TableReader)
+    assert isinstance(get_reader_for(dummy_jsonl_file), JsonReader)
+    assert isinstance(get_reader_for(tmp_path / "data.csv"), TableReader)
     assert isinstance(get_reader_for(tmp_path / "seq.fasta"), TextReader)
     assert isinstance(get_reader_for(tmp_path / "plot.svg"), ImageReader)
     assert isinstance(get_reader_for(tmp_path / "plot.png"), ImageReader)
@@ -148,15 +158,15 @@ def test_text_reader_full_counts_total_with_capped_window(tmp_path):
     assert meta["file_eof_hit"] is True      # streamed all the way to EOF
 
 
-def test_table_reader_monolithic_json_is_fully_read_on_peek(tmp_path):
+def test_json_reader_monolithic_json_is_fully_read_on_peek(tmp_path):
     """
-    A monolithic JSON array can't be partially read (not with the standard 'json'
-    anyway), so a peek returns everything.
+    The stdlib JsonReader can't partially read a monolithic JSON array, so a peek
+    falls back to a whole-file read (the ijson plugin is what enables streaming).
     """
     f = tmp_path / "data.json"
     f.write_text(json.dumps([{"id": i} for i in range(500)]))
 
-    data, meta = TableReader(f).preview(peek_limit=10)
+    data, meta = JsonReader(f).preview(peek_limit=10)
 
     assert "Monolithic" in meta["io_strategy"]
     assert len(data) == 500                  # whole file, not a 10-row slice
@@ -165,12 +175,12 @@ def test_table_reader_monolithic_json_is_fully_read_on_peek(tmp_path):
     assert meta["ram_limit_hit"] is False
 
 
-def test_table_reader_monolithic_json_full_is_complete(tmp_path):
+def test_json_reader_monolithic_json_full_is_complete(tmp_path):
     """A full read of a monolithic JSON behaves identically to a peek: all, complete."""
     f = tmp_path / "data.json"
     f.write_text(json.dumps([{"id": i} for i in range(500)]))
 
-    data, meta = TableReader(f).preview(config={"strategy": "eager"})
+    data, meta = JsonReader(f).preview(config={"strategy": "eager"})
 
     assert len(data) == 500
     assert meta["file_eof_hit"] is True

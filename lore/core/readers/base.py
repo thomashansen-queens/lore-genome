@@ -13,7 +13,9 @@ DEFAULT_MAX_RAM_BYTES = 50 * 1024 * 1024  # 50 MB
 
 class BaseReader(ABC):
     """
-    Abstract foundation.
+    Abstract foundation for a reader. Subclasses should override get_metadata()
+    as well as at least one of stream (for record-by-record reads yielded by an
+    iterator) or read_full (for monolithic formats that must be loaded into RAM)
     """
     def __init__(self, path: Path):
         self.path = path

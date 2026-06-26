@@ -42,26 +42,21 @@ class JsonAdapter(TabularAdapter):
 
     def parse_stream(
         self,
-        raw_stream: Iterator[str],
+        raw_stream: Iterator[dict | str],
         config: dict | None = None,
         **kwargs,
     ) -> Iterator[dict]:
         """
-        Yields parsed JSON records from a stream. Works especially well for large
-        JSONL/NDJSON files.
+        Yields parsed JSON records from a stream.
         """
-        kwconfig = self._prepare_config(config, **kwargs)
-        ext = kwconfig.get("ext", "json")
-
-        if ext in ("jsonl", "ndjson"):
-            for line in raw_stream:
+        for record in raw_stream:
+            if isinstance(record, (str, bytes)):
+                line = record.decode("utf-8") if isinstance(record, bytes) else record
                 if line.strip():
                     yield json.loads(line)
-        else:
-            # For monolithic JSON, we need to buffer the entire stream
-            # TODO: For true streaming, implement the ijson library
-            buffer = "".join(raw_stream)
-            yield from self.parse(buffer, kwconfig)
+            else:
+                # already a parsed (e.g. via ijson reader)
+                yield record
 
     # --- Output methods ---
 

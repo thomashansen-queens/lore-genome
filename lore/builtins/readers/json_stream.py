@@ -1,22 +1,23 @@
 """
 JSON via ijson (streaming enabled).
 
-stdlib json parser is all-or-nothing, so it raises NotImplementedError when
-trying to stream json. ijson streams top-level JSON arrays, keeping large
-datasets out of RAM. JSON Lines and other shapes (e.g. a single top-level
-object) defer to the inherited TableReader behavior.
+stdlib json parser is all-or-nothing, so the core JsonReader raises
+NotImplementedError when asked to stream a monolithic '.json' array. ijson
+streams top-level JSON arrays, keeping large datasets out of RAM. Other shapes
+(e.g. a single top-level object) defer to the inherited JsonReader behavior
+(read_full via json.loads).
 """
 import ijson
 
 import lore
-from lore.core.readers.table import TableReader
+from lore.core.readers.json import JsonReader
 
 
 @lore.reader(extensions=["json"])
-class JsonStreamReader(TableReader):
+class JsonStreamReader(JsonReader):
     """
     Streams top-level JSON array elements with ijson.
-    Inherits the rest from TableReader.
+    Inherits the rest (read_full, JSONL handling) from JsonReader.
     """
     def get_metadata(self) -> dict:
         base_meta = self.get_base_metadata()
