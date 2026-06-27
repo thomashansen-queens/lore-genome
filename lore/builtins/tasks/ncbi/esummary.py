@@ -57,16 +57,18 @@ def esummary(
 
     clean_uids = [u for u in uid if u]  # Filter out empty UIDs
 
+    # 1. API call closure (for retry decorator)
     @retry(tries=3, delay=2, default_logger=ctx.logger)
     def _execute_summary():
         with entrez_client(api_key=api_key, email=email) as client:
-            response = client.get(
+            response = client.post(
                 "esummary.fcgi",
-                params={
+                data={
                     "db": database.value,
                     "id": ",".join(clean_uids),
                 },
             )
+            response.raise_for_status()
             return response.json()
 
     data = _execute_summary()
@@ -83,18 +85,22 @@ def esummary(
 
     table_data = []
 
+    # Track top-level columns dynamically for metadata
+    all_seen_columns = set(["uid"])
+
     for result_uid, summary in result_dict.items():
         if result_uid == "uids":
-            # Skip the 'uids' field which echoes the input UIDs
+            # Skip the 'uids' field, which echoes the input UIDs
             continue
 
-        row = {
-            "uid": result_uid,
-            "createdate": summary.get("createdate", ""),
-            "updatedate": summary.get("updatedate", ""),
-        }
+        row = {"uid": result_uid}
+        for k, v in summary.items():
+            # Skip complex nested structures to keep table clean
+            if isinstance(v, (str, int, float, bool)):
+                row[k] = v
+                all_seen_columns.add(k)
 
-        # SRA returns XML nested within JSON
+        # 2. SRA nested XML parsing
         # TODO: This is a lot of code in the main handler just for SRA XML...
         #       Could be abstracted. OR make an SRA XML Adapter for easy schema mapping
         if database.value == "sra":
@@ -161,10 +167,16 @@ def esummary(
     if not table_data:
         ctx.logger.warning(f"No summaries found in {database.value} for UIDs: {clean_uids}")
 
+    # 3. Ensure completeness of columns across all rows
+    for row in table_data:
+        for col in all_seen_columns:
+            if col not in row:
+                row[col] = ""
+
     ctx.materialize_content(
         content=json.dumps(table_data, indent=2),
         output_key="summary",
         name=f"ESummary {database.value}",
         extension="json",
-        metadata={"columns": list(row.keys()) if table_data else []},
+        metadata={"columns": list(all_seen_columns)},
     )

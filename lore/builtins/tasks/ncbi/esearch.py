@@ -2,6 +2,7 @@
 ESearch Task for querying the NCBI Entrez database.
 """
 import json
+import re
 
 import lore
 from .entrez_client import entrez_client, EntrezDb
@@ -17,7 +18,7 @@ class ESearchInputs:
     )
     terms = lore.ArtifactInput(
         select="single",
-        load_as="adapted",
+        load_as="raw",
         accepted_data="text",
         label="Search Term File",
         description="A file containing a list of search term(s)."
@@ -44,7 +45,7 @@ class ESearchOutputs:
 def esearch(
     ctx: lore.ExecutionContext,
     database: EntrezDb,
-    terms: list[str],
+    terms: str | list[str],
 ):
     """
     Performs an ESearch query on the NCBI Entrez database.
@@ -54,8 +55,12 @@ def esearch(
     See the NCBI documentation for more details:
     https://www.ncbi.nlm.nih.gov/books/NBK25499/#chapter4.ESearch
     """
-    # 1. Format the qyery for Entrez
-    clean_terms = [t.strip() for t in terms if t.strip()]
+    # 1. Format the query for Entrez.
+    # Manual input and plain-text files arrive as a string; tabular files
+    # arrive as a list of lines. Make one string, then split on
+    # newlines, commas, and tabs so term lists work however they were provided
+    text = terms if isinstance(terms, str) else "\n".join(terms)
+    clean_terms = [t.strip() for t in re.split(r"[\n,\t]+", text) if t.strip()]
     query_string = " OR ".join(clean_terms)
 
     # 2. Global config for NCBI
@@ -69,7 +74,12 @@ def esearch(
         with entrez_client(api_key=api_key, email=email) as client:
             response = client.post(
                 "esearch.fcgi",
-                data={"db": database.value, "term": query_string, "usehistory": "y"},
+                data={
+                    "db": database.value,
+                    "term": query_string,
+                    "usehistory": "y",
+                    "retmax": 10000,  # Max number of UIDs ESearch can return
+                },
             )
             response.raise_for_status()
             return response.json()

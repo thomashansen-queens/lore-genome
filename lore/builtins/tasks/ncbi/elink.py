@@ -13,6 +13,7 @@ class ELinkInputs:
     uid = lore.ArtifactInput(
         accepted_data=["uid", "target_uid"],
         select="multiple",
+        load_as="adapted",
         label="UID",
         description=(
             "The unique identifier (UID) of the record to link from. "
@@ -67,14 +68,15 @@ def elink(
     @retry(tries=3, delay=2, default_logger=ctx.logger)
     def _execute_link():
         with entrez_client(api_key=api_key, email=email) as client:
-            response = client.get(
+            response = client.post(
                 "elink.fcgi",
-                params={
+                data={
                     "dbfrom": dbfrom.value,
                     "db": db.value,
                     "id": ",".join(clean_uids),
                 },
             )
+            response.raise_for_status()
             return response.json()
 
     data = _execute_link()

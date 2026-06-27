@@ -105,8 +105,6 @@ class Materialization(str, Enum):
     # Streamed
     RAW_STREAM = "raw_stream"
     ADAPTED_STREAM = "adapted_stream"
-    # Preview
-    PREVIEW = "preview"
 
 
 MaterializationLiteral: TypeAlias = Literal[
@@ -116,7 +114,6 @@ MaterializationLiteral: TypeAlias = Literal[
     "adapted",
     "raw_stream",
     "adapted_stream",
-    "preview",
 ]
 
 # --- Task inputs ---

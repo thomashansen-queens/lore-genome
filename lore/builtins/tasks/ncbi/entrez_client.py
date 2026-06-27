@@ -39,7 +39,7 @@ def entrez_client(
     if email:
         params["email"] = email
     if api_key:
-        params["api-key"] = api_key
+        params["api_key"] = api_key
 
     def raise_on_4xx_5xx(response: httpx.Response):
         response.raise_for_status()
@@ -49,7 +49,6 @@ def entrez_client(
         params=params,
         timeout=httpx.Timeout(connect=5.0, read=timeout, write=timeout, pool=timeout),
         event_hooks={"response": [raise_on_4xx_5xx]},
-        verify=False,
     ) as client:
         yield client
 

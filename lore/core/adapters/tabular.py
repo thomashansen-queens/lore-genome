@@ -232,23 +232,6 @@ class TabularAdapter(BaseAdapter):
 
         return result
 
-    def get_series(
-        self,
-        raw_data: Any,
-        series_type: str,
-        config: dict | None = None,
-        **kwargs,
-    ) -> list[str] | None:
-        """
-        Extracts a 1D series of data (e.g. a column) from the tabulated data.
-        """
-        records = self.adapt(raw_data, config=config, **kwargs)
-        if not records or not isinstance(records[0], dict):
-            return None
-
-        if series_type in records[0]:
-            return [str(r.get(series_type)) for r in records if r.get(series_type) is not None]
-        return None
 
     def to_dataframe(self, raw_data: Any, config: dict | None = None, **kwargs) -> "pd.DataFrame":
         """
