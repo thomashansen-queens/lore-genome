@@ -7,9 +7,10 @@ from lore.core.utils.pandas import filter_and_sort
 
 
 def test_sort_mixed_numeric_column_sinks_unsortable_cells():
-    """A mostly-numeric column with stray list/string cells sorts numerically and
-    sinks the unsortable cells to the bottom instead of raising on str/float compares.
-    (Regression: explore-view sort blew up with "'<' not supported between 'str' and 'float'".)"""
+    """
+    A numeric column with stray list/string cells sorts numerically and
+    sinks the unsortable cells to the bottom
+    """
     df = pd.DataFrame({
         "len": [123, [1, 2], 5, "99", None],
         "name": ["a", "b", "c", "d", "e"],
@@ -24,8 +25,10 @@ def test_sort_mixed_numeric_column_sinks_unsortable_cells():
 
 
 def test_sort_unsortable_stays_last_when_descending():
-    """na_position='last' must win over sort direction: unsortable cells never
-    bubble to the top on a descending sort."""
+    """
+    na_position='last' must win over sort direction: unsortable cells never
+    bubble to the top on a descending sort.
+    """
     df = pd.DataFrame({"len": [1, [9, 9], 2, None], "name": ["a", "b", "c", "d"]})
 
     out = filter_and_sort(df, sort_by="len", sort_asc=False)
@@ -35,7 +38,9 @@ def test_sort_unsortable_stays_last_when_descending():
     assert set(out["name"].iloc[-2:]) == {"b", "d"}
 
 def test_sort_preserves_original_cell_values():
-    """Sorting must not mutate displayed values (no silent str->numeric coercion)."""
+    """
+    Sorting does not mutate displayed values
+    """
     df = pd.DataFrame({"len": ["007", "42", "1"], "name": ["a", "b", "c"]})
 
     out = filter_and_sort(df, sort_by="len", sort_asc=True)
