@@ -55,7 +55,7 @@ def esearch(
     See the NCBI documentation for more details:
     https://www.ncbi.nlm.nih.gov/books/NBK25499/#chapter4.ESearch
     """
-    # 1. Format the query for Entrez.
+    # 1. Format the RAW query for Entrez
     # Manual input and plain-text files arrive as a string; tabular files
     # arrive as a list of lines. Make one string, then split on
     # newlines, commas, and tabs so term lists work however they were provided

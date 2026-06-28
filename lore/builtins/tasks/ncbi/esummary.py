@@ -13,7 +13,8 @@ class ESummaryInputs:
     uid = lore.ArtifactInput(
         accepted_data=["uid", "target_uid"],
         select="multiple",
-        label="UID",
+        load_as="adapted",
+        label="UIDs to Summarize",
         description=(
             "The unique identifier (UID) of the record to summarize. "
             "This is typically obtained from an ESearch query."
@@ -125,6 +126,9 @@ def esummary(
                     row["total_spots"] = ", ".join(spots)
                     row["total_bases"] = ", ".join(bases)
                     row["static_data_available"] = ", ".join(statics)
+
+                    all_seen_columns.update(["srr_accession", "total_spots", "total_bases", "static_data_available"])
+
                 except ET.ParseError as e:
                     ctx.logger.warning(f"Failed to parse runs XML for UID {result_uid}: {e}")
                     row["srr_accession"] = []
@@ -141,22 +145,27 @@ def esummary(
                     if platform_tag is not None:
                         row["platform"] = platform_tag.text
                         row["instrument_model"] = platform_tag.attrib.get("instrument_model", "")
+                        all_seen_columns.update(["platform", "instrument_model"])
 
                     org_tag = exp_root.find(".//Organism")
                     if org_tag is not None:
                         row["organism"] = org_tag.attrib.get("ScientificName", "")
+                        all_seen_columns.update(["organism"])
 
                     lib_strat = exp_root.find(".//LIBRARY_STRATEGY")
                     if lib_strat is not None:
                         row["library_strategy"] = lib_strat.text
+                        all_seen_columns.update(["library_strategy"])
 
                     bioproject = exp_root.find(".//Bioproject")
                     if bioproject is not None:
                         row["bioproject_accession"] = bioproject.text
+                        all_seen_columns.update(["bioproject_accession"])
 
                     biosample = exp_root.find(".//Biosample")
                     if biosample is not None:
                         row["biosample_accession"] = biosample.text
+                        all_seen_columns.update(["biosample_accession"])
 
                 except ET.ParseError as e:
                     ctx.logger.debug(f"No experiment metadata XML found for UID {result_uid}: {e}")
@@ -166,6 +175,9 @@ def esummary(
 
     if not table_data:
         ctx.logger.warning(f"No summaries found in {database.value} for UIDs: {clean_uids}")
+
+    # Sort for consistent output (sets are unordered)
+    sorted_cols = sorted(list(all_seen_columns))
 
     # 3. Ensure completeness of columns across all rows
     for row in table_data:

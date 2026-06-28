@@ -83,10 +83,29 @@ def filter_and_sort(
 
     # 2. Sort (always runs if sort_by is set)
     if sort_by and sort_by in df.columns:
-        try:
-            df[sort_by] = pd.to_numeric(df[sort_by])
-        except:
-            pass
-        # Use stable (mergesort) to preserve old sort order when breaking ties
-        df = df.sort_values(by=sort_by, ascending=sort_asc, na_position="last", kind="stable")
+        col = df[sort_by]
+
+        # A. Coerce to numeric (NaN for non-numeric)
+        col_numeric = pd.to_numeric(col, errors="coerce")
+
+        # B. Categorize data types for hierarchical sorting: numeric < string < others
+        is_null = col.isna()
+        is_str = col_numeric.isna() & ~is_null
+        col_str = col.astype(str)
+
+        # C. Multi-key sort: null to end, str below numeric, then sort
+        df = (
+            df.assign(
+                _is_null=is_null,
+                _is_str=is_str,
+                _numeric=col_numeric,
+                _str=col_str,
+            ).sort_values(
+                by=["_is_null", "_is_str", "_numeric", "_str"],
+                # First two bools ensure nulls and strings are sorted to the end
+                ascending=[True, True, sort_asc, sort_asc],
+                kind="stable",  # stable sort to maintain relative order of equal elements
+            ).drop(columns=["_is_null", "_is_str", "_numeric", "_str"])
+        )
+
     return df
