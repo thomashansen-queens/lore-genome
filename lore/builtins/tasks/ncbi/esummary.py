@@ -181,7 +181,7 @@ def esummary(
 
     # 3. Ensure completeness of columns across all rows
     for row in table_data:
-        for col in all_seen_columns:
+        for col in sorted_cols:
             if col not in row:
                 row[col] = ""
 
@@ -190,5 +190,5 @@ def esummary(
         output_key="summary",
         name=f"ESummary {database.value}",
         extension="json",
-        metadata={"columns": list(all_seen_columns)},
+        metadata={"columns": list(sorted_cols)},
     )
