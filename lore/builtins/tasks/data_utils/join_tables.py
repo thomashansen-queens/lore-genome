@@ -38,6 +38,7 @@ class JoinTablesInputs:
     )
     right_on = lore.ValueInput(
         str | None,
+        default=None,
         label="Right Column Name",
         description="The name of the column in the Right Table to join on. Defaults to the Left Column Name if left blank.",
     )
@@ -45,7 +46,7 @@ class JoinTablesInputs:
         JoinHow,
         default=JoinHow.INNER,
         label="Join type",
-        description="Type of merge to be performed (inner, outer, left, right)",
+        description="Type of merge to be performed.",
     )
 
 
@@ -76,7 +77,7 @@ def join_tables(
     how: JoinHow = JoinHow.INNER,
 ):
     """
-    Joins two tabular artifacts based on a common key column.
+    Joins two tabular artifacts based on a common key/column.
     """
     # 1. Consume the input tables as streams for maximum RAM efficiency
     # NOTE: There are more memory-efficient ways to join large tables, but they have computational cost
