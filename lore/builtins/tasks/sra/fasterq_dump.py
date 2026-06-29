@@ -1,55 +1,28 @@
 """
-Plugin for fasterq-dump, sratoolkit's multi-threaded SRA extraction tool.
+Dumps compressed FASTQ files from prefetched SRA files using the SRA Toolkit's
+fasterq-dump command. This task is designed to work in conjunction with the
+fasterq-prefetch task, which downloads the SRA files from NCBI.
 """
-import subprocess
-
 import lore
+from pathlib import Path
+import subprocess
 from .config import get_sra_binary, isolated_vdb_env
 
 
 class FasterqDumpInputs:
     """Inputs for fasterq-dump Task"""
-    srr_accession = lore.ArtifactInput(
-        accepted_data=["sra_accession", "srr_accession"],
-        label="SRR Accession",
-        select="single",
-        description="The SRR accession to download and extract.",
-        examples=["SRR000123 with no suffix"],
-    )
-    sra_lite = lore.ValueInput(
-        bool,
-        label="SRA Lite mode",
-        description=(
-            "Save space and bandwidth by getting 'sra-lite' files instead of full FASTQ. "
-            "have compressed quality scores (not Phred). Useful if you do not need full "
-            "quality information, but not compatible with all downstream tools."
-        ),
-        default=False,
-    )
-    resume = lore.ValueInput(
-        bool,
-        label="Resume previous run",
-        description=(
-            "If a previous run was interrupted or failed, enable this to attempt to resume "
-            "from where it left off. This will check for existing prefetch files and "
-            "partially extracted FASTQ files, and skip re-downloading/re-extracting those."
-        ),
-        default=True,
-    )
-    force = lore.ValueInput(
-        bool,
-        label="Force re-download",
-        description=(
-            "Force re-download and extraction even if output files already exist. Uses "
-            "time and bandwidth, but helpful in case of previous failed/interrupted runs."
-        ),
-        default=False,
+    sra_files = lore.ArtifactInput(
+        accepted_data=["sra_file"],
+        label="SRA Files",
+        select="multiple",
+        load_as="path",
+        description="The SRA file(s) to extract FASTQ from (e.g. SRR390728.sra).",
     )
 
 
 class FasterqDumpOutputs:
     """Outputs for fasterq-dump Task"""
-    fastq_files = lore.TaskOutput(
+    fastq_bundles = lore.TaskOutput(
         data_type="fastq",
         label="Extracted FASTQ Reads",
         is_primary=True,
@@ -63,145 +36,104 @@ class FasterqDumpOutputs:
     outputs=FasterqDumpOutputs,
     name="SRA Toolkit fasterq-dump",
     category="SRA Toolkit",
-    icon="⬇️",
+    icon="②⮕",
     preview_mode="dry_run",
 )
 def fasterq_dump_handler(
     ctx: lore.ExecutionContext,
-    srr_accession: list[str],
-    sra_lite: bool,
-    resume: bool,
-    force: bool
+    sra_files: list[str],
 ):
     """
-    Downloads and extracts FASTQ files from the specified SRR accession in the 
-    sequence read archive (SRA). Be aware that these files can be extremely large, 
-    on the order of tens to hundreds of gigabytes, so ensure you have sufficient 
-    disk space, bandwidth, time, and battery life before running this task.
+    Handler for fasterq-dump Task. Takes one or more compressed SRA files and
+    extracts its FASTQ reads using the SRA Toolkit's fasterq-dump command.
     """
-    # 1. Config extraction
-    config_model = ctx.get_config("sra_tools")
-    sra_config = config_model.model_dump() if config_model else {}
-    threads = str(sra_config.get("default_threads", 6))
+    if not sra_files:
+        raise ValueError("No SRA files provided for extraction.")
 
-    prefetch_binary = get_sra_binary(sra_config, "prefetch")
+    for sra_file in sra_files:
+        if not Path(sra_file).exists():
+            raise FileNotFoundError(f"SRA file not found: {sra_file}")
+
+    # 1. Get SRA Toolkit configuration and binary path
+    sra_config = ctx.get_config("sra_tools").model_dump() if ctx.get_config("sra_tools") else {}
+    threads = str(sra_config.get("default_threads", 6))
     fasterq_dump_binary = get_sra_binary(sra_config, "fasterq-dump")
 
-    # 2. The materializer hands the handler a list of accessinos
-    if not srr_accession:
-        raise ValueError("No SRR accession provided for fasterq-dump.")
-    if len(srr_accession) > 1:
-        ctx.logger.warning(
-            f"Multiple accessions provided ({len(srr_accession)}). "
-            "fasterq-dump will only process the first one: "
-            f"{srr_accession[0]}"
-        )
-    clean_accession = srr_accession[0].strip().split(".")[0]
-
-    # 3. Set up output directory for massive FASTQ files
-    # prefetch downloads as ERR12345/ERR12345.sra
-    global_cache = sra_config.get("cache_dir") or ctx.runtime.cache_dir
-
-    fastq_out_dir = ctx.get_temp_dir(f"{clean_accession}_fastq")
-
-    # --- Phase 1: Pre-fetch compressed file locally ---
-    # 4. Build prefetch command
-    cmd_prefetch = [
-        prefetch_binary,
-        clean_accession,
-        "--max-size", "100G",
-        "--output-directory", str(global_cache),
-    ]
-
-    if sra_lite:
-        ctx.logger.warning("SRA Lite mode enabled. Original quality scores will be discarded.")
-        cmd_prefetch.append("--eliminate-quals")
-    if force:
-        cmd_prefetch.extend(["--force", "all"])
-    if resume:
-        cmd_prefetch.extend(["--resume", "yes"])
-
-    ctx.logger.info("Phase 1 (Prefetch): Downloading SRA data with prefetch...")
-    ctx.logger.info("Command: " + " ".join(cmd_prefetch))
-
-    # 5. Execute prefetch
     with isolated_vdb_env(sra_config, ctx) as safe_env:
-        prefetch_process = subprocess.Popen(
-            cmd_prefetch,
-            bufsize=1,  # Line-buffered output,
-            env=safe_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        if prefetch_process.stdout:
-            for line in prefetch_process.stdout:
-                ctx.logger.info(line.strip())
+        for sra_file in sra_files:
+            sra_path = Path(sra_file)
+            clean_accession = sra_path.stem
 
-        prefetch_process.wait()
+            fastq_out_dir = ctx.get_temp_dir(f"{clean_accession}_fastq")
+            temp_scratch = ctx.get_temp_dir(f"{clean_accession}_scratch")
 
-        if prefetch_process.returncode != 0:
-            raise RuntimeError(
-                f"SRA prefetch failed for '{clean_accession}'. Check logs for details."
+            # 2. Build and run the fasterq-dump command
+            cmd_fasterq = [
+                fasterq_dump_binary,
+                str(sra_path),
+                "--split-3",  # Split paired reads, leave unpaired as single
+                "--outdir", str(fastq_out_dir),
+                "--temp", str(temp_scratch),
+                "--threads", str(threads),
+            ]
+
+            ctx.logger.info(f"Extracting {clean_accession} to FASTQ...")
+            process = subprocess.Popen(
+                cmd_fasterq,
+                env=safe_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
 
-        sra_files = list((global_cache / clean_accession).rglob("*.sra"))
-        if not sra_files:
-            raise FileNotFoundError(
-                f"No .sra files found in cache directory {global_cache} after prefetch."
+            # Stream output to logger
+            if process.stdout:
+                for line in process.stdout:
+                    ctx.logger.info(line.strip())
+
+            process.wait()
+
+            if process.returncode != 0:
+                raise RuntimeError(f"fasterq-dump failed for {clean_accession}. Check logs.")
+
+            # 3. Collect the output FASTQ files and build into an Artifact bundle
+            extracted_files = list(fastq_out_dir.glob("*.fastq"))
+            if not extracted_files:
+                raise FileNotFoundError(f"No FASTQ files were extracted for {clean_accession}.")
+
+            bundle_source = {}
+            base_fastq = fastq_out_dir / f"{clean_accession}.fastq"
+            read1_fastq = fastq_out_dir / f"{clean_accession}_1.fastq"
+            read2_fastq = fastq_out_dir / f"{clean_accession}_2.fastq"
+
+            # A. Paired reads
+            if read1_fastq.exists():
+                bundle_source["main"] = read1_fastq
+                if read2_fastq.exists():
+                    bundle_source["paired"] = read2_fastq
+                if base_fastq.exists():
+                    bundle_source["unpaired"] = base_fastq
+
+            # B. Single reads
+            elif base_fastq.exists():
+                bundle_source["main"] = base_fastq
+
+            # C. Unknown case?
+            else:
+                ctx.logger.warning(
+                    f"Unexpected FASTQ naming schema for {clean_accession}. "
+                    f"Found files: {[f.name for f in extracted_files]}"
+                )
+                extracted_files.sort()
+                bundle_source["main"] = extracted_files[0]
+                for i, f in enumerate(extracted_files[1:], start=1):
+                    bundle_source[f"extra_{i}"] = f
+
+            # 4. Materialize this bundle as a Fastq artifact
+            ctx.materialize_file(
+                source=bundle_source,
+                output_key="fastq_bundles",
+                name=clean_accession,
+                move=True,
             )
-        target_sra = sra_files[0]
-
-        # --- Phase 2: Pre-fetch compressed file locally ---
-        # 6. Build fasterq-dump command
-        cmd_fasterq = [
-            fasterq_dump_binary,
-            str(target_sra),
-            "--split-3",
-            "--outdir", str(fastq_out_dir),
-            "--temp", str(fastq_out_dir),
-            "--threads", threads,
-        ]
-        if force:
-            cmd_fasterq.extend(["--force", "all"])
-
-        ctx.logger.info("Phase 2 (Fasterq-dump): Converting SRA data to FASTQ...")
-        ctx.logger.info("Command: " + " ".join(cmd_fasterq))
-        fasterq_process = subprocess.Popen(
-            cmd_fasterq,
-            bufsize=1,  # Line-buffered output
-            env=safe_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        if fasterq_process.stdout:
-            for line in fasterq_process.stdout:
-                ctx.logger.info(line.strip())
-
-        fasterq_process.wait()
-
-        if fasterq_process.returncode != 0:
-            raise RuntimeError(
-                f"SRA fasterq-dump failed for '{clean_accession}'. Check logs for details."
-            )
-
-    # --- Phase 3: Prepare outputs ---
-    # 7. Materialize output fastq files
-    extracted_files = list(fastq_out_dir.glob("*.fastq"))
-    if not extracted_files:
-        raise FileNotFoundError(
-            f"No FASTQ files were extracted for {clean_accession} in {fastq_out_dir}"
-        )
-
-    extracted_files.sort()
-    for fastq_file in extracted_files:
-        ctx.materialize_file(
-            source=fastq_file,
-            output_key="fastq_files",
-            name=fastq_file.name,
-            metadata={
-                "description": f"Extracted FASTQ file for {clean_accession}",
-            },
-            move=True,  # Defaults to True, but be explicit to avoid copying large files
-        )
