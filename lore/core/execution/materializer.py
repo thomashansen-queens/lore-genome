@@ -375,7 +375,7 @@ def _materialize_manual_input(
 
         # 1. Simulated series slicing: split on any run of commas/tabs/newlines
         if is_collection_type(annotation):
-            return [v.strip() for v in re.split(r"[.\t\n]+", str(val)) if v.strip()]
+            return [v.strip() for v in re.split(r"[,\t\n]+", str(val)) if v.strip()]
 
         # 2. Simualte single primitive adaptation
         if origin is str:

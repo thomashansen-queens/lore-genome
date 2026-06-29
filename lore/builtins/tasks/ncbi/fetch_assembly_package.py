@@ -5,6 +5,7 @@ use is to fetch the protein FASTA files for a list of genome accessions.
 import enum
 import io
 import logging
+from pathlib import Path
 import zipfile
 import httpx
 
@@ -13,7 +14,6 @@ import lore
 from .config import retry
 from .datasets_client import datasets_client
 
-# Enum value: (glob path in zip, output_key in outputs)
 # --- NCBI API Enums ---
 class V2AnnotationForAssemblyType(str, enum.Enum):
     PROT_FASTA = "PROT_FASTA"
@@ -31,6 +31,7 @@ class V2AssemblyDatasetRequestResolution(str, enum.Enum):
     DATA_REPORT_ONLY = "DATA_REPORT_ONLY"
 
 
+# Enum value: (glob path in zip, output_key in outputs)
 NCBI_TYPE_MAP = {
     "PROT_FASTA": ("protein.faa", "protein_fastas"),
     "GENOME_FASTA": ("genomic.fna", "genome_fastas"),
@@ -62,17 +63,6 @@ class NcbiAssemblyPackageInputs:
         ),
         label="Fetch limit",
     )
-    # save_map = lore.ValueInput(
-    #     bool,
-    #     default=False,
-    #     description=(
-    #         "Whether to save a mapping of genome accessions to the protein "
-    #         "accessions that were fetched for them. This is useful for downstream analysis "
-    #         "to know which proteins came from which genomes. Not needed if you also have "
-    #         "the annotation packages, which contain the same information (and more)."
-    #     ),
-    #     label="Save genome-to-protein map",
-    # )
     chromosomes = lore.ValueInput(
         list[str] | None,
         default=None,
@@ -191,6 +181,15 @@ def _fetch_single_assembly_package(
     response = _fetch_assembly_package(api, [genome_accession], **clean_kwargs)
     if not response:
         return None
+
+    # Validate zip file here to raise errors before caching is applied
+    try:
+        with zipfile.ZipFile(io.BytesIO(response)) as z:
+            z.namelist()
+    except zipfile.BadZipFile:
+        _log_bad_response(ctx, response, genome_accession)
+        raise ValueError("Fetched data is not a valid zip file.")
+
     return response
 
 
@@ -263,33 +262,28 @@ def fetch_assembly_package(
                     failed_accessions.append(genome_acc)
                     continue
 
-                try:
-                    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
-                        namelist = z.namelist()
+                with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+                    namelist = z.namelist()
 
-                        for req_type in requested_types:
-                            if req_type not in NCBI_TYPE_MAP:
-                                ctx.logger.warning("Requested annotation type %s is not yet implemented.", req_type)
-                                continue
+                    for req_type in requested_types:
+                        if req_type not in NCBI_TYPE_MAP:
+                            ctx.logger.warning("Requested annotation type %s is not yet implemented.", req_type)
+                            continue
 
-                            filename, output_key = NCBI_TYPE_MAP[req_type]
-                            target_files = [f for f in namelist if filename in f]
+                        filename, output_key = NCBI_TYPE_MAP[req_type]
+                        target_files = [f for f in namelist if f.endswith(filename)]
 
-                            for target_file in target_files:
-                                with z.open(target_file) as f:
-                                    content = f.read()
-                                    safe_name = f"{genome_acc}_{filename}"
+                        for target_file in target_files:
+                            with z.open(target_file) as f:
+                                content = f.read()
+                                safe_name = Path(target_file).name.replace(" ", "_")
 
-                                    ctx.materialize_content(
-                                        content=content,
-                                        output_key=output_key,
-                                        name=safe_name,
-                                        extension=filename.split(".")[-1],
-                                    )
-                except zipfile.BadZipFile:
-                    _log_bad_response(ctx, zip_bytes, genome_acc)
-                    failed_accessions.append(genome_acc)
-                    continue
+                                ctx.materialize_content(
+                                    content=content,
+                                    output_key=output_key,
+                                    name=safe_name,
+                                    extension=filename.split(".")[-1],
+                                )
 
             except Exception as e:
                 ctx.logger.error("Failed to process %s: %s", genome_acc, e, exc_info=True)

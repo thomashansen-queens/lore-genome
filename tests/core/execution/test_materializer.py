@@ -172,3 +172,24 @@ def test_raw_same_shape_in_preview_and_run(temp_session, lines_artifact):
 
     assert [l.strip() for l in run] == ["alpha", "beta", "gamma"]
     assert [l.strip() for l in preview] == ["alpha", "beta", "gamma"]
+
+
+# --- Manual (typed) input coercion: pseudo_adapt delimiter splitting ---
+
+def test_manual_list_input_splits_on_comma_tab_newline_not_dot():
+    """A manual list input splits on commas/tabs/newlines, NOT on '.', so a
+    versioned accession like 'GCF_025917705.1' stays intact rather than becoming
+    ['GCF_025917705', '1'] (regression: char-class had a literal '.' for ',')."""
+    from pydantic.fields import FieldInfo
+    from lore.core.execution.materializer import _materialize_manual_input
+
+    field = FieldInfo(annotation=list[str])
+
+    # Single versioned accession must not split on its version dot
+    assert _materialize_manual_input("GCF_025917705.1", "adapted", field) == ["GCF_025917705.1"]
+
+    # The actual delimiters still work, preserving dots within each token
+    assert _materialize_manual_input(
+        "GCF_000005845.2, GCF_000006945.2", "adapted", field
+    ) == ["GCF_000005845.2", "GCF_000006945.2"]
+    assert _materialize_manual_input("a.1\tb.2\nc.3", "adapted", field) == ["a.1", "b.2", "c.3"]
