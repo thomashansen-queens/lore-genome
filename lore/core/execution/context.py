@@ -32,6 +32,8 @@ class ExecutionContext:
     task: "Task"
     task_def: "TaskDefinition"
     input_artifacts: dict[str, list["Artifact"]] = field(default_factory=dict)
+    # Inputs are always complete (for now) for a task, but not for a preview
+    inputs_complete: bool = True
     results: TaskResults = field(init=False)
     _temp_dir: tempfile.TemporaryDirectory | None = field(default=None, init=False)
 
@@ -98,7 +100,11 @@ class ExecutionContext:
             return func(**kwargs)
 
         return self.runtime.cache.get_or_compute(
-            session_id=self.session_id, prefix=key_prefix, compute_fn=_thunk, cache_kwargs=kwargs,
+            session_id=self.session_id,
+            prefix=key_prefix,
+            compute_fn=_thunk,
+            cache_kwargs=kwargs,
+            persist=self.inputs_complete,
         )
 
     def cleanup(self):

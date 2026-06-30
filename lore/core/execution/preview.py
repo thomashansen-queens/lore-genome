@@ -78,11 +78,8 @@ class PreviewContext(ExecutionContext):
     Intercepts materialization to return UI-ready data payloads.
     Leaves the Manifest untouched.
 
-    `inputs_complete`: simple flag indicating whether the input to
-    the handler is delivered in full. If any input was 'peeked' (impartial load),
-    outputs derived from it are also partial previews.
+    For caching, checks if input_complete is true or not.
     """
-    inputs_complete: bool = True
 
     def materialize_file(
         self,
@@ -212,7 +209,7 @@ def run_preview_worker(
     if not task_def.preview_mode.executes_handler:
         return preview
 
-    # 7. Execute handler
+    # 7. Execute handler (and set data completeness in context for caching)
     ctx = PreviewContext(
             runtime=rt,
             session_id=session_id,
