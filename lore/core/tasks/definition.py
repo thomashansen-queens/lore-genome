@@ -15,14 +15,15 @@ if TYPE_CHECKING:
 class PreviewMode(StrEnum):
     """Defines the level of preview data to return for a Task in the UI."""
     NONE = "none"  # No preview data; only metadata and validation status
-    LIVE = "live"  # Live preview with real-time data
-    FULL = "full"  # Full preview with complete data (may be slow)
+    LIVE = "live"  # Auto-refreshing preview over peeked (truncated) inputs
+    FULL = "full"  # Manual preview over the complete inputs (may be slow)
+    LIVE_FULL = "live_full"  # Auto-refreshing preview over the complete inputs
     DRY_RUN = "dry_run"  # Simulate execution without running the handler (for testing)
 
     @property
     def executes_handler(self) -> bool:
         """Convenience property to check if a preview executes the handler function."""
-        return self in {self.LIVE, self.FULL}
+        return self in {self.LIVE, self.FULL, self.LIVE_FULL}
 
     @property
     def is_allowed(self) -> bool:
@@ -32,10 +33,15 @@ class PreviewMode(StrEnum):
     @property
     def is_live(self) -> bool:
         """Whether the UI should auto-refresh the preview as inputs change."""
-        return self == self.LIVE
+        return self in {self.LIVE, self.LIVE_FULL}
+
+    @property
+    def loads_full_inputs(self) -> bool:
+        """Whether the UI should always load the full inputs (no peeking!)"""
+        return self in {self.FULL, self.LIVE_FULL}
 
 
-PreviewModeLiteral = Literal["none", "live", "full", "dry_run"]
+PreviewModeLiteral = Literal["none", "live", "full", "live_full", "dry_run"]
 
 
 @dataclass(frozen=True)
@@ -53,10 +59,7 @@ class TaskDefinition:
         description: Human-readable description of the Task.
         category: Category or grouping for the Task (e.g. "NCBI", "Phylogeny").
         icon: Emoji or symbol representing the Task visually. TODO: De-unicodify this, use SVGs
-<<<<<<< HEAD
-        preview_mode: Permissions for UI previews ("none", "live", "full", "dry_run")
-=======
->>>>>>> 916ae20 (Tasks now have preview_mode: defaults to 'none' to avoid accidentally running heavy compute or API calls. Also changed keywords in TaskDefinitions to Literals for much better DX.)
+        preview_mode: Permissions for UI previews ("none", "live", "full", "live_full", "dry_run")
     """
     key: str
     handler: Callable

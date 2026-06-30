@@ -178,6 +178,10 @@ def run_preview_worker(
     adapter_config = ephemeral_task.exec_config.get("adapter", {})
     strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
 
+    # Some tasks cannot function in PEEK mode, so escalate to FULL if the definition requires it.
+    if task_def.preview_mode.loads_full_inputs:
+        strategy = AdapterStrategy.FULL
+
     # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
         materialized = materialize_task_inputs(

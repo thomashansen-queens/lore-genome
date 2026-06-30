@@ -4,8 +4,9 @@
 {# --- Error --- #}
 {% if payload.error %}
     <div class="flash-message scroll-area"
-        style="background: var(--danger-bg); border-color: var(--danger); margin-bottom: var(--spacing-md);">
-        <pre class="small">{{ payload.error }}</pre>
+        style="flex: 0 0 auto; flex-shrink: 0; max-height: 60%;
+               background: var(--danger-bg); border-color: var(--danger); margin-bottom: var(--spacing-md);">
+        <pre class="small" style="white-space: pre-wrap; word-break: break-word;">{{ payload.error }}</pre>
         {% if payload.traceback %}
             <details class="small" style="margin-top: var(--spacing-sm);">
                 <summary style="cursor: pointer;">Traceback</summary>
@@ -146,19 +147,24 @@
 {% else %}
 {# Fallback for sink nodes / dry runs #}
 
-    <div class="card">
-        <div class="ui-label">Execution Plan</div>
-        <div class="small muted" style="margin-bottom: var(--spacing-sm);">
+    {# 'fill' lets the card claim whatever vertical space the error div leaves;
+       the inner scroll-area keeps a long/wide plan inside the panel instead of
+       letting it push off the screen edge. #}
+    <div class="card fill">
+        <div class="ui-label" style="flex-shrink: 0;">Execution Plan</div>
+        <div class="small muted" style="flex-shrink: 0; margin-bottom: var(--spacing-sm);">
             No outputs generated for preview.
         </div>
-        <div class="row gapped" style="align-items: flex-start;">
-            <div class="fill">
-                Resolved Inputs
-                <pre class="small">{{ payload.resolved_inputs | tojson(indent=2) }}</pre>
-            </div>
-            <div class="fill">
-                Execution Config
-                <pre class="small">{{ payload.execution_config | tojson(indent=2) }}</pre>
+        <div class="scroll-area">
+            <div class="row gapped" style="align-items: flex-start;">
+                <div class="fill">
+                    Resolved Inputs
+                    <pre class="small" style="white-space: pre-wrap; word-break: break-word;">{{ payload.resolved_inputs | tojson(indent=2) }}</pre>
+                </div>
+                <div class="fill">
+                    Execution Config
+                    <pre class="small" style="white-space: pre-wrap; word-break: break-word;">{{ payload.execution_config | tojson(indent=2) }}</pre>
+                </div>
             </div>
         </div>
     </div>
