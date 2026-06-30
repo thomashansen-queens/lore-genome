@@ -11,7 +11,17 @@ from .svg import (
     SvgUnits,
 )
 
+from .tracks import (
+    BaseTrack,
+    LabelPosition,
+    TextMetrics,
+    TrackBounds,
+    TrackStack,
+    TrackTheme,
+)
+
 __all__ = [
+    # SVG
     "SvgCanvas",
     "SvgCircle",
     "SvgGroup",
@@ -22,4 +32,11 @@ __all__ = [
     "SvgTitle",
     "SvgStyle",
     "SvgUnits",
+    # Tracks
+    "BaseTrack",
+    "LabelPosition",
+    "TextMetrics",
+    "TrackBounds",
+    "TrackStack",
+    "TrackTheme",
 ]

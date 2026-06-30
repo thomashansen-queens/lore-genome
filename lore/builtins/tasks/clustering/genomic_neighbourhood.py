@@ -85,6 +85,73 @@ class GenomicNeighbourhoodTaskOutputs:
     )
 
 
+@lore.task(
+    "analysis.genomic_neighbourhood",
+    name="Genomic neighbourhood",
+    inputs=GenomicNeighbourhoodTaskInputs,
+    outputs=GenomicNeighbourhoodTaskOutputs,
+    category="clustering",
+    icon="☷",
+    preview_mode="live_full",
+)
+def genomic_neighbourhood_analysis(
+    ctx: lore.ExecutionContext,
+    protein_accession: list[str],
+    genome_annotation: list[dict],
+    context_window_str: str | None = None,
+    context_window_type: Literal["gene_features", "base_pairs"] = "gene_features",
+    save_report: bool = False,
+    clamp_gap: int | None = None,
+    clamp_gene: int | None = None,
+    collapse_replicons: bool = False,
+    circular_wrap: bool = False,
+):
+    """
+    Analyze the genomic neighbourhood of gene(s) of interest across a set of genomes.
+    Allows multiple annotation files mostly to help visualize the same gene in 
+    different strains/species
+    """
+    # Defaults
+    if not context_window_str:
+        context_window_str = "5" if context_window_type == "gene_features" else "5000"
+    context_window = _set_window(context_window_str.strip())
+
+    cache_key = "_".join(a.id for a in ctx.input_artifacts.get("genome_annotations", []))
+    annotation_df = _build_master_df(ctx, annotations=genome_annotation, cache_key=cache_key)
+
+    neighbourhoods = _extract_neighbourhoods(
+        ctx=ctx,
+        annotation_df=annotation_df,
+        accessions=protein_accession,
+        window=context_window,
+        window_type=context_window_type,
+        collapse_replicons=collapse_replicons,
+        circular_wrap=circular_wrap,
+    )
+
+    if save_report:
+        out_path = ctx.get_temp_path("genomic_neighbourhood_report.csv")
+        neighbourhoods.to_csv(out_path, index=False)
+        ctx.materialize_file(
+            out_path,
+            name="neighbourhood_report",
+            output_key="neighbourhood_report",
+        )
+
+    svg_str = _render_neighbourhood_svg(neighbourhoods, clamp_gap, clamp_gene)
+    ctx.materialize_content(
+        svg_str,
+        name="neighbourhood_view",
+        output_key="neighbourhood_svg",
+        data_type="svg",
+        extension="svg",
+    )
+    ctx.logger.info("Genomic neighbourhood analysis complete.")
+
+############################################################
+# COMPUTATION HELPERS
+############################################################
+
 def _set_window(context_window: str) -> tuple[int, int]:
     """
     Parses the context window input and returns the up and downstream window sizes as integers.
@@ -434,70 +501,10 @@ def _extract_neighbourhoods(
 
     return pd.concat(neighbourhood_list, ignore_index=True)
 
-
-@lore.task(
-    "analysis.genomic_neighbourhood",
-    name="Genomic neighbourhood",
-    inputs=GenomicNeighbourhoodTaskInputs,
-    outputs=GenomicNeighbourhoodTaskOutputs,
-    category="clustering",
-    icon="☷",
-    preview_mode="live",
-)
-def genomic_neighbourhood_analysis(
-    ctx: lore.ExecutionContext,
-    protein_accession: list[str],
-    genome_annotation: list[dict],
-    context_window_str: str | None = None,
-    context_window_type: Literal["gene_features", "base_pairs"] = "gene_features",
-    save_report: bool = False,
-    clamp_gap: int | None = None,
-    clamp_gene: int | None = None,
-    collapse_replicons: bool = False,
-    circular_wrap: bool = False,
-):
-    """
-    Analyze the genomic neighbourhood of gene(s) of interest across a set of genomes.
-    Allows multiple annotation files mostly to help visualize the same gene in 
-    different strains/species
-    """
-    # Defaults
-    if not context_window_str:
-        context_window_str = "5" if context_window_type == "gene_features" else "5000"
-    context_window = _set_window(context_window_str.strip())
-
-    cache_key = "_".join(a.id for a in ctx.input_artifacts.get("genome_annotations", []))
-    annotation_df = _build_master_df(ctx, annotations=genome_annotation, cache_key=cache_key)
-
-    neighbourhoods = _extract_neighbourhoods(
-        ctx=ctx,
-        annotation_df=annotation_df,
-        accessions=protein_accession,
-        window=context_window,
-        window_type=context_window_type,
-        collapse_replicons=collapse_replicons,
-        circular_wrap=circular_wrap,
-    )
-
-    if save_report:
-        out_path = ctx.get_temp_path("genomic_neighbourhood_report.csv")
-        neighbourhoods.to_csv(out_path, index=False)
-        ctx.materialize_file(
-            out_path,
-            name="neighbourhood_report",
-            output_key="neighbourhood_report",
-        )
-
-    svg_str = _render_neighbourhood_svg(neighbourhoods, clamp_gap, clamp_gene)
-    ctx.materialize_content(
-        svg_str,
-        name="neighbourhood_view",
-        output_key="neighbourhood_svg",
-        data_type="svg",
-        extension="svg",
-    )
-    ctx.logger.info("Genomic neighbourhood analysis complete.")
-
+############################################################
+# VISUALIZATION
+############################################################
+from dataclasses import dataclass, field
 
 ORIGIN_PADDING_BP = 600
 
@@ -615,139 +622,89 @@ def _apply_virtual_layout(
     return df, gap_breaks, gene_breaks, wrap_breaks
 
 
-def _render_neighbourhood_svg(
-    df: pd.DataFrame,
-    clamp_gap: int | None = None,
-    clamp_gene: int | None = None,
-    collapse_duplicates: bool = False,
-    svg_theme: dict | None = None,
-) -> str:
+@dataclass
+class SyntenyLayout:
+    """Consolidates all computed coordinates for a single track's layout."""
+    df: pd.DataFrame
+    gap_breaks: list[float] = field(default_factory=list)
+    wrap_breaks: list[tuple[float, float]] = field(default_factory=list)
+    gene_breaks: list[float] = field(default_factory=list)
+    clamp_gene: int | None = None
+
+
+class GenomicSyntenyTrack(v.BaseTrack):
     """
-    Renders the genomic neighbourhood as an SVG string. If `clamp_gap` is provided,
-    distances between genes that exceed this value will be visually clamped to 
-    this maximum distance.
+    A custom track for rendering a single syntenic neighbourhood on a replicon.
     """
-    config = SVG_CONFIG.copy()
-    if svg_theme:
-        config.update(svg_theme)
+    def __init__(self, name: str, layout: SyntenyLayout):
+        super().__init__(name, height=40.0, label_pos=v.LabelPosition.LEFT)
+        self.layout = layout
 
-    if df.empty:
-        return v.SvgCanvas(width=config["canvas_width"], height=200).render()    
+    # TODO: TrackBounds should become some kind of tuple(start, end) type
+    def render_payload(self, bounds: v.TrackBounds, width: float, theme: v.TrackTheme) -> v.SvgGroup:
+        group = v.SvgGroup()
+        y_center = self.height / 2
+        row_height = self.height
 
-    # 1. Delegate layout calculations to a helper function, applying clamping as needed
-    df, gap_breaks, gene_breaks, wrap_breaks = _apply_virtual_layout(df, clamp_gap, clamp_gene)
-    tracks_data = df.groupby("track_id")
+        def _xscale(bp: float) -> float:
+            """Translates a virtual coordinate to a pixel X-coordinate using allocated width"""
+            percent = (bp - bounds.start) / bounds.length
+            return percent * width
 
-    # 2. Global scale: Determine overall span
-    global_min = df[["render_begin", "render_end"]].min().min()
-    global_max = df[["render_begin", "render_end"]].max().max()
-    if global_min == global_max:
-        global_max = global_min + 1.0  # Divide-by-zero guard
+        track_min_x = _xscale(self.layout.df[["render_begin", "render_end"]].min().min())
+        track_max_x = _xscale(self.layout.df[["render_begin", "render_end"]].max().max())
 
-    plot_width = config["canvas_width"] - config["label_margin"] - config["right_margin"]
-
-    def _xscale(bp: float) -> float:
-        """Translates a base-pair coordinate to a pixel X-coordinate"""
-        percent_of_span = (bp - global_min) / (global_max - global_min)
-        return config["label_margin"] + percent_of_span * plot_width
-
-    # 3. Canvas setup
-    row_height = config["row_height"]
-
-    canvas_height = (len(tracks_data) * row_height) + config["vert_margin"] * 2
-    canvas = v.SvgCanvas(width=config["canvas_width"], height=canvas_height)
-
-    #4. Draw tracks
-    for idx, (track_id, track_df) in enumerate(tracks_data):
-        track_id = str(track_id)  # make the static type checker happy :)
-
-        # Track-level metadata and simple positioning
-        genome_acc = track_df["genome_accession"].iloc[0]  # in case of duplicates
-
-        anchor_matches = track_df[track_df["context_pos"] == 0]
-        anchor_acc = (
-            anchor_matches["protein_accession"].iloc[0]
-            if not anchor_matches.empty
-            else "unknown_anchor"
-        )
-
-        y_top = config["vert_margin"] + idx * row_height
-        y_center = y_top + (row_height / 2)
-
-        track_group = v.SvgGroup(classes=[f"track-{genome_acc}"])
-
-        # A. Track label
-        label_text = f"{genome_acc} | {anchor_acc}"
-        track_group.add(v.SvgText(
-            x=config["label_margin"] - 15,
-            y=y_center + 4,  # eyeball centering
-            text=label_text,
-            style=v.SvgStyle(
-                text_anchor="end",
-                font_size=config["font_size"],
-                font_family=config["font_family"],
-            ),
-        ))
-
-        # B. Backbone line
-        track_min_x = _xscale(track_df[["render_begin", "render_end"]].min().min())
-        track_max_x = _xscale(track_df[["render_begin", "render_end"]].max().max())
-
-        # i. Simple line indicating span of the track
-        track_group.add(v.SvgLine(
+        # 1. Backbone line
+        group.add(v.SvgLine(
             x1=track_min_x, y1=y_center, x2=track_max_x, y2=y_center,
-            style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=2.0),
+            style=v.SvgStyle(stroke=theme.color_backbone, stroke_width=2.0),
         ))
 
-        # ii. Wrap around to origin: Hide backbone line
-        for left_bp, right_bp in wrap_breaks.get(track_id, []):
-            lx = _xscale(left_bp)
-            rx = _xscale(right_bp)
-            track_group.add(v.SvgLine(
+        # 2. Wrap around to origin: Hide backbone line
+        for left_bp, right_bp in self.layout.wrap_breaks:
+            lx, rx = _xscale(left_bp), _xscale(right_bp)
+            group.add(v.SvgLine(
                 x1=lx, y1=y_center, x2=rx, y2=y_center,
                 style=v.SvgStyle(stroke="#FFFFFF", stroke_width=3.0),
             ))
 
-        # iii. Gap breaks (a '//' symbol across the track)
-        for break_bp in gap_breaks.get(track_id, []):
+        # 3. Gap breaks (a '//' symbol across the track)
+        for break_bp in self.layout.gap_breaks:
             bx = _xscale(break_bp)
             # Draw broken axis indicator: a '//' symbol across the clamped gene
             # White space
-            track_group.add(v.SvgPolygon(
+            group.add(v.SvgPolygon(
                 points=[(bx-5, y_center-row_height*0.6), (bx+1, y_center+row_height*0.6),
                         (bx+5, y_center+row_height*0.6), (bx-1, y_center-row_height*0.6)],
                 style=v.SvgStyle(fill="#FFFFFF", stroke="none"),
             ))
 
             # With lines
-            track_group.add(v.SvgLine(
+            group.add(v.SvgLine(
                 x1=bx-1, y1=y_center-row_height*0.6, x2=bx+5, y2=y_center+row_height*0.6,
-                style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=1.5),
+                style=v.SvgStyle(stroke=theme.color_backbone, stroke_width=1.5),
             ))
-            track_group.add(v.SvgLine(
+            group.add(v.SvgLine(
                 x1=bx-5, y1=y_center-row_height*0.6, x2=bx+1, y2=y_center+row_height*0.6,
-                style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=1.5),
+                style=v.SvgStyle(stroke=theme.color_backbone, stroke_width=1.5),
             ))
 
-        # iv. Indicate termini of contigs (a dot indicating the terminus of the DNA fragment)
-        for _, gene in track_df.iterrows():
+        # 4. Indicate termini of contigs (a dot indicating the terminus of the DNA fragment)
+        for _, gene in self.layout.df.iterrows():
             if gene.get("is_n_terminus"):
-                tx = _xscale(gene["render_begin"])
-                track_group.add(v.SvgCircle(
-                    cx=tx, cy=y_center, r=4,
-                    style=v.SvgStyle(fill=config["color_backbone"], stroke="none"),
+                group.add(v.SvgCircle(
+                    cx=_xscale(gene["render_begin"]), cy=y_center, r=4,
+                    style=v.SvgStyle(fill=theme.color_backbone, stroke="none"),
                 ))
             if gene.get("is_c_terminus"):
-                tx = _xscale(gene["render_end"])
-                track_group.add(v.SvgCircle(
-                    cx=tx, cy=y_center, r=4,
-                    style=v.SvgStyle(fill=config["color_backbone"], stroke="none"),
+                group.add(v.SvgCircle(
+                    cx=_xscale(gene["render_end"]), cy=y_center, r=4,
+                    style=v.SvgStyle(fill=theme.color_backbone, stroke="none"),
                 ))
 
-        # C. Gene arrows
-        for _, gene in track_df.iterrows():
-            px_start = _xscale(gene["render_begin"])
-            px_end = _xscale(gene["render_end"])
+        # 5. Gene arrows
+        for _, gene in self.layout.df.iterrows():
+            px_start, px_end = _xscale(gene["render_begin"]), _xscale(gene["render_end"])
 
             acc = str(gene.get("protein_accession", ""))
             symbol = str(gene["symbol"]) if pd.notna(gene.get("symbol")) else ""
@@ -790,8 +747,8 @@ def _render_neighbourhood_svg(
 
             # Color features (anchor gene is highlighted)
             is_anchor = (gene["context_pos"] == 0)
-            fill_color = config["color_anchor_fill"] if is_anchor else config["color_context_fill"]
-            stroke_color = config["color_anchor_stroke"] if is_anchor else config["color_context_stroke"]
+            fill_color = theme.color_primary_fill if is_anchor else theme.color_secondary_fill
+            stroke_color = theme.color_primary_stroke if is_anchor else theme.color_secondary_stroke
 
             arrow = v.SvgPolygon(
                 points=pts,
@@ -809,8 +766,8 @@ def _render_neighbourhood_svg(
             gene_group.add(arrow)
 
             # iii. Gene break indicator (if gene is clamped)
-            if gene.get("is_clamped_gene") and clamp_gene:
-                gx = _xscale(gene["render_begin"] + (clamp_gene / 2))
+            if gene.get("is_clamped_gene") and self.layout.clamp_gene:
+                gx = _xscale(gene["render_begin"] + (self.layout.clamp_gene / 2))
 
                 # Draw broken axis indicator: a '//' symbol across the clamped gene
                 # White space
@@ -830,39 +787,80 @@ def _render_neighbourhood_svg(
                 ))
 
             # iv. Text label (if space allows)
-            def _trim_label(text: str, width_px: int) -> str:
-                """Trims labels to fit if possible"""
-                char_width = config["font_size"] * 0.6
-                max_chars = int(width_px / char_width)
-                if max_chars < 3:
-                    return ""
-                elif len(text) > max_chars:
-                    return text[:max_chars - 1] + "…"
-                else:
-                    return text
-
-            text_label = _trim_label(display_label, abs(int(px_end - px_start)))
+            text_label = v.TextMetrics.truncate_to_fit(display_label, abs(int(px_end - px_start)), theme.font_size)
             if text_label:
                 # Use white text on the dark anchor background for readability
-                text_color = config["color_anchor_text"] if is_anchor else config["color_context_text"]
-                label = v.SvgText(
-                    x=(px_start + px_end) / 2,
-                    y=y_center + (config["font_size"] * 0.35), # True vertical centering for text
-                    text=text_label,
-                    style=v.SvgStyle(
-                        text_anchor="middle",
-                        fill=text_color,
-                        font_size=config["font_size"] * 0.8,
-                        font_family=config["font_family"],
-                    ),
-                )
-                gene_group.add(label)
+                text_color = theme.color_primary_text if is_anchor else theme.color_secondary_text
+                if text_label:
+                    label = v.SvgText(
+                        x=(px_start + px_end) / 2,
+                        y=y_center + (theme.font_size * 0.35), # vertical centering for text
+                        text=text_label,
+                        style=v.SvgStyle(
+                            text_anchor="middle",
+                            fill=text_color,
+                            font_size=int(theme.font_size * 0.8),
+                            font_family=theme.font_family,
+                        ),
+                    )
+                    gene_group.add(label)
 
-            track_group.add(gene_group)
+            group.add(gene_group)
+        return group
 
-        canvas.add(track_group)
 
-    return canvas.render()
+def _render_neighbourhood_svg(
+    df: pd.DataFrame,
+    clamp_gap: int | None = None,
+    clamp_gene: int | None = None,
+) -> str:
+    """
+    Renders the genomic neighbourhood as an SVG string. If `clamp_gap` is provided,
+    distances between genes that exceed this value will be visually clamped to 
+    this maximum distance.
+    """
+    if df.empty:
+        return v.SvgCanvas(width=SVG_CONFIG["canvas_width"], height=200).render()    
+
+    # 1. Delegate layout calculations to a helper function, applying clamping as needed
+    df, gap_breaks, gene_breaks, wrap_breaks = _apply_virtual_layout(df, clamp_gap, clamp_gene)
+
+    # 2. Global scale: Determine overall span
+    global_min = df[["render_begin", "render_end"]].min().min()
+    global_max = df[["render_begin", "render_end"]].max().max()
+    if global_min == global_max:
+        global_max = global_min + 1.0  # Divide-by-zero guard
+
+    bounds = v.TrackBounds(start=global_min, end=global_max)
+
+    # 3. Calculate names first for label layout
+    max_label_len = 0
+    tracks_by_id = []
+    for track_id, track_df in df.groupby("track_id"):
+        genome_acc = track_df["genome_accession"].iloc[0]
+        anchor_matches = track_df[track_df["context_pos"] == 0]
+        anchor_acc = anchor_matches["protein_accession"].iloc[0] if not anchor_matches.empty else "unknown"
+        track_name = f"{genome_acc} | {anchor_acc}"
+        tracks_by_id.append((track_id, track_df, track_name))
+        max_label_len = max(max_label_len, len(track_name))
+
+    dynamic_label_width = min(400, (max_label_len * 7.5) + 20)
+    dynamic_theme = v.TrackTheme(label_width=dynamic_label_width)
+
+    stack = v.TrackStack(width=SVG_CONFIG["canvas_width"], theme=dynamic_theme)
+
+    # 4. Add each track to the stack
+    for track_id, track_df, track_name in tracks_by_id:
+        layout = SyntenyLayout(
+            df=track_df,
+            gap_breaks=gap_breaks.get(track_id, []),
+            wrap_breaks=wrap_breaks.get(track_id, []),
+            gene_breaks=gene_breaks.get(track_id, []),
+            clamp_gene=clamp_gene,
+        )
+        stack.add_track(GenomicSyntenyTrack(name=track_name, layout=layout))
+
+    return stack.render(bounds)
 
 SVG_CONFIG = {
     "canvas_width": 1200,
