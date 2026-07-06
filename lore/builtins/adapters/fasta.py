@@ -187,7 +187,7 @@ class ProteinFastaAdapter(BaseFastaAdapter):
 @lore.adapter()
 class NucleotideFastaAdapter(BaseFastaAdapter):
     """Semantic wrapper for nucleotide sequences"""
-    accepted_types: ClassVar[set[str]] = {"nucleotide_fasta"}
+    accepted_types: ClassVar[set[str]] = {"nucleotide_fasta", "genome_fasta", "fna"}
 
     @property
     def schema(self):
