@@ -616,7 +616,7 @@ def _render_neighbourhood_svg(
             sym = str(row.get("symbol", "")) if pd.notna(row.get("symbol")) else ""
             locus = str(row.get("locus_tag", "")) if pd.notna(row.get("locus_tag")) else ""
 
-            disp = sym or locus or acc or "unknown"
+            disp = sym or row.get("name", "")
 
             if row["orientation"] == "plus":
                 shape = v.FeatureShape.ARROW_RIGHT
@@ -663,10 +663,34 @@ def _render_neighbourhood_svg(
                 lo = anchors["shifted_begin"].min() - win_up
                 hi = anchors["shifted_end"].max() + win_down
                 track_extent = (float(lo), float(hi))
+        else:
+            track_extent = (
+                float(track_df["shifted_begin"].min()),
+                float(track_df["shifted_end"].max())
+            )
 
-        # 11. Add Track to Stack
+        # 11. Build Track-level metadata and add to Stack
+        if include_metadata:
+            if not track_df[track_df["context_pos"] == 0].empty:
+                # In case of collapsed replicons, multiple anchor genes may coexist
+                prot_acc = track_df[track_df["context_pos"] == 0]["protein_accession"].to_list()
+                prot_acc = prot_acc[0] if len(prot_acc) == 1 else ", ".join(prot_acc)
+            else:
+                prot_acc = "unknown"
+
+            track_meta = {
+                "genome_accession": track_df["genome_accession"].iloc[0],
+                "protein_accession": prot_acc,
+                "replicon": track_df["replicon"].iloc[0],
+                "extent": abs(track_extent[1] - track_extent[0]) if track_extent else None,
+            }
+
         stack.add_track(v.FeatureTrack(
-            name=track_name, features=features, breaks=breaks, extent=track_extent,
+            name=track_name,
+            features=features,
+            breaks=breaks,
+            extent=track_extent,
+            metadata=track_meta,
         ))
 
     return stack.render()

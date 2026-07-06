@@ -8,201 +8,185 @@
         display: none;
         color: var(--text-muted);
         font-family: var(--font-sans);
-        font-size: medium;
+        font-size: 0.9rem;
         background: var(--bg-subtle);
-        border: 1px solid black;
-        padding: 8px;
-        white-space: pre-wrap;
-        user-select: text;
-        pointer-events: auto;
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-lg);
+        padding: var(--spacing-xs) var(--spacing-sm);
         z-index: 1000;
+        pointer-events: auto; /* Allow clicking inside tooltip */
     }
     
-    #copy-toast {
+    .tooltip-line {
+        margin: var(--spacing-xs);
+        white-space: nowrap;
+    }
+
+    .copy-value {
+        font-family: monospace;
+        padding: 0 var(--spacing-xs);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .copy-value:hover { background: var(--secondary-hover); }
+
+    #copy-flash {
         position: fixed;
         display: none;
-        transform: translateX(-50%) translateY(10px);
-        background: white;
-        padding: 3px;
+        background: #333;
+        color: white;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--radius-sm);
+        font-size: 0.8rem;
         z-index: 1001;
         opacity: 0;
-        transition:
-            opacity 0.3s ease,
-            transform 0.3s ease;
+        transition: opacity 0.2s ease;
+        pointer-events: none;
     }
 
-    .gene-container:hover {
+    /* Clickable elements */
+    .has-tooltip {
+        cursor: pointer;
         transition: filter 0.2s;
-        filter: brightness(0.85);
-        cursor: pointer;
     }
-
-    .selected,
-    .parents-tooltip:hover {
-        transition: filter 0.2s;
+    
+    .has-tooltip:hover, .has-tooltip.selected {
         filter: brightness(0.85);
-        cursor: pointer;
-    }
-
-    .copy-text {
-        width: 250px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        cursor: pointer;
     }
 </style>
 
 <div class="column">
     <div class="row muted small" style="flex-shrink: 0;">
-        <p>
-            Rendered via {{ adapter_name }} ({{ metadata.get('file_size_kb', '0') }} kB)
-        </p>
-        <p>
-            Canvas ViewBox: {{ metadata.get('viewbox', 'N/A') }}
-        </p>
+        <p>Rendered via {{ adapter_name }} ({{ metadata.get('file_size_kb', '0') }} kB)</p>
+        <p>Canvas ViewBox: {{ metadata.get('viewbox', 'N/A') }}</p>
     </div>
     
-    <div class="scroll-area preview-scroll-area">
+    <div class="scroll-area preview-scroll-area" style="position: relative;">
         {{ data | safe }}
-        <div id="tooltip"></div>   
-        <div id="copy-toast">Copied!</div> 
-        <div id="selection-box"></div>
+
+        {# Hidden pop-up tooltip populated from metadata #}
+        <div id="tooltip"></div>
+        {# Feedback for clicking on tooltip value #}
+        <div id="copy-flash">Copied!</div>
+        
     </div>
 </div>
 
 <script>    
-    (() => {  // This is neccessary to maintain local scope so that the script can be re-injected in the same page
-        
-        // Tooltip rendering on click
-        const tooltip = document.getElementById("tooltip");  // Get template tooltip off of page to work with
-        const svg = document.querySelector("svg");  
-        const toast = document.getElementById("copy-toast");
+    (() => {
+        const tooltip = document.getElementById("tooltip");
+        const copyMsg = document.getElementById("copy-flash");
+        const svgContainer = document.querySelector(".preview-scroll-area");
         let activeTooltip = null;
-        
-        // Makes the tooltip visible and does collision math to place the tooltip at the given coordinates without squashing it.
-        function placeTooltip(x, y) {
-            tooltip.style.display = "block";
-            const tooltipRect = tooltip.getBoundingClientRect();
-            const offset = 10;
+
+        // 1. Format the tooltip text into clickable copy-values
+        function populateTooltip(rawText) {
+            tooltip.innerHTML = ""; // clear
+            const lines = rawText.split("\n");
             
-            // Default position (bottom)
-            y = y + offset;
-            x = x + offset;
-
-            // Collision Detection
-            const isOffRight = x + tooltipRect.width > window.innerWidth;
-            const isOffBottom = y + tooltipRect.height > window.innerHeight;
-
-            // Adjust for Collisions (Flip logic)
-            if (isOffBottom) {
-                y = window.innerHeight - tooltipRect.height; // Flip to top
-            }
-            
-            if (isOffRight) {
-                x = window.innerWidth - tooltipRect.width - offset; 
-            }
-
-            // Apply Styles
-            tooltip.style.top = `${y + window.scrollY}px`;
-            tooltip.style.left = `${x + window.scrollX}px`;
+            lines.forEach(line => {
+                const div = document.createElement("div");
+                div.className = "tooltip-line";
+                
+                // If the string is "Key: Value", make the Value copyable
+                const splitIdx = line.indexOf(":");
+                if (splitIdx !== -1) {
+                    const key = line.slice(0, splitIdx + 1);
+                    const val = line.slice(splitIdx + 1).trim();
+                    
+                    div.innerHTML = `${key} <span class="copy-value" data-copy="${val}">${val}</span>`;
+                } else {
+                    div.textContent = line;
+                }
+                tooltip.appendChild(div);
+            });
         }
 
-        if (svg) {
-            let selected = [];
-            let selected_min = Infinity;
-            let selected_max = 0;
-            function clearSelected() {
-                selected.forEach(element => {
-                    element.classList.remove("selected");
-                });
-                selected = [];
-                selected_min = Infinity;
-                selected_max = 0;
+        // 2. Smart Positioning
+        function placeTooltip(x, y) {
+            tooltip.style.display = "block";
+            const rect = tooltip.getBoundingClientRect();
+            const offset = 15;
+            
+            let posX = x + offset;
+            let posY = y + offset;
+
+            // Flip if hitting screen edges
+            if (posX + rect.width > window.innerWidth) {
+                posX = x - rect.width - offset;
+            }
+            if (posY + rect.height > window.innerHeight) {
+                posY = y - rect.height - offset;
             }
 
-            svg.addEventListener("click", event => {
-                const polygon = event.target.closest(".gene-container");  // Get the clicked-on gene
-                const tooltipContainerParent = event.target.closest(".parents-tooltip");  // Get the clicked-on tooltip container
+            tooltip.style.left = `${posX}px`;
+            tooltip.style.top = `${posY}px`;
+        }
 
-                // Gene tooltips
-                if (polygon && activeTooltip !== polygon){  
-                    activeTooltip = polygon;
-                    const gene = polygon.querySelector(".gene-arrow");
-                    tooltip.textContent = gene.dataset.title;
-                    placeTooltip(event.clientX, event.clientY);
-                }
-                // Protein domain tooltips
-                else if (tooltipContainerParent && (!selected.includes(tooltipContainerParent) || event.ctrlKey)){  
-                    const tooltipContainer = tooltipContainerParent.querySelector(".has-tooltip");                    
-                    const proteinAcc = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".protein-accession");
-                    const proteinSeq = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".copy-text");
-                    const start = tooltipContainer.dataset.start - 1;
-                    const end = tooltipContainer.dataset.end;
-                    tooltipContainerParent.classList.add("selected");
-                    if (proteinSeq) {
-                        copyDiv = document.createElement("div");
-                        copyDiv.className = "copy-text";
-                        // Multi-select domains to get the sequence spanning them
-                        if (event.ctrlKey) {
-                            selected_min = Math.min(selected_min, start);
-                            selected_max = Math.max(selected_max, end);
-                            copyDiv.textContent = proteinSeq.dataset.title.substring(selected_min, selected_max);
-                            tooltip.textContent = `${proteinAcc.textContent}\nStart: ${selected_min + 1}\nEnd: ${selected_max}\nTotal Length: ${selected_max - selected_min}`;
-                            selected.push(tooltipContainerParent);
-                        // Single-select domains
-                        } else {
-                            clearSelected();
-                            selected = [tooltipContainerParent];
-                            selected_min = start;
-                            selected_max = end;
-                            copyDiv.textContent = proteinSeq.dataset.title.substring(start, end);
-                            tooltip.textContent = tooltipContainer.dataset.title;
-                        }
-                        tooltip.append(copyDiv);
-                    // Proteins where a sequence could not be found from the given FASTA
-                    } else {
-                        clearSelected();
-                        selected = [tooltipContainerParent];
-                        tooltip.textContent = tooltipContainer.dataset.title;
-                    }
+        function clearSelection() {
+            if (activeTooltip) {
+                activeTooltip.classList.remove("selected");
+                activeTooltip = null;
+            }
+            tooltip.style.display = "none";
+        }
 
-                    placeTooltip(event.clientX, event.clientY);
-                }
-                else {
-                    if (!event.ctrlKey) {
-                        // Hide the tooltip if the outside is clicked
-                        clearSelected();
-                        tooltip.style.display = "none";
-                    }
-                }
-            });
-
-            // Copyable text snippets
-            tooltip.addEventListener("click", event => {
-                const copyText = event.target.closest(".copy-text");
-                
-                if (copyText) {
-                    navigator.clipboard.writeText(copyText.textContent);
-                    toast.style.left = `${event.clientX + 30}px`;
-                    toast.style.top = `${event.clientY - 30}px`;
-                    toast.style.display = "block";
-                    toast.style.opacity = 1;
+        // 3. Event Delegation for SVG Clicks
+        if (svgContainer) {
+            svgContainer.addEventListener("click", event => {   
+                // --- Copy tooltip value ---
+                const copyTarget = event.target.closest(".copy-value");
+                if (copyTarget) {
+                    const textToCopy = copyTarget.getAttribute("data-copy");
+                    navigator.clipboard.writeText(textToCopy);
+                    
+                    copyMsg.style.left = `${event.clientX}px`;
+                    copyMsg.style.top = `${event.clientY - 10}px`;
+                    copyMsg.style.display = "block";
+                    copyMsg.offsetHeight; // force browser reflow
+                    copyMsg.style.opacity = 1;
 
                     setTimeout(() => {
-                        toast.style.opacity = 0;
-                        setTimeout(() => toast.style.display = "none", 300);
-                    }, 2000);
+                        copyMsg.style.opacity = 0;
+                        setTimeout(() => copyMsg.style.display = "none", 200);
+                    }, 1500);
+                    return;
                 }
-            });
 
-            // Elements which follow the window as it scrolls (like the residue location indicator)
+                // --- Spawn tooltip ---
+                const hasTooltip = event.target.closest(".has-tooltip");
+                if (hasTooltip) {
+                    // Prevent native browser tooltip from overlapping our custom one
+                    const titleTag = hasTooltip.querySelector("title");
+                    if (!titleTag) return;
+
+                    // If clicking a new tooltip element, update selection
+                    if (activeTooltip !== hasTooltip) {
+                        clearSelection();
+                        activeTooltip = hasTooltip;
+                        activeTooltip.classList.add("selected");
+                        
+                        populateTooltip(titleTag.textContent);
+                        placeTooltip(event.clientX, event.clientY);
+                    }
+                    return;
+                }
+
+                // --- Clicked inside the tooltip ---
+                if (event.target.closest("#tooltip")) {
+                    return;
+                }
+
+                // --- Clicked away; clear selection ---
+                clearSelection();
+            });
+            
+            // 4. Parallax marker logic (retained from your original script)
             const marker = document.querySelector(".marker");
             if (marker) {
-                const scrollMenu = document.querySelector(".preview-scroll-area");
-                console.log(scrollMenu)
-                scrollMenu.addEventListener("scroll", () => {
-                    marker.style.transform = `translateY(${scrollMenu.scrollTop}px)`;
+                svgContainer.addEventListener("scroll", () => {
+                    marker.style.transform = `translateY(${svgContainer.scrollTop}px)`;
                 });
             }
         }

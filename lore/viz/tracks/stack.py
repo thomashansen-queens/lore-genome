@@ -122,6 +122,9 @@ class TrackStack:
         for track in self.tracks:
             # 1. Active theme (CSS-style: per-track kwargs override the stack).
             active = self.theme.model_copy(update=track.theme_kwargs)
+
+            # some tracks can dynamically resolve their height based on content
+            active.track_height = track.resolve_height(active)
             track_group = v.SvgGroup(translate_y=y_cursor)
 
             # 2. Reserve label gutter and compute the plotting area.
@@ -129,14 +132,16 @@ class TrackStack:
             plot_x = label_px if has_label else 0.0
             plot_w = max(1.0, self.width - plot_x - active.right_margin)
 
-            # TODO: For now, track-level metadata lives on the label
+            # Track-level metadata lives on the label
             if has_label:
                 name_fit = text.truncate_to_fit(
                     track.name,
                     max_width=label_px - active.label_margin,
                     font_size=active.font_size,
                 )
-                label_group = v.SvgGroup(classes=["track-label"])
+                label_group = v.SvgGroup(
+                    classes=["track-label"] + (["has-tooltip"] if track.metadata else [])
+                )
 
                 if track.metadata:
                     hover_lines = [f"{k}: {v}" for k, v in track.metadata.items()]

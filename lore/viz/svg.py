@@ -2,6 +2,7 @@
 Rudimentary SVG generation utilities.
 """
 from enum import Enum
+import re
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -39,7 +40,9 @@ class SvgElement(BaseModel):
 
         # 2. Data attributes
         for k, v in self.data.items():
-            clean_key = k.replace("_", "-")
+            # To follow HTML5 data-* attribute naming rules
+            clean_key = k.lower().replace("_", "-")
+            clean_key = re.sub(r"[^a-z0-9\-]", "", clean_key)
             parts.append(f"data-{clean_key}='{v}'")
 
         # 3. Style attribute
@@ -126,7 +129,7 @@ class SvgText(SvgElement):
 
     fill: str | None = "#111111"
     font_family: str = "sans-serif"
-    font_size: int = 12
+    font_size: float = 12
     text_anchor: str = "start"
 
     def render(self) -> str:
@@ -160,9 +163,10 @@ class SvgArrow(SvgElement):
     forward: bool = True  # right = forward
 
     def render(self) -> str:
-        hw = min(self.head_width, abs(self.x_end - self.x_start))
-        t = self.thickness / 2
-        ht = self.head_thickness / 2 if self.head_thickness else None
+        length = abs(self.x_end - self.x_start)
+        hw = min(self.head_width, length)
+        t = self.thickness / 2.0
+        ht = (self.head_thickness / 2.0) if self.head_thickness else None
 
         # 1. 5-point arrow
         if ht == t or ht is None:
@@ -187,21 +191,21 @@ class SvgArrow(SvgElement):
             if self.forward:
                 pts = [
                     (self.x_start, self.y_center - t),
-                    (self.x_end - self.head_width, self.y_center - t),
-                    (self.x_end - self.head_width, self.y_center - ht),
+                    (self.x_end - hw, self.y_center - t),
+                    (self.x_end - hw, self.y_center - ht),
                     (self.x_end, self.y_center),
-                    (self.x_end - self.head_width, self.y_center + t),
-                    (self.x_end - self.head_width, self.y_center + ht),
+                    (self.x_end - hw, self.y_center + t),
+                    (self.x_end - hw, self.y_center + ht),
                     (self.x_start, self.y_center + ht),
                 ]
             else:
                 pts = [
                     (self.x_end, self.y_center - t),
-                    (self.x_start + self.head_width, self.y_center - t),
-                    (self.x_start + self.head_width, self.y_center - ht),
+                    (self.x_start + hw, self.y_center - t),
+                    (self.x_start + hw, self.y_center - ht),
                     (self.x_start, self.y_center),
-                    (self.x_start + self.head_width, self.y_center + t),
-                    (self.x_start + self.head_width, self.y_center + ht),
+                    (self.x_start + hw, self.y_center + t),
+                    (self.x_start + hw, self.y_center + ht),
                     (self.x_end, self.y_center + ht),
                 ]
 

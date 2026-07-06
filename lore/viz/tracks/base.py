@@ -63,6 +63,10 @@ class BaseTrack(BaseModel, ABC):
         """
         return Scale(domain, px_width, breaks=[*shared_breaks, *self.breaks])
 
+    def resolve_height(self, theme: "TrackTheme") -> float:
+        """Allow tracks to dynamically calculate their height, or defer to theme"""
+        return theme.track_height
+
     @abstractmethod
     def get_extents(self) -> tuple[float, float]:
         """Returns the (min, max) data coordinates present in this track"""

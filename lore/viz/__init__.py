@@ -29,6 +29,9 @@ from .tracks import (
     LabelPosition,
     TrackStack,
     TrackTheme,
+    PileupTrack,
+    SortStrategy,
+    SequenceTrack,
 )
 
 from .units import resolve_px
@@ -63,6 +66,9 @@ __all__ = [
     "Feature",
     "FeatureShape",
     "FeatureTrack",
+    "PileupTrack",
+    "SortStrategy",
+    "SequenceTrack",
     # Helpers
     "glyphs",
     "text",

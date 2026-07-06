@@ -121,9 +121,11 @@ class FeatureTrack(BaseTrack):
             fill = feat.fill or (theme.color_highlight_fill if feat.highlight else theme.color_default_fill)
             stroke = feat.stroke or (theme.color_highlight_stroke if feat.highlight else theme.color_default_stroke)
 
-            feat_group = v.SvgGroup(classes=["feature-container"], data=feat.metadata)
+            feat_group = v.SvgGroup(
+                classes=["has-tooltip"] if feat.metadata else [],
+                data=feat.metadata,
+            )
             if feat.metadata:
-                # TODO: Add a helper to text module to align and truncate metadata for hover text
                 hover_lines = [f"{k}: {v}" for k, v in feat.metadata.items()]
                 feat_group.add(v.SvgTitle(text="\n".join(hover_lines)))
 
@@ -150,7 +152,7 @@ class FeatureTrack(BaseTrack):
                 if px_start <= mark.x <= px_end:
                     feat_group.add(axis_break(mark.x, y_center, thickness * 0.6, stroke))
 
-            # 2c. Label, if it fits
+            # 2c. Feature label, if it fits
             if feat.label:
                 avail = abs(px_end - px_start)
                 label_txt = text.truncate_to_fit(feat.label, avail, theme.font_size)

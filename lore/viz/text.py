@@ -14,6 +14,11 @@ def estimate_width(text: str, font_size: int, is_monospace: bool = True) -> floa
     return len(text) * _char_width(font_size, is_monospace)
 
 
+def estimate_height(text: str, font_size: int) -> float:
+    """Considers newlines in the text and returns the estimated height in px"""
+    return text.count('\n') * font_size
+
+
 def widest(
     strings: Iterable[str],
     font_size: int,
