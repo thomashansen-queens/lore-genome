@@ -1,8 +1,8 @@
 """
 Rudimentary SVG generation utilities.
 """
-from dataclasses import dataclass, field
 from enum import Enum
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class SvgUnits(Enum):
@@ -11,51 +11,47 @@ class SvgUnits(Enum):
     PERCENT = "%"
 
 
-@dataclass
-class SvgStyle:
-    """Styling options for SVG elements."""
-    fill: str = "none"
-    stroke: str = "none"
-    stroke_width: float = 1.0
-    stroke_color: str = "black"
-    opacity: float = 1.0
-    font_size: int = 12
-    font_family: str = "sans-serif"
-    text_anchor: str = "start"  # Options: start, middle, end
-
-
-@dataclass
-class SvgElement:
+class SvgElement(BaseModel):
     """
     Base class for all SVG elements. Handles common logic of ID, Classes, Data
     """
-    classes: list[str] = field(default_factory=list)
-    data: dict[str, str | int | float] = field(default_factory=dict)
-    style: SvgStyle = field(default_factory=SvgStyle)
+    model_config = ConfigDict(extra="allow")
+    classes: list[str] = Field(default_factory=list)
+    data: dict[str, str | int | float] = Field(default_factory=dict)
 
-    def _common_attrs(self) -> str:
+    # Explicit fields for IDE autocomplete
+    fill: str | None = "none"
+    stroke: str | None = "none"
+    stroke_width: float | str | None = None
+    opacity: float | str | None = None
+    font_family: str | None = None
+    font_size: int | str | None = None
+    text_anchor: str | None = None
+    cursor: str | None = None
+
+    def _common_attrs(self, exclude: set[str]) -> str:
         """Compiles common attributes (class, data-*, style) into a string"""
         parts = []
 
         # 1. CSS classes
         if self.classes:
-            parts.append(f'class="{" ".join(self.classes)}"')
+            parts.append(f"class='{' '.join(self.classes)}'")
 
         # 2. Data attributes
         for k, v in self.data.items():
             clean_key = k.replace("_", "-")
-            parts.append(f'data-{clean_key}="{v}"')
+            parts.append(f"data-{clean_key}='{v}'")
 
         # 3. Style attribute
-        s = self.style
-        if s.fill != "none":
-            parts.append(f'fill="{s.fill}"')
-        if s.stroke != "none":
-            parts.append(f'stroke="{s.stroke}"')
-        if s.stroke != "none":
-            parts.append(f'stroke-width="{s.stroke_width}"')
-        if s.opacity != 1.0:
-            parts.append(f'opacity="{s.opacity}"')
+        # A. Exclude non-style attributes
+        base_exclude = {"classes", "data"} | exclude
+
+        style_attrs = self.model_dump(exclude=base_exclude, exclude_none=True)
+
+        # B. Dump style attributes to SVG style string
+        for k, v in style_attrs.items():
+            svg_key = k.replace("_", "-")
+            parts.append(f"{svg_key}='{v}'")
 
         return " ".join(parts)
 
@@ -64,7 +60,6 @@ class SvgElement:
         raise NotImplementedError("Subclasses must implement render()")
 
 
-@dataclass
 class SvgRect(SvgElement):
     """Simple rectangle element."""
     x: float = 0
@@ -74,12 +69,14 @@ class SvgRect(SvgElement):
     rx: float = 0  # Corner radius
 
     def render(self) -> str:
-        return (f'<rect x="{self.x:.2f}" y="{self.y:.2f}" '
-                f'width="{self.width:.2f}" height="{self.height:.2f}" '
-                f'rx="{self.rx}" {self._common_attrs()} />')
+        attrs = self._common_attrs(exclude={"x", "y", "width", "height", "rx"})
+        return (
+            f"<rect x='{self.x:.2f}' y='{self.y:.2f}' "
+            f"width='{self.width:.2f}' height='{self.height:.2f}' "
+            f"rx='{self.rx:.2f}' {attrs} />"
+        )
 
 
-@dataclass
 class SvgCircle(SvgElement):
     """Circle element defined by center (cx, cy) and radius r."""
     cx: float = 0
@@ -87,21 +84,22 @@ class SvgCircle(SvgElement):
     r: float = 0
 
     def render(self) -> str:
-        return (f'<circle cx="{self.cx:.2f}" cy="{self.cy:.2f}" '
-                f'r="{self.r:.2f}" {self._common_attrs()} />')
+        attrs = self._common_attrs(exclude={"cx", "cy", "r"})
+        return (
+            f"<circle cx='{self.cx:.2f}' cy='{self.cy:.2f}' r='{self.r:.2f}' {attrs} />"
+        )
 
 
-@dataclass
 class SvgPolygon(SvgElement):
     """Polygon element defined by a list of (x, y) points"""
-    points: list[tuple[float, float]] = field(default_factory=list)
+    points: list[tuple[float, float]] = Field(default_factory=list)
 
     def render(self) -> str:
         points_str = " ".join(f"{x:.2f},{y:.2f}" for x, y in self.points)
-        return f'<polygon points="{points_str}" {self._common_attrs()} />'
+        attrs = self._common_attrs(exclude={"points"})
+        return f"<polygon points='{points_str}' {attrs} />"
 
 
-@dataclass
 class SvgLine(SvgElement):
     """Line element defined by start (x1, y1) and end (x2, y2) coordinates."""
     x1: float = 0
@@ -110,12 +108,13 @@ class SvgLine(SvgElement):
     y2: float = 0
 
     def render(self) -> str:
-        return (f'<line x1="{self.x1:.2f}" y1="{self.y1:.2f}" '
-                f'x2="{self.x2:.2f}" y2="{self.y2:.2f}" '
-                f'{self._common_attrs()} />')
+        attrs = self._common_attrs(exclude={"x1", "y1", "x2", "y2"})
+        return (
+            f"<line x1='{self.x1:.2f}' y1='{self.y1:.2f}' "
+            f"x2='{self.x2:.2f}' y2='{self.y2:.2f}' {attrs} />"
+        )
 
 
-@dataclass
 class SvgText(SvgElement):
     """
     Text element positioned at (x, y) with content in `text`. Style attributes 
@@ -125,37 +124,107 @@ class SvgText(SvgElement):
     y: float = 0
     text: str = ""
 
+    fill: str | None = "#111111"
+    font_family: str = "sans-serif"
+    font_size: int = 12
+    text_anchor: str = "start"
+
     def render(self) -> str:
-        s = self.style
-        # Inject text-specific styles (font-family, font-size, text-anchor)
-        style_attrs = (f'font-family="{s.font_family}" '
-                       f'font-size="{s.font_size}" '
-                       f'text-anchor="{s.text_anchor}"')
-
-        return (f'<text x="{self.x:.2f}" y="{self.y:.2f}" '
-                f'{style_attrs} {self._common_attrs()}>{self.text}</text>')
+        attrs = self._common_attrs(exclude={"x", "y", "text"})
+        return (
+            f"<text x='{self.x:.2f}' y='{self.y:.2f}' "
+            f"{attrs}>{self.text}</text>"
+        )
 
 
-@dataclass
 class SvgTitle(SvgElement):
     """Title element for SVG, typically used for tooltips."""
     text: str = ""
 
     def render(self) -> str:
-        return f'<title {self._common_attrs()}>{self.text}</title>'
+        attrs = self._common_attrs(exclude={"text"})
+        return f"<title {attrs}>{self.text}</title>"
 
 
-@dataclass
+class SvgArrow(SvgElement):
+    """
+    A directional arrow (polygon) optimized for genomic features.
+    Draws a 5-point arrow with rectangular body or 7-point if head_thickness is set.
+    """
+    x_start: float
+    x_end: float
+    y_center: float
+    thickness: float
+    head_thickness: float | None = None
+    head_width: float = 10.0
+    forward: bool = True  # right = forward
+
+    def render(self) -> str:
+        hw = min(self.head_width, abs(self.x_end - self.x_start))
+        t = self.thickness / 2
+        ht = self.head_thickness / 2 if self.head_thickness else None
+
+        # 1. 5-point arrow
+        if ht == t or ht is None:
+            if self.forward:
+                pts = [
+                    (self.x_start, self.y_center - t),
+                    (self.x_end - hw, self.y_center - t),
+                    (self.x_end, self.y_center),
+                    (self.x_end - hw, self.y_center + t),
+                    (self.x_start, self.y_center + t),
+                ]
+            else:
+                pts = [
+                    (self.x_end, self.y_center - t),
+                    (self.x_start + hw, self.y_center - t),
+                    (self.x_start, self.y_center),
+                    (self.x_start + hw, self.y_center + t),
+                    (self.x_end, self.y_center + t),
+                ]
+        # 2. 7-point arrow
+        else:
+            if self.forward:
+                pts = [
+                    (self.x_start, self.y_center - t),
+                    (self.x_end - self.head_width, self.y_center - t),
+                    (self.x_end - self.head_width, self.y_center - ht),
+                    (self.x_end, self.y_center),
+                    (self.x_end - self.head_width, self.y_center + t),
+                    (self.x_end - self.head_width, self.y_center + ht),
+                    (self.x_start, self.y_center + ht),
+                ]
+            else:
+                pts = [
+                    (self.x_end, self.y_center - t),
+                    (self.x_start + self.head_width, self.y_center - t),
+                    (self.x_start + self.head_width, self.y_center - ht),
+                    (self.x_start, self.y_center),
+                    (self.x_start + self.head_width, self.y_center + t),
+                    (self.x_start + self.head_width, self.y_center + ht),
+                    (self.x_end, self.y_center + ht),
+                ]
+
+        pts_str = " ".join(f"{x:.2f},{y:.2f}" for x, y in pts)
+        attrs = self._common_attrs(exclude={
+            "x_start", "x_end", "y_center", "thickness", "head_thickness", "head_width", "forward"
+        })
+        return f"<polygon points='{pts_str}' {attrs} />"
+
+
 class SvgGroup(SvgElement):
     """
     <g> tag
     Useful e.g. for 'Tracks'. Allows quick handling of multiple SvgElements that 
     are intrinsically linked (e.g. a gene and its label, or an entire track)
     """
-    elements: list[SvgElement] = field(default_factory=list)
+    elements: list[SvgElement] = Field(default_factory=list)
     translate_x: float = 0
     translate_y: float = 0
     rotate: float = 0  # Rotation in degrees
+
+    fill: str | None = None
+    stroke: str | None = None
 
     def add(self, element: SvgElement):
         """Add an SvgElement to this group"""
@@ -164,32 +233,35 @@ class SvgGroup(SvgElement):
     def render(self) -> str:
         transform = ""
         if self.translate_x != 0 or self.translate_y != 0:
-            transform = f'transform="translate({self.translate_x:.2f}, {self.translate_y:.2f})"'
+            transform = f"transform='translate({self.translate_x:.2f}, {self.translate_y:.2f})'"
         if self.rotate != 0:
-            transform += f' rotate({self.rotate})'
+            transform += f" rotate({self.rotate})"
 
+        attrs = self._common_attrs(exclude={"elements", "translate_x", "translate_y", "rotate"})
         inner_content = "\n  ".join(e.render() for e in self.elements)
-        return f'<g {transform} {self._common_attrs()}>\n  {inner_content}\n</g>'
+        tag_internals = f"{transform} {attrs}".strip()
+        return f"<g {tag_internals}>\n  {inner_content}\n</g>"
 
 
-@dataclass
-class SvgCanvas:
+class SvgCanvas(BaseModel):
     """Container for SVG elements and metadata."""
     width: float
     height: float
-    elements: list[SvgElement] = field(default_factory=list)
+    elements: list[SvgElement] = Field(default_factory=list)
 
     def add(self, element: SvgElement):
         """Add an SvgElement to the canvas."""
         self.elements.append(element)
 
     def render(self) -> str:
-        header = (f'<svg xmlns="http://www.w3.org/2000/svg" '
-                  f'width="{self.width:.2f}" height="{self.height:.2f}"> '
-                  f'viewBox="0 0 {self.width:.2f} {self.height:.2f}">')
+        header = (
+            f"<svg xmlns='http://www.w3.org/2000/svg' "
+            f"width='{self.width:.2f}' height='{self.height:.2f}' "
+            f"viewBox='0 0 {self.width:.2f} {self.height:.2f}'>"
+        )
 
         # White background for now
-        bg = '<rect width="100%" height="100%" fill="white" />'
-
+        bg = "<rect width='100%' height='100%' fill='white' />"
         body = "\n".join(e.render() for e in self.elements)
+
         return f"{header}\n{bg}\n{body}\n</svg>"
