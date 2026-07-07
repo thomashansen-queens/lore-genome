@@ -23,7 +23,6 @@ class V2AnnotationForAssemblyType(str, enum.Enum):
     GENOME_GTF = "GENOME_GTF"
     CDS_FASTA = "CDS_FASTA"
     SEQUENCE_REPORT = "SEQUENCE_REPORT"
-    ASSEMBLY_REPORT = "ASSEMBLY_REPORT"
 
 
 class V2AssemblyDatasetRequestResolution(str, enum.Enum):
@@ -84,6 +83,12 @@ class NcbiAssemblyPackageInputs:
         default=V2AssemblyDatasetRequestResolution.FULLY_HYDRATED,
         description="Whether to include hydrated annotation data in the assembly package.",
         label="Hydrated",
+    )
+    extract_assembly_report = lore.ValueInput(
+        bool,
+        default=True,
+        description="Include the assembly data report (sequencing/assembly metadata). Always bundled in the package, so this is free to keep on if you want it.",
+        label="Include assembly report",
     )
     extract_catalog = lore.ValueInput(
         bool,
@@ -224,6 +229,7 @@ def fetch_assembly_package(
     genome_accession: list[str],
     fetch_limit: int | None = None,
     extract_catalog: bool = False,
+    extract_assembly_report: bool = True,
     **kwargs,
 ):
     """
@@ -250,6 +256,7 @@ def fetch_assembly_package(
 
     requested_types = [e.value if hasattr(e, "value") else str(e) for e in requested_enums]
     requested_types += ["CATALOG"] if extract_catalog else []
+    requested_types += ["ASSEMBLY_REPORT"] if extract_assembly_report else []
 
     # 3. Fetch and unzip data
     failed_accessions = []
