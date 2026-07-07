@@ -1,8 +1,30 @@
 """
 Adapter definition for NCBI data.
 """
+import re
 
 import lore.core.dsl as lore
+
+# Used to convert camelCase to snake_case for consistency between
+# NCBI REST API and package data reports
+_CAMEL_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_CAMEL_WORD = re.compile(r"([a-z0-9])([A-Z])")
+
+
+def _camel_to_snake(name: str) -> str:
+    """camelCase/PascalCase -> snake_case. Leaves existing snake_case alone. Idempotent."""
+    name = _CAMEL_ACRONYM.sub(r"\1_\2", name)
+    name = _CAMEL_WORD.sub(r"\1_\2", name)
+    return name.lower()
+
+
+def _snake_keys(obj):
+    """Recursively rewrite every dict key in a nested structure to snake_case."""
+    if isinstance(obj, dict):
+        return {_camel_to_snake(k): _snake_keys(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_snake_keys(v) for v in obj]
+    return obj
 
 
 @lore.adapter()
@@ -13,6 +35,11 @@ class NcbiGenomeReportsAdapter(lore.JsonAdapter):
     """
     accepted_formats = {"json", "jsonl"}
     accepted_types = {"ncbi_genome_reports"}
+
+    def adapt_record(self, record, config=None, **kwargs):
+        # NCBI's package data reports (assembly_data_report.jsonl) use camelCase keys,
+        # while the REST API uses snake_case. Normalize to snake_case so schema works on both.
+        return super().adapt_record(_snake_keys(record), config, **kwargs)
 
     @property
     def schema(self):

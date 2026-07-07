@@ -37,7 +37,16 @@ class JsonAdapter(TabularAdapter):
             else:
                 raw_data = json.loads(raw_data)
 
-        # 3. Already a list of dicts, no special handling
+        # 3. Normalize to a flat list of dict records. Sources can be inconsistent;
+        #    if a JSON array lands inside a JSONL file, we flatten it
+        if isinstance(raw_data, dict):
+            raw_data = [raw_data]
+        if isinstance(raw_data, list):
+            raw_data = [
+                rec for item in raw_data
+                for rec in (item if isinstance(item, list) else [item])
+            ]
+
         return super().parse(raw_data, kwconfig)
 
     def parse_stream(
