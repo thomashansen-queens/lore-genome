@@ -263,6 +263,10 @@ def run_task_action(
 
         task.error = None
         s.mark_dirty()
+        log_path = s.get_task_log_path(task_id)
+
+    # Force a fresh log file for this run
+    log_path.write_text("")
 
     # 3. Send to Runtime to execute
     rt.execute_task(session_id=session_id, task_id=task_id)
