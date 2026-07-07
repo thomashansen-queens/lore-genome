@@ -1,6 +1,7 @@
 """
 Extract a specific column/series from a table.
 """
+import itertools
 from collections.abc import Iterator
 
 import lore
@@ -69,10 +70,12 @@ def extract_column(
 
     unique_values = set()
 
-    # 2. Stream column to disk
+    # 2. Stream column to disk. Chain first_row back in: it was pulled off the
+    #    stream for the header check above and must still be written, or every
+    #    extraction silently drops its first record (and single-row tables yield nothing).
     with open(out_path, "w", encoding="utf-8") as out_file:
         # If CSV is malformed/truncated
-        for row in table:
+        for row in itertools.chain([first_row], table):
             if len(row) != len(first_row):
                 ctx.logger.warning(
                     "Row length %s does not match header length %s. Skipping row: %s",
