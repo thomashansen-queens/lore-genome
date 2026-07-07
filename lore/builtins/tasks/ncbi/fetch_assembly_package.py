@@ -2,7 +2,7 @@
 Task to fetch genome 'assembly packages' from NCBI Datasets. Currently the main 
 use is to fetch the protein FASTA files for a list of genome accessions.
 """
-import enum
+from enum import StrEnum
 import io
 import logging
 from pathlib import Path
@@ -15,7 +15,7 @@ from .config import retry
 from .datasets_client import datasets_client
 
 # --- NCBI API Enums ---
-class V2AnnotationForAssemblyType(str, enum.Enum):
+class V2AnnotationForAssemblyType(StrEnum):
     PROT_FASTA = "PROT_FASTA"
     GENOME_FASTA = "GENOME_FASTA"
     GENOME_GFF = "GENOME_GFF"
@@ -25,7 +25,7 @@ class V2AnnotationForAssemblyType(str, enum.Enum):
     SEQUENCE_REPORT = "SEQUENCE_REPORT"
 
 
-class V2AssemblyDatasetRequestResolution(str, enum.Enum):
+class V2AssemblyDatasetRequestResolution(StrEnum):
     FULLY_HYDRATED = "FULLY_HYDRATED"
     DATA_REPORT_ONLY = "DATA_REPORT_ONLY"
 
