@@ -32,6 +32,9 @@ from .tracks import (
     PileupTrack,
     SortStrategy,
     SequenceTrack,
+    PlotTrack,
+    PlotKind,
+    AxisConfig,
 )
 
 from .units import resolve_px
@@ -67,6 +70,9 @@ __all__ = [
     "FeatureShape",
     "FeatureTrack",
     "PileupTrack",
+    "PlotTrack",
+    "PlotKind",
+    "AxisConfig",
     "SortStrategy",
     "SequenceTrack",
     # Helpers

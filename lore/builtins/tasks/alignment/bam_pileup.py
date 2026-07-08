@@ -115,7 +115,7 @@ def bam_pileup(
 
     window_length = end_bp - start_bp
     bounds = v.TrackBounds(start=start_bp, end=end_bp)
-    stack = v.TrackStack(width=1200)
+    stack = v.TrackStack(width=1200, track_spacing=10.0)
 
     # 1. Get the reference sequence
     ref_seq_slice = ""
@@ -143,10 +143,18 @@ def bam_pileup(
             f"No reference sequence will be displayed."
         )
 
-    # 3. Load reads within window
     reads = []
+    depth_data = []
+    avg_depth = 0.0
+    mapq_data = []
+    avg_mapq_overall = 0.0
+
+    cov_start = max(0, int(bounds.start))
+    cov_end = int(bounds.end)
+
     try:
         with pysam.AlignmentFile(bam_file, "rb") as bam:
+            # 3. Load reads within window
             for read in bam.fetch(replicon, int(bounds.start), int(bounds.end)):
                 if len(reads) >= max_reads:
                     ctx.logger.warning(
@@ -156,7 +164,7 @@ def bam_pileup(
                     break
 
                 if not read.is_unmapped:
-                    # 4. Calculate window coverage and optionally skip reads that are too short
+                    # 4. Calculate window coverage (lengthwise) and optionally skip reads that are too short
                     r_start = read.reference_start
                     r_end = read.reference_end or (r_start + 1)
 
@@ -182,17 +190,44 @@ def bam_pileup(
                         start=read.reference_start,
                         end=read.reference_end or read.reference_start + 1,
                         shape=v.FeatureShape.ARROW_LEFT if read.is_reverse else v.FeatureShape.ARROW_RIGHT,
+                        fill=_color_by_mapq(read.mapping_quality),
                         metadata=read_meta,
                     ))
+
+            # 6. Calculate read depth (X-fold coverage) for the window
+            if cov_end > cov_start:
+                # count_coverage returns 4 arrays (A, C, G, T)
+                cov_a, cov_c, cov_g, cov_t = bam.count_coverage(
+                    replicon, cov_start, cov_end, quality_threshold=0
+                )
+
+                # Sum the bases at each position
+                depths = [a + c + g + t for a, c, g, t in zip(cov_a, cov_c, cov_g, cov_t)]
+                depth_data = [(cov_start + i, d) for i, d in enumerate(depths)]
+
+                if depths:
+                    avg_depth = sum(depths) / len(depths)
+
+            # 7. Calculate MapQ (Phred-scaled mapping quality) for the window
+            for column in bam.pileup(replicon, int(bounds.start), int(bounds.end), truncate=True):
+                quals = column.get_mapping_qualities()
+                if quals:
+                    avg_q = sum(quals) / len(quals)
+                    mapq_data.append((column.reference_pos, avg_q))
+
+            if mapq_data:
+                avg_mapq_overall = sum(d[1] for d in mapq_data) / len(mapq_data)
 
     except (ValueError, OSError) as e:
         ctx.logger.error(f"Error reading BAM file: {e}")
         raise RuntimeError(f"Failed to read BAM file: {e}")
 
-    # 6. Add the pileup track
-    track_meta = {}
+    # === Rendering ===
+
+    # 8. Add the pileup track
+    pileup_meta = {}
     if include_metadata:
-        track_meta = {
+        pileup_meta = {
             "Replicon": replicon,
             "Start": start_bp,
             "End": end_bp,
@@ -207,10 +242,59 @@ def bam_pileup(
         packing_gap=1.0,
         lane_padding_ratio=0.1,
         sort_strategy=sort_strategy,
-        metadata=track_meta,
+        metadata=pileup_meta,
     ))
 
-    # 7. Render and materialize
+    # 9. Add read depth (X-fold coverage) track
+    depth_meta = {}
+    if include_metadata:
+        depth_meta = {
+            "Replicon": replicon,
+            "Start": start_bp,
+            "End": end_bp,
+            "Length": end_bp - start_bp,
+            "Average depth": avg_depth,
+        }
+
+    stack.add_track(v.PlotTrack(
+        name="Depth",
+        data=depth_data,
+        type="line",
+        axis=v.AxisConfig(
+            y_ticks=3,
+            y_tick_format=".0f",
+            show_y_gridlines=True,
+            y_min=0,
+        ),
+        metadata=depth_meta,
+    ))
+
+    # 10. Add MapQ plot track (Phred-scaled mapping quality)
+    mapq_meta = {}
+    if include_metadata:
+        mapq_meta = {
+            "Replicon": replicon,
+            "Start": start_bp,
+            "End": end_bp,
+            "Length": end_bp - start_bp,
+            "Average MapQ": f"{avg_mapq_overall:.1f}",
+        }
+
+    stack.add_track(v.PlotTrack(
+        name="Average MapQ",
+        data=mapq_data,
+        type="area",
+        axis=v.AxisConfig(
+            y_min=0,
+            y_max=60,
+            y_ticks=[0, 30, 60],
+            y_tick_format=".0f",
+            show_y_gridlines=True,
+        ),
+        metadata=mapq_meta,
+    ))
+
+    # 11. Render and materialize
     if overhang_reads:
         overhang_start = min(r.start for r in reads)
         overhang_end = max(r.end for r in reads)
@@ -225,3 +309,17 @@ def bam_pileup(
         label="BAM Pileup Visualization",
         extension="svg",
     )
+
+
+def _color_by_mapq(mapq: int) -> str | None:
+    """
+    Returns a CSS color based on Phred-scaled mapping quality.
+    Returns None for high-quality reads so they fall back to the TrackTheme default.
+    """
+    if mapq <= 1:
+        return "#ef4444"  # Red for multi-mapping/zero confidence
+    elif mapq < 10:
+        return "#f97316"  # Orange for very low confidence
+    elif mapq < 20:
+        return "#eab308"  # Yellow for moderate confidence
+    return None  # Let the TrackTheme handle the good reads!

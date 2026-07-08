@@ -69,10 +69,15 @@ def sam_to_bam_handler(
 
     # 2. Output pathing
     sam_path = Path(sam_file)
-    base_name = sam_path.stem.replace("_aligned", "")  # minimap2's suffix
+    base_name = sam_path.name
+
+    # Strip extensions
+    while base_name.endswith((".sam", ".bam", ".bai", ".gz")):
+        base_name = Path(base_name).stem
+    base_name = base_name.removesuffix("_aligned").removesuffix("_mapped").removesuffix("_bowtied")
 
     bam_out_path = ctx.get_temp_path(f"{base_name}.bam")
-    bai_out_path = ctx.get_temp_path(f"{base_name}.bam.bai")
+    bai_out_path = ctx.get_temp_path(f"{base_name}.bai")
 
     # --- Phase 1: Sort and compress ---
     cmd_sort = [
@@ -98,6 +103,7 @@ def sam_to_bam_handler(
         "index",
         "-@", threads,
         str(bam_out_path),
+        str(bai_out_path),
     ]
     ctx.logger.info(f"Running BAM indexing: {' '.join(cmd_index)}")
 
@@ -110,9 +116,10 @@ def sam_to_bam_handler(
         raise FileNotFoundError(f"Expected BAI index not found at {bai_out_path}")
 
     # --- Phase 3: Build the artifact bundle ---
-    output_bundle = {}
-    output_bundle["main"] = bam_out_path
-    output_bundle["index"] = bai_out_path
+    output_bundle = {
+        "main": bam_out_path,
+        "index": bai_out_path,
+    }
 
     # --- Phase 3: Materialize ---
     ctx.materialize_file(

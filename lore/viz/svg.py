@@ -22,8 +22,11 @@ class SvgElement(BaseModel):
 
     # Explicit fields for IDE autocomplete
     fill: str | None = "none"
+    fill_opacity: float | None = None
     stroke: str | None = "none"
     stroke_width: float | str | None = None
+    stroke_dasharray: str | None = None
+    stroke_opacity: float | None = None
     opacity: float | str | None = None
     font_family: str | None = None
     font_size: int | str | None = None
@@ -116,6 +119,17 @@ class SvgLine(SvgElement):
             f"<line x1='{self.x1:.2f}' y1='{self.y1:.2f}' "
             f"x2='{self.x2:.2f}' y2='{self.y2:.2f}' {attrs} />"
         )
+
+
+class SvgPolyline(SvgElement):
+    """A series of connected line segments that does not close the shape"""
+    points: list[tuple[float, float]] = Field(default_factory=list)
+    fill: str = "none"
+
+    def render(self) -> str:
+        attrs = self._common_attrs(exclude={"points"})
+        points_str = " ".join(f"{x:.2f},{y:.2f}" for x, y in self.points)
+        return f"<polyline points='{points_str}' {attrs} />"
 
 
 class SvgText(SvgElement):
