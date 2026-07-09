@@ -11,7 +11,7 @@ from pydantic_core import PydanticUndefined
 
 from lore.core.topology import traits
 from lore.core.utils import is_collection_type, is_optional_type
-from lore.core.utils.pydantic import get_base_type
+from lore.core.utils.pydantic import get_base_type, extract_choices
 
 # --- Input enums and type aliases ---
 
@@ -315,20 +315,15 @@ class ValueInput(TaskInput):
             extra["step"] = self.pydantic_kwargs["multiple_of"]
 
         # 5. Inject None to optional Enums
-        enums = None
-        if isinstance(target_type, type) and issubclass(target_type, Enum):
-            enums = [
-                {"label": e.name.replace("_", " ").capitalize(), "value": e.value}
-                for e in target_type
-            ]
-            if is_optional and "None" not in [e["value"] for e in enums]:
-                enums.insert(0, {"label": "None (default)", "value": ""})
+        choices = extract_choices(target_type)
 
-        # 6. Assign widget types
-        if isinstance(target_type, type) and issubclass(target_type, Enum):
-            extra["options"] = enums
+        if choices is not None:
+            if is_optional and "None" not in [c["value"] for c in choices]:
+                choices.insert(0, {"label": "None (default)", "value": ""})
+            extra["options"] = choices
             extra["widget"] = Widget.CHECKBOX_GROUP if is_list else Widget.SELECT
 
+        # 6. Assign widget types
         elif target_type is bool:
             extra["widget"] = Widget.CHECKBOX
 
