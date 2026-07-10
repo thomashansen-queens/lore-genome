@@ -200,20 +200,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 // A successful fetch loads the full dataset, so the peek's
                 // load-full prompt is no longer relevant.
                 card.querySelector('.btn-load-full')?.remove();
-
+                
                 // Inject the scripts from the HTML
                 viewerTarget.querySelectorAll("script").forEach(oldScript => {
                     const newScript = document.createElement("script");
-
+                    
                     // Copy attributes
                     [...oldScript.attributes].forEach(attr => {
                         newScript.setAttribute(attr.name, attr.value);
                     });
-
+                    
                     newScript.textContent = oldScript.textContent;
-
+                    
                     oldScript.parentNode.replaceChild(newScript, oldScript);
                 });
+
+                // Clean up old viewer script event listeners when reloading preview content.
+                window.viewerScripts.slice(0, -1).forEach( script => {
+                    script.destroy();
+                });
+                window.viewerScripts = window.viewerScripts.slice(-1);
                 
                 // Show filtered row count
                 if (result.row_count !== result.total_rows) {
