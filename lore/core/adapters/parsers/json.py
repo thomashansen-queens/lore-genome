@@ -12,6 +12,7 @@ from ..tabular import TabularAdapter
 class JsonAdapter(TabularAdapter):
     """
     Native support for JSON/JSONL files that do not require special parsing.
+    Subclass for specific schemas.
     """
     accepted_formats: ClassVar[set[str]] = {"json", "ndjson", "jsonl"}
     accepted_types: ClassVar[set[str]] = {"*"}  # e.g. {"ncbi_genome_report", "protein_sequence"}

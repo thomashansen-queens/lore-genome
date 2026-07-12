@@ -147,9 +147,15 @@ class TrackStack:
                     hover_lines = [f"{k}: {v}" for k, v in track.metadata.items()]
                     label_group.add(v.SvgTitle(text="\n".join(hover_lines)))
 
+                # Vertical centering based on number of lines in the label
+                num_lines = name_fit.count("\n") + 1
+                line_height_px = active.font_size * 1.2
+                y_shift = ((num_lines - 1) * line_height_px) / 2
+                start_y = (active.track_height / 2) + (active.font_size * 0.35) - y_shift
+
                 label_group.add(v.SvgText(
                     x=label_px - active.label_margin,
-                    y=active.track_height / 2 + active.font_size * 0.35,
+                    y=start_y,
                     text=name_fit,
                     text_anchor="end",
                     font_family=active.font_family,

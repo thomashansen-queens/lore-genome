@@ -124,6 +124,8 @@ class PileupTrack(BaseTrack):
     max_lanes: int | None = None
     max_height: float | None = None
     min_lane_height: float = 4.0
+    max_lane_height: float | None = None
+    lane_height: float | None = None  # overrides dynamic lane height calcs
     sort_strategy: SortStrategy = SortStrategy.START
 
     @cached_property
@@ -143,9 +145,21 @@ class PileupTrack(BaseTrack):
         _, num_lanes = self.packing
         if self.max_lanes:
             num_lanes = min(num_lanes, self.max_lanes)
+        num_lanes = max(1, num_lanes)  # avoid divide-by-zero for empty pileups
 
+        # 1. Fixed height override
+        if self.lane_height is not None:
+            return num_lanes * self.lane_height
+
+        # 2. Dynamic height based on number of lanes and theme defaults
         required_height = num_lanes * self.min_lane_height
         resolved_height = max(theme.track_height, required_height)
+
+        if self.max_lane_height is not None:
+            max_allowed_track_height = num_lanes * self.max_lane_height
+            resolved_height = min(resolved_height, max_allowed_track_height)
+
+        # 3. Global max height override
         if self.max_height is not None:
             resolved_height = min(resolved_height, self.max_height)
 
@@ -175,9 +189,16 @@ class PileupTrack(BaseTrack):
         packed_features, num_lanes = self.packing
         if self.max_lanes:
             num_lanes = min(num_lanes, self.max_lanes)
+        num_lanes = max(1, num_lanes)  # avoid divide-by-zero for empty pileups
 
         # 2. Y-axis scaling: lane height is dynamic based on number of lanes
-        lane_height = theme.track_height / max(1, num_lanes)
+        actual_track_height = self.resolve_height(theme)
+
+        if self.lane_height is not None:
+            lane_height = self.lane_height
+        else:
+            lane_height = actual_track_height / num_lanes
+
         visual_padding = lane_height * self.lane_padding_ratio
         box_height = max(1.0, lane_height - visual_padding)
 
@@ -220,7 +241,7 @@ class PileupTrack(BaseTrack):
             if feat.label:
                 if box_height >= theme.font_size * 1.1:
                     avail = abs(px_end - px_start)
-                    # TODO: Do I fire this automatically or gate behind an if using estimate_width?
+
                     label_txt = text.truncate_to_fit(feat.label, avail, theme.font_size)
                     if label_txt:
                         feat_group.add(v.SvgText(

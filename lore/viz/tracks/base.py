@@ -9,7 +9,7 @@ alignment with its neighbours in a stack.
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .. import svg as v
 from .. import text

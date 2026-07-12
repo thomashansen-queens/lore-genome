@@ -26,14 +26,29 @@ def widest(
     default: float = 0.0,
 ) -> float:
     """Estimated width in px of the widest string (0.0 if empty)."""
-    return max(
-        (estimate_width(s, font_size, is_monospace) for s in strings),
-        default=default,
-    )
+    max_width = default
+    for s in strings:
+        for line in s.split("\n"):
+            width = estimate_width(line, font_size, is_monospace)
+            if width > max_width:
+                max_width = width
+    return max_width
 
 
-def truncate_to_fit(text: str, max_width: float, font_size: int, is_monospace: bool = True) -> str:
+def truncate_to_fit(
+    text: str,
+    max_width: float,
+    font_size: int,
+    is_monospace: bool = True,
+) -> str:
     """Truncate text to fit within max_width, adding ellipsis if needed"""
+    # Recursive line-by-line truncation for multi-line text
+    if "\n" in text:
+        return "\n".join(
+            truncate_to_fit(line, max_width, font_size, is_monospace)
+            for line in text.split("\n")
+        )
+
     max_chars = int(max_width / _char_width(font_size, is_monospace))
     if max_chars < 3:
         # Not enough space for any text

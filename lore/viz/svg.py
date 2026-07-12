@@ -136,6 +136,7 @@ class SvgText(SvgElement):
     """
     Text element positioned at (x, y) with content in `text`. Style attributes 
     like font are handled by SvgStyle.
+    Supports newline characters by generating tspan elements.
     """
     x: float = 0
     y: float = 0
@@ -146,11 +147,24 @@ class SvgText(SvgElement):
     font_size: float = 12
     text_anchor: str = "start"
 
+    line_height: str = "1.2em"  # Relative line height for multi-line text
+
     def render(self) -> str:
         attrs = self._common_attrs(exclude={"x", "y", "text"})
+        if "\n" not in self.text:
+            return (
+                f"<text x='{self.x:.2f}' y='{self.y:.2f}' "
+                f"{attrs}>{self.text}</text>"
+            )
+
+        lines = self.text.split("\n")
+        tspans = []
+        for i, line in enumerate(lines):
+            dy_attr = f" dy='{self.line_height}'" if i > 0 else ""
+            tspans.append(f"<tspan x='{self.x:.2f}'{dy_attr}>{line}</tspan>")
         return (
-            f"<text x='{self.x:.2f}' y='{self.y:.2f}' "
-            f"{attrs}>{self.text}</text>"
+            f"<text x='{self.x:.2f}' y='{self.y:.2f}' {attrs}>\n"
+            f"{''.join(tspans)}\n</text>"
         )
 
 
