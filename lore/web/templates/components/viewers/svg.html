@@ -38,18 +38,27 @@
     }
 
     .selected,
+    .temp-selected,
     .parents-tooltip:hover {
         transition: filter 0.2s;
         filter: brightness(0.85);
         cursor: pointer;
     }
 
-    .copy-text {
+    .copy-text, .copy-title {
         width: 250px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         cursor: pointer;
+    }
+
+    .select-box {
+        position: fixed;
+        border: 1px solid #3399ff;
+        background: rgba(80,160,255,0.2);
+        pointer-events: none;
+        display: none;
     }
 </style>
 
@@ -67,51 +76,182 @@
         {{ data | safe }}
         <div id="tooltip"></div>   
         <div id="copy-toast">Copied!</div> 
-        <div id="selection-box"></div>
+        <div id="selectionBox" class="select-box"></div>
     </div>
 </div>
 
 <script>    
     (() => {  // This is neccessary to maintain local scope so that the script can be re-injected in the same page
-        
+        const controller = new AbortController();
+        const { signal } = controller;
+
         // Tooltip rendering on click
         const tooltip = document.getElementById("tooltip");  // Get template tooltip off of page to work with
         const svg = document.querySelector("svg");  
         const toast = document.getElementById("copy-toast");
-        let activeTooltip = null;
-        
-        // Makes the tooltip visible and does collision math to place the tooltip at the given coordinates without squashing it.
-        function placeTooltip(x, y) {
-            tooltip.style.display = "block";
-            const tooltipRect = tooltip.getBoundingClientRect();
-            const offset = 10;
-            
-            // Default position (bottom)
-            y = y + offset;
-            x = x + offset;
-
-            // Collision Detection
-            const isOffRight = x + tooltipRect.width > window.innerWidth;
-            const isOffBottom = y + tooltipRect.height > window.innerHeight;
-
-            // Adjust for Collisions (Flip logic)
-            if (isOffBottom) {
-                y = window.innerHeight - tooltipRect.height; // Flip to top
-            }
-            
-            if (isOffRight) {
-                x = window.innerWidth - tooltipRect.width - offset; 
-            }
-
-            // Apply Styles
-            tooltip.style.top = `${y + window.scrollY}px`;
-            tooltip.style.left = `${x + window.scrollX}px`;
-        }
-
+        let svgType = null;
+        let selClass = null;
+    
         if (svg) {
+            if (svg.querySelector(".protein-container")){
+                svgType = "protein";
+                selClass = ".parents-tooltip";
+            }
+            else {
+                svgType = "gene";
+                selClass = ".gene-arrow";
+            } 
+                
             let selected = [];
             let selected_min = Infinity;
             let selected_max = 0;
+            let prevProtein = null;
+            let lastSelectedTooltip = null;
+            let proteinSeqExists = true;
+            const selectedProteins = new Map();
+
+            // Makes the tooltip visible and does collision math to place the tooltip at the given coordinates without squashing it.
+            function placeTooltip(x, y) {
+                // Generate tooltip from selected proteins and domains
+                if (svgType == "protein") {
+                    if (selected.length > 1) {
+                        let proteinAccs = []
+                        // Behavior when selecting different proteins
+                        if (selectedProteins.size > 1) {
+                            if (proteinSeqExists) {
+                                let copyDiv = document.createElement("div");
+                                copyDiv.className = "copy-title";
+                                copyDiv.dataset.title = "";
+                                copyDiv.textContent = "(Click to copy FASTA)";
+    
+                                selectedProteins.forEach((proteinData, proteinAcc) => {
+                                    proteinAccs.push(proteinAcc);
+                                    if (proteinData[0]) {
+                                        copyDiv.dataset.title += `>${proteinAcc} (Length: ${proteinData[2]})\n${proteinData[1]}`;
+                                    }
+                                    else {
+                                        copyDiv.dataset.title += `>${proteinAcc} (aa: ${proteinData[3]}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}\n`;
+                                    }
+                                });
+                                let copyAccDiv = document.createElement("div");
+                                copyAccDiv.className = "copy-text";
+                                copyAccDiv.textContent = proteinAccs.join(","); 
+                                tooltip.textContent = `Proteins: ${selectedProteins.size}`;
+                                tooltip.append(copyAccDiv, copyDiv);
+                            }
+                        }
+                        // Multiple domains in the same protein - get span between last and first selected domain
+                        else {
+                            const proteinAcc = selectedProteins.keys().next().value;
+                            proteinData = selectedProteins.get(proteinAcc);
+                            
+                            tooltip.textContent = `${proteinAcc}\nStart: ${proteinData[3] + 1}\nEnd: ${proteinData[4]}\nTotal Length: ${proteinData[4] - proteinData[3]}`;
+                            if (proteinSeqExists) {
+                                let copyDiv = document.createElement("div");
+                                copyDiv.className = "copy-title";
+                                copyDiv.dataset.title = `>${proteinAcc} (aa ${proteinData[3]+1}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}`;
+                                copyDiv.textContent = "(Click to copy FASTA)";
+                                tooltip.append(copyDiv);
+                            }
+                        }
+                    } else {
+                        const proteinAcc = selectedProteins.keys().next().value;
+                        
+                        tooltip.textContent = `${proteinAcc}\n${lastSelectedTooltip.dataset.title}`;
+                        if (proteinSeqExists) {
+                            proteinData = selectedProteins.get(proteinAcc);
+                            let copyDiv = document.createElement("div");
+                            copyDiv.className = "copy-title";
+                            if (proteinData[0]){
+                                copyDiv.dataset.title = `>${proteinAcc} (Length: ${proteinData[2]})\n${proteinData[1]}`;
+                            }
+                            else {
+                                copyDiv.dataset.title = `>${proteinAcc} (aa: ${proteinData[3]}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}\n`;
+                            }
+                            copyDiv.textContent = "(Click to copy FASTA)";
+                            tooltip.append(copyDiv);
+                        }
+                    }
+                // Generate tooltip from selected genes
+                } else {
+                    if (selected.length == 1) {
+                        tooltip.textContent = selected[0].dataset.title;
+                    }
+                    else {
+                        const accessions = new Set();
+                        selected.forEach(el => {
+                            accessions.add(el.dataset.accession);
+                        });
+                        tooltip.textContent = `Unique accessions: ${accessions.size}`;
+                        const copyText = document.createElement("div");
+                        copyText.classList = "copy-text";
+                        copyText.textContent = [...accessions].join(",");
+                        tooltip.append(copyText);
+                    }
+                }
+    
+                tooltip.style.display = "block";
+                const tooltipRect = tooltip.getBoundingClientRect();
+                const offset = 10;
+                
+                // Default position (bottom)
+                y = y + offset;
+                x = x + offset;
+                
+                // Collision Detection
+                const isOffRight = x + tooltipRect.width > window.innerWidth;
+                const isOffBottom = y + tooltipRect.height > window.innerHeight;
+                
+                // Adjust for Collisions (Flip logic)
+                if (isOffBottom) {
+                    y = window.innerHeight - tooltipRect.height; // Flip to top
+                }
+                
+                if (isOffRight) {
+                    x = window.innerWidth - tooltipRect.width - offset; 
+                }
+    
+                // Apply Styles
+                tooltip.style.top = `${y + window.scrollY}px`;
+                tooltip.style.left = `${x + window.scrollX}px`;
+            }
+            
+            // Selects a given element and produces the necessary data for using in the tooltip later on
+            function selectElement(el) {
+                selected.push(el);
+                el.classList.add("selected");
+                
+                if (svgType == "protein") {
+                    const proteinSeq = el.parentElement.querySelector(".protein-label").querySelector(".copy-text");
+                    const proteinAcc = el.parentElement.querySelector(".protein-label").querySelector(".protein-accession").textContent;
+                    const tooltipContainer = el.querySelector(".has-tooltip");                    
+                    const start = tooltipContainer.dataset.start - 1;
+                    const end = tooltipContainer.dataset.end;
+                    lastSelectedTooltip = tooltipContainer;
+
+                    if (!proteinSeq) {
+                        proteinSeqExists = false;
+                    }
+                    else {
+                        if (!selectedProteins.has(proteinAcc)) {
+                            if (el.classList.contains('protein-label')) {
+                                selectedProteins.set(proteinAcc, [true, proteinSeq.dataset.title, proteinSeq.dataset.title.length - 1]);
+                            }
+                            else{
+                                selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(start, end), proteinSeq.dataset.title.length - 1, start, end]);  // False to indicate subsequence selection; true for full protein sequence (in which start & end are ignored)
+                            }
+                        }
+                        else if (!(el.classList.contains('protein-label') || selectedProteins.get(proteinAcc)[0])) {
+                            proteinData = selectedProteins.get(proteinAcc);
+                            selected_min = Math.min(start, proteinData[3]);
+                            selected_max = Math.max(end, proteinData[4]);
+                            selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(selected_min, selected_max), proteinSeq.dataset.title.length - 1, selected_min, selected_max]);
+                        }
+                    }
+                }
+            }
+
+            // Clears all selected elements
             function clearSelected() {
                 selected.forEach(element => {
                     element.classList.remove("selected");
@@ -119,71 +259,20 @@
                 selected = [];
                 selected_min = Infinity;
                 selected_max = 0;
+                prevProtein = null;
+                lastSelectedTooltip = null;
+                proteinSeqExists = true;
+                selectedProteins.clear();
             }
-
-            svg.addEventListener("click", event => {
-                const polygon = event.target.closest(".gene-container");  // Get the clicked-on gene
-                const tooltipContainerParent = event.target.closest(".parents-tooltip");  // Get the clicked-on tooltip container
-
-                // Gene tooltips
-                if (polygon && activeTooltip !== polygon){  
-                    activeTooltip = polygon;
-                    const gene = polygon.querySelector(".gene-arrow");
-                    tooltip.textContent = gene.dataset.title;
-                    placeTooltip(event.clientX, event.clientY);
-                }
-                // Protein domain tooltips
-                else if (tooltipContainerParent && (!selected.includes(tooltipContainerParent) || event.ctrlKey)){  
-                    const tooltipContainer = tooltipContainerParent.querySelector(".has-tooltip");                    
-                    const proteinAcc = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".protein-accession");
-                    const proteinSeq = tooltipContainerParent.parentElement.querySelector(".protein-label").querySelector(".copy-text");
-                    const start = tooltipContainer.dataset.start - 1;
-                    const end = tooltipContainer.dataset.end;
-                    tooltipContainerParent.classList.add("selected");
-                    if (proteinSeq) {
-                        copyDiv = document.createElement("div");
-                        copyDiv.className = "copy-text";
-                        // Multi-select domains to get the sequence spanning them
-                        if (event.ctrlKey) {
-                            selected_min = Math.min(selected_min, start);
-                            selected_max = Math.max(selected_max, end);
-                            copyDiv.textContent = proteinSeq.dataset.title.substring(selected_min, selected_max);
-                            tooltip.textContent = `${proteinAcc.textContent}\nStart: ${selected_min + 1}\nEnd: ${selected_max}\nTotal Length: ${selected_max - selected_min}`;
-                            selected.push(tooltipContainerParent);
-                        // Single-select domains
-                        } else {
-                            clearSelected();
-                            selected = [tooltipContainerParent];
-                            selected_min = start;
-                            selected_max = end;
-                            copyDiv.textContent = proteinSeq.dataset.title.substring(start, end);
-                            tooltip.textContent = tooltipContainer.dataset.title;
-                        }
-                        tooltip.append(copyDiv);
-                    // Proteins where a sequence could not be found from the given FASTA
-                    } else {
-                        clearSelected();
-                        selected = [tooltipContainerParent];
-                        tooltip.textContent = tooltipContainer.dataset.title;
-                    }
-
-                    placeTooltip(event.clientX, event.clientY);
-                }
-                else {
-                    if (!event.ctrlKey) {
-                        // Hide the tooltip if the outside is clicked
-                        clearSelected();
-                        tooltip.style.display = "none";
-                    }
-                }
-            });
 
             // Copyable text snippets
             tooltip.addEventListener("click", event => {
                 const copyText = event.target.closest(".copy-text");
+                const copyTitle = event.target.closest(".copy-title");
                 
-                if (copyText) {
-                    navigator.clipboard.writeText(copyText.textContent);
+                if (copyText || copyTitle) {
+                    const textToCopy = copyText ? copyText.textContent : copyTitle.dataset.title;
+                    navigator.clipboard.writeText(textToCopy);
                     toast.style.left = `${event.clientX + 30}px`;
                     toast.style.top = `${event.clientY - 30}px`;
                     toast.style.display = "block";
@@ -194,17 +283,161 @@
                         setTimeout(() => toast.style.display = "none", 300);
                     }, 2000);
                 }
-            });
+            }, { signal });
 
             // Elements which follow the window as it scrolls (like the residue location indicator)
             const marker = document.querySelector(".marker");
             if (marker) {
                 const scrollMenu = document.querySelector(".preview-scroll-area");
-                console.log(scrollMenu)
                 scrollMenu.addEventListener("scroll", () => {
                     marker.style.transform = `translateY(${scrollMenu.scrollTop}px)`;
                 });
             }
+
+            // Drag and select variables
+            let dragging = mouseDown = false;
+            let startX, startXAdjusted, startY, startYAdjusted;
+            let currentX, currentY;
+            let toBeSelected = [];
+            const selectionBox = document.getElementById("selectionBox");
+            const viewport = document.querySelector(".preview-scroll-area");
+
+            // Start dragging
+            viewport.addEventListener("mousedown", e => {
+                // Don't start dragging if clicking on tooltips and ignore right click
+                if (e.target.closest("#tooltip") || e.button !== 0) {
+                    return;
+                }
+
+                mouseDown = true;
+                startX = startXAdjusted = currentX = e.clientX;
+                startY = startYAdjusted = currentY = e.clientY;
+                startXScroll = viewport.scrollLeft;
+                startYScroll = viewport.scrollTop;
+                selectionBox.style.display = "block";
+
+                updateSelection();  // Select the clicked-on element
+            }, { signal });
+            
+            // Drag to change box
+            window.addEventListener("mousemove", e => {
+                if (!mouseDown) {
+                    return;
+                }
+                if (!dragging) {
+                    if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+                        dragging = true;
+                    } else {
+                        return;
+                    }
+                }
+                currentX = e.clientX;
+                currentY = e.clientY;
+                updateSelection();
+            }, { signal });
+
+            // Finish box-selection or select elements with click
+            window.addEventListener("mouseup", event => {
+                if (!mouseDown) return;  // Ignore event if clicking on tooltips
+                mouseDown = false;
+                dragging = false;
+                selectionBox.style.display = "none";
+                
+                let wipeTooltip = false;
+                window.getSelection().removeAllRanges();
+                if (!event.ctrlKey) {
+                    // Unselect if the single selected element is clicked on again
+                    if (selected.length == 1 && toBeSelected.length == 1 && selected[0] == toBeSelected[0]) {
+                        wipeTooltip = true;
+                        selected[0].classList.remove("temp-selected");
+                    }
+                    clearSelected();
+                    tooltip.style.display = "none";
+                }
+                    
+                let allSelected = true;
+                if (!wipeTooltip) {
+                    // Select the box-selected or clicked-on elements
+                    toBeSelected.forEach(el => {
+                        el.classList.remove("temp-selected");
+                        if (!el.classList.contains("selected")) {
+                            allSelected = false;
+                            selectElement(el);
+                        }
+                    });
+                    // Unselect selected entries that are already selected when holding selecting while holding ctrl
+                    if (allSelected) {
+                        toBeSelected.forEach(el => {
+                            el.classList.remove("selected");
+                        });
+                        selected = selected.filter(e => !(toBeSelected.includes(e)));
+                    }
+                    // Display or hide tooltip
+                    if (selected.length > 0) {
+                        placeTooltip(event.clientX, event.clientY);
+                    } else {
+                        tooltip.style.display = "none"; 
+                    }
+                    toBeSelected = [];
+                }
+            }, { signal });
+            
+            // Update if the user scrolls while dragging
+            viewport.addEventListener("scroll", () => {
+                if (dragging) {
+                    startXAdjusted = startX + startXScroll - viewport.scrollLeft;
+                    startYAdjusted = startY + startYScroll - viewport.scrollTop;
+                    updateSelection();
+                }
+            }, { signal });
+
+            // Update the to-be-selected elements when clicking/box-selecting
+            function updateSelection() {
+                const left   = Math.min(startXAdjusted, currentX);
+                const top    = Math.min(startYAdjusted, currentY);
+                const right  = Math.max(startXAdjusted, currentX);
+                const bottom = Math.max(startYAdjusted, currentY);
+
+                selectionBox.style.left = left + "px";
+                selectionBox.style.top = top + "px";
+                selectionBox.style.width = (right - left) + "px";
+                selectionBox.style.height = (bottom - top) + "px";
+
+                document.querySelectorAll(selClass).forEach(el => {
+                    const elRect = el.getBoundingClientRect();
+                    const elLeft = elRect.left;
+                    const elTop = elRect.top;
+                    const elRight = elLeft + elRect.width;
+                    const elBottom = elTop + elRect.height;
+
+                    const overlaps =
+                        elLeft < right &&
+                        elRight > left &&
+                        elTop < bottom &&
+                        elBottom > top;
+
+                    if (overlaps) {
+                        if (!toBeSelected.includes(el)) {
+                            el.classList.add("temp-selected");
+                            toBeSelected.push(el);
+                        }
+                    } else if (toBeSelected.includes(el)) {
+                        el.classList.remove("temp-selected");
+                        toBeSelected = toBeSelected.filter(e => e !== el);
+                    }
+                });
+            }
         }
+
+        // Script cleanup on preview reload
+        if (!window.viewerScripts) {
+            window.viewerScripts = [];
+        }
+        
+        window.viewerScripts.push({
+            destroy() {
+                controller.abort();
+            }
+        });
     })();
 </script>
