@@ -62,6 +62,7 @@ class BamReader(lore.BaseReader):
                     "start": read.reference_start,
                     "end": read.reference_end,
                     "is_reverse": read.is_reverse,
+                    "query_length": read.query_length,
                     # CIGAR strings
                     "cigar": read.cigarstring,
                     "mapping_quality": read.mapping_quality,

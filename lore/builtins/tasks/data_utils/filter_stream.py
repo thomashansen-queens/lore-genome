@@ -192,7 +192,7 @@ def _filter_stream(
 )
 def filter_query_handler(
     ctx: lore.ExecutionContext,
-    raw_stream: Iterator[list],
+    source: Iterator[list],
     regex: bool = False,
     query_string: str | None = None,
 ):
@@ -212,12 +212,11 @@ def filter_query_handler(
         )
 
     source_artifacts = ctx.input_artifacts.get("source", [])
-    inherited_type = source_artifacts[0].data_type if source_artifacts else "unknown"
     ext = source_artifacts[0].extension if source_artifacts else "json"
 
     # 2. Create the chunked generator
     query_string = query_string or ""
-    filtered_stream = _filter_stream(raw_stream, adapter, query_string, regex, ext, ctx.logger)
+    filtered_stream = _filter_stream(source, adapter, query_string, regex, ext, ctx.logger)
 
     ctx.materialize_stream(
         stream=filtered_stream,
