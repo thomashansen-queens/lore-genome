@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from lore.core.artifacts import Artifact, ArtifactManager, TransferMode
+from lore.core.artifacts import Artifact, ArtifactPathBundle, ArtifactManager, TransferMode
 from lore.core.filelock import acquire_lock, release_lock
 from lore.core.manifest import Manifest
 from lore.core.tasks import TaskIntegrity
@@ -427,8 +427,36 @@ class Session(AbstractContextManager):
         if not artifact_file:
             raise ValueError(f"Artifact ID: {artifact_id} does not have a file for key: '{key}'.")
 
-        path = self.artifacts.resolve_path(artifact_id, recorded_path=artifact_file.path)
+        path = self.artifacts.resolve_path(
+            artifact_id,
+            recorded_path=artifact_file.path,
+            bundle_key=key,
+        )
         return path
+
+    def get_artifact_path_bundle(self, artifact_id: str) -> "ArtifactPathBundle":
+        """
+        Get fully resolved paths for all files in an Artifact.
+        Returns an ArtifactPathBundle which is a string-like path to 'main',
+        and a dict-like object with paths to all files.
+        """
+        artifact = self.get_artifact(artifact_id)
+        if not artifact:
+            raise ValueError(f"Artifact ID: {artifact_id} not found in manifest.")
+
+        if not artifact.files:
+            raise ValueError(f"Artifact ID: {artifact_id} contains no files.")
+
+        resolved_paths = {}
+        for key, artifact_file in artifact.files.items():
+            path = self.artifacts.resolve_path(
+                artifact_id,
+                recorded_path=artifact_file.path,
+                bundle_key=key,
+            )
+            resolved_paths[key] = str(path)
+
+        return ArtifactPathBundle(resolved_paths)
 
     def register_artifact(
         self,

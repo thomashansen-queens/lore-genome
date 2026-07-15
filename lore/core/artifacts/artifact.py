@@ -1,8 +1,14 @@
 """
 Artifact data model definitions. An Artifact is a discrete unit of data managed 
 by LoRē. It has various metadata and is tied to a physical file.
-"""
 
+Database objects: Artifact, ArtifactFile
+    Serializable records for the database about the Artifact and its files.
+    Each file is given a unique key, with "main" always being the primary file.
+Execution object: ArtifactPathBundle
+    A runtime dict-like DTO that carries the filepaths for an Artifact.
+"""
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 import posixpath
@@ -175,3 +181,52 @@ class Artifact(BaseModel):
         """
         from lore.core.tasks import task_registry
         return task_registry.compatible_tasks(self.resolvable_types())
+
+
+class ArtifactPathBundle(Mapping):
+    """
+    Data structure to manage Artifact bundle filepaths.
+    """
+    def __init__(self, paths: dict[str, str]):
+        self._paths: dict[str, Path] = {k: Path(v) for k, v in paths.items()}
+
+        if "main" not in self._paths and self._paths:
+            self.main = next(iter(self._paths.values()))
+        else:
+            self.main = self._paths.get("main")
+
+    def __fspath__(self) -> str:
+        """
+        Allows stlib functions to treat this object as a path-like object (open, subprocess, Path)
+        """
+        if not self.main:
+            raise FileNotFoundError("ArtifactBundle has no main file.")
+        return str(self.main)
+
+    def __str__(self) -> str:
+        return self.__fspath__()
+
+    def __getitem__(self, key: str | int) -> Path:
+        """
+        Dict-like access to the bundle's components. If keyed by an integer,
+        returns the nth file in the bundle (original insertion order).
+        """
+        if isinstance(key, int):
+            return list(self._paths.values())[key]
+        return Path(self._paths[key])
+
+    def __iter__(self):
+        return iter(self._paths)
+
+    def __len__(self) -> int:
+        return len(self._paths)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._paths
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self._paths})"
+
+    def get_all_paths(self) -> list[Path]:
+        """Returns a list of all paths in the bundle"""
+        return list(self._paths.values())

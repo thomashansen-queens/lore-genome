@@ -259,7 +259,8 @@ def _materialize_single_artifact(
     if m == Materialization.ARTIFACT:
         return artifact, {}
     if m == Materialization.PATH:
-        return str(session.get_artifact_path(artifact.id)), {}
+        bundle = session.get_artifact_path_bundle(artifact.id)
+        return bundle, {}
 
     path = session.get_artifact_path(artifact.id)
     reader = get_reader_for(path)

@@ -57,7 +57,13 @@ class ArtifactManager:
         self.dir = artifacts_dir
         self.dir.mkdir(parents=True, exist_ok=True)
 
-    def _generate_path(self, artifact_id: str, name: str, extension: str) -> Path:
+    def _generate_path(
+        self,
+        artifact_id: str,
+        name: str,
+        extension: str,
+        bundle_key: str = "main",
+    ) -> Path:
         """Generates a filesystem path for an artifact based on its ID and name."""
         # Allow double-extensions like .csv.gz, but avoid doubling all
         if name.lower().endswith(f".{extension.lower()}"):
@@ -65,7 +71,12 @@ class ArtifactManager:
 
         safe_name = slugify(name)
         id_prefix = artifact_id[:8]
-        filename = f"{id_prefix}_{safe_name}.{extension}"
+
+        # Keyed access to bundles
+        key_slug = "" if bundle_key == "main" else f"_{bundle_key}"
+        suffix = f".{extension}" if extension else ""
+
+        filename = f"{id_prefix}_{safe_name}{key_slug}{suffix}"
         return self.dir / filename
 
     def _calculate_hash(self, path: Path) -> str:
@@ -121,7 +132,7 @@ class ArtifactManager:
             else:
                 source_path = Path(source_str).resolve()
                 ext = source_path.name.split(".", 1)[1] if "." in source_path.name else ""
-                target_path = self._generate_path(artifact_id, name or "unnamed", ext)
+                target_path = self._generate_path(artifact_id, name or "unnamed", ext, key)
                 stats = self._process_local_file(
                     source_path, target_path, transfer_mode, file_hashes[key],
                 )
@@ -212,7 +223,7 @@ class ArtifactManager:
                 continue
 
             ext = artifact_file.extension
-            new_path = self._generate_path(artifact_id, new_name, ext)
+            new_path = self._generate_path(artifact_id, new_name, ext, key)
 
             if old_path != new_path:
                 try:
@@ -234,7 +245,7 @@ class ArtifactManager:
             if path.exists() and path.is_relative_to(self.dir):
                 path.unlink()
 
-    def resolve_path(self, artifact_id: str, recorded_path: str) -> Path:
+    def resolve_path(self, artifact_id: str, recorded_path: str, bundle_key: str = "main") -> Path:
         """
         Resolved path with self-healing for "ghost files" (i.e., artifacts that
         are in the manifest but not on disk).
@@ -250,8 +261,12 @@ class ArtifactManager:
             return full_path.resolve()
 
         # 3. Self-healing: Try to find the file by hash if it's missing (crash corruption)
+        # Pattern: [ID]_*[Key].[Ext]
         id_prefix = artifact_id[:8]
-        candidates = list(self.dir.glob(f"{id_prefix}_*{path.suffix}"))
+        key_slug = "" if bundle_key == "main" else f"_{bundle_key}"
+        search_pattern = f"{id_prefix}_*{key_slug}{path.suffix}"
+
+        candidates = list(self.dir.glob(search_pattern))
         candidates = [c for c in candidates if not c.name.endswith((".tmp", ".bak"))]
 
         if len(candidates) == 1:
