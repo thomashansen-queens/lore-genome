@@ -19,6 +19,13 @@ class Inputs:
         label="Max top matches",
         default=3
     )
+    
+    keep_probability = lore.ValueInput(
+        float,
+        lable="Override Probability",
+        default="0.95",
+        description="Probability threshold to ignore 'Max top matches' and keep the domain anyway."
+    )
 
 class Outputs:
     tsv = lore.TaskOutput(
@@ -61,6 +68,7 @@ def hhpred_to_tsv(
     ctx: lore.ExecutionContext,
     files: list[str],
     top_matches: int,
+    keep_probability: float
 ):
     """Produces a trimmed-down and merged TSV file of one or more HHPred raw outputs which can be passed into the protein domain visualizer."""
     out_path = ctx.get_temp_path("hhpred_tsv.tsv")
@@ -134,9 +142,36 @@ def hhpred_to_tsv(
                         idx = int(line.split()[1]) - 1
                         results[idx]["Homology Accession"], results[idx]["Homology Name"] = f.readline()[1:].strip().split(maxsplit=1)
                     line = f.readline()
-                
+                    
+            results.sort(key=lambda entry: float(entry["Score"]), reverse=True)
+            tracks = []
             for result in results:
-                print("\t".join([result[header] for header in OUT_HEADERS]), file=out_f)
+                start, end = result["Start"], result["End"]
+                free_space_found = False
+                for track in tracks:
+                    collision_detected = False
+                    for _start, _end in track:
+                        if (end >= _start and start <= _end):
+                            collision_detected = True
+                            break
+                    if not collision_detected:
+                        free_space_found = True
+                        track.append((start, end))
+                        break
+                if not free_space_found:
+                    if len(tracks) >= top_matches:
+                        if float(result["Prob"]) >= keep_probability * 100:
+                            skip_entry = False
+                        else:
+                            skip_entry = True
+                    else: 
+                        tracks.append([(start, end)])
+                        skip_entry = False
+                else:
+                    skip_entry = False
+                
+                if not skip_entry:
+                    print("\t".join([result[header] for header in OUT_HEADERS]), file=out_f)
 
     ctx.materialize_file(
         output_key="tsv",

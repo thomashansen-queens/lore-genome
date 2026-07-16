@@ -21,7 +21,7 @@ class InterproVizInputs:
     source_fastas = lore.ArtifactInput(
         label="Protein FASTA",
         accepted_data=["protein_fasta", "fasta"],
-        select="optional_multiple",
+        select="multiple",
         load_as="path",
         description="The FASTA you inputted into InterProScan. Needed to be able to interactively access the protein sequences from the visualized domains."
     )
@@ -82,11 +82,11 @@ TSV_HEADER_INDEX = {
 }
     
 # Helpers
-def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
+def parse_interpro_tsvs(tsv_paths: list[str], proteins: dict, undefined_domain_size=20):
     """
     Parses a list of InterproScan TSV files into a list of dictionaries containing domain annotations.
     
-    Return format:
+    Return format (outdated):
     [
         {   
             "protein_accession": str,
@@ -147,7 +147,7 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
                         file_type = "interpro"
                 
                 entry = dict()
-                
+                missing_accessions_in_fasta = set()
                 match file_type:
                     case "interpro":
                         protein_accession = row[TSV_HEADER_INDEX["protein_accession"]]
@@ -163,8 +163,7 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
                         entry["total_length"] = entry["end"] - entry["start"] + 1
                         entry["e_value"] = row[TSV_HEADER_INDEX["e_value"]]
                         entry["from"] = "InterProScan"
-                        if prev_protein != protein_accession:
-                            protein_length = int(row[TSV_HEADER_INDEX["protein_length"]])
+                            
                     case "ncbi_cd":
                         protein_accession = row[metadata_column_map["protein_accession"]]
                         for header, idx in entry_column_map.items():
@@ -172,11 +171,8 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
                                 entry[header] = int(row[idx])
                             else:
                                 entry[header] = row[idx]
-                        if "protein_length" not in metadata_column_map:
-                            raise ValueError('"Protein Length" not found in table header.')
                         entry["from"] = "NCBI"
-                        if prev_protein != protein_accession:
-                            protein_length = int(row[metadata_column_map["protein_length"]])
+                            
                     case "hhscan":
                         for header, idx in entry_column_map.items():
                             if header in ("start", "end", "homo start", "homo end"):
@@ -185,7 +181,10 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
                                 entry[header] = row[idx]
                         entry["from"] = "HHScan"
                         protein_accession = row[0]
-                        protein_length = 10000  # Placeholder
+                
+                if protein_accession not in proteins.keys():
+                    raise ValueError(f"{protein_accession} not found in provided FASTAs")
+                protein_length = len(proteins[protein_accession.strip()].strip())
                 
                 if prev_protein != protein_accession:
                     if prev_protein is not None:
@@ -193,9 +192,6 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
                         if curr_entry["protein_accession"] in parsed_result.keys():
                             protein = parsed_result[curr_entry["protein_accession"]]
                             protein["domains"] += curr_entry["domains"]
-                            # Work off of the longest sequence if the two from the same accession are different lengths (can happen if one is a subsequence of another)
-                            if protein["protein_length"] < curr_entry["protein_length"]:
-                                protein["protein_length"] = curr_entry["protein_length"]
                         else:
                             parsed_result[curr_entry["protein_accession"]] = curr_entry
                                         
@@ -212,36 +208,49 @@ def parse_interpro_tsvs(tsv_paths: list[str], undefined_domain_size=20):
             if curr_entry["protein_accession"] in parsed_result.keys():
                 protein = parsed_result[curr_entry["protein_accession"]]
                 protein["domains"] += curr_entry["domains"]
-                # Work off of the longest sequence if the two from the same accession are different lengths (can happen if one is a subsequence of another)
-                if protein["protein_length"] < curr_entry["protein_length"]:
-                    protein["protein_length"] = curr_entry["protein_length"]
             else:
                 parsed_result[curr_entry["protein_accession"]] = curr_entry
                 
     # Identify undefined regions by gaps in-between labelled regions
     for protein in parsed_result.values():
-        sorted_domains = sorted(protein["domains"], key=lambda x: x["start"])
+        domains: list = protein["domains"]
         protein_length = protein["protein_length"]
         
-        protein["domains"] = sorted_domains
-        left = {"end": 0}
-        domain_qty = len(sorted_domains) + 1
-        for i in range(domain_qty):
-            if i == domain_qty - 1:
-                right = {"start": protein_length + 1, "end": protein_length + 1}
-            else:
-                right = sorted_domains[i] 
-            diff = right["start"] - left["end"] + 1
+        # Create list of ranges covered by known domains
+        ranges = [[0, 0], (protein_length+1, protein_length+1)]
+        for domain in domains:
+            start, end = domain["start"], domain["end"]
+            for i in range(len(ranges)):
+                r = ranges[i]
+                if start <= r[1] + 1 and end >= r[0] - 1:
+                    r[0] = min(start, r[0])
+                    r[1] = max(end, r[1])
+                    purge_ranges = []
+                    for j in range(i+1, len(ranges)):
+                        r2 = ranges[j]
+                        if r[1] > r2[0]:
+                            purge_ranges.append(j)    
+                            r[1] = max(r[1], r2[1])
+                        else:
+                            break
+                    for j in reversed(purge_ranges):
+                        ranges.pop(j)
+                    break
+                elif end < ranges[i+1][0] - 1:
+                    ranges.insert(i+1, [start, end])
+                    break
+        
+        # Append undefined regions to domain list based on the gaps between ranges in the range list
+        for i in range(len(ranges) - 1):
+            diff = ranges[i+1][0] - ranges[i][1] - 1
             if diff >= undefined_domain_size:
-                sorted_domains.append({
+                domains.append({
                     "domain": "UNDEFINED REGION", 
-                    "start": left["end"] + 1,
-                    "end": right["start"] - 1,
-                    "total_length": right["start"] - left["end"] - 1
+                    "start": ranges[i][1] + 1,
+                    "end": ranges[i+1][0] - 1,
+                    "total_length": diff
                 })
-            if left["end"] < right["end"]:
-                left = right
-    
+
     return list(parsed_result.values())
 
 def parse_fastas(fasta_paths: list[str]):
@@ -290,8 +299,8 @@ def interpro_viz_handler(
     source_fastas: list[str],
 ):
     """Visualizes the TSV output of InterProScan and/or NCBI CD-Search, allowing for multiple proteins and their domains to be visually compared and specific domain sequences to be extracted for further analysis."""
-    parsed_data = parse_interpro_tsvs(source_tsvs, undefined_domain_size)
     proteins = parse_fastas(source_fastas)
+    parsed_data = parse_interpro_tsvs(source_tsvs, proteins, undefined_domain_size)
     exclude_accessions_set = set(exclude_accessions)
     
     config = SVG_CONFIG.copy()
@@ -349,7 +358,7 @@ def interpro_viz_handler(
             ),
             classes=["has-tooltip", "protein-accession"],
             data={
-                "title": f"Total Length: {protein_length}" + ("\nProtein sequence not found in provided FASTA" if not protein_accession in proteins.keys() else ""),
+                "title": f"Total Length: {protein_length}",
                 "start": 1,
                 "end": protein_length,
             }
@@ -374,7 +383,7 @@ def interpro_viz_handler(
                 # Collision checking
                 collision_detected = False
                 for domain_range in track["domain_ranges"]:
-                    if (domain["end"] >= domain_range[0] and domain["end"] <= domain_range[1]) or (domain["start"] >= domain_range[0] and domain["start"] <= domain_range[1]):
+                    if (domain["end"] >= domain_range[0] and domain["start"] <= domain_range[1]):
                         if i == len(tracks) - 1:
                             y_center = top_y + config["same_protein_margin"]
                             tracks.append({"domain_ranges": [], "y_center":y_center})
