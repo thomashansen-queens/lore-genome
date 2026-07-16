@@ -30,7 +30,7 @@ class Bowtie2Inputs:
         load_as="path",
         description="The reference to which reads will be aligned.",
     )
-    query = lore.ArtifactInput(
+    fastq_paths = lore.ArtifactInput(
         accepted_data=["fastq", "fq"],
         label="Reads to Align",
         select="multiple",
@@ -53,7 +53,7 @@ class Bowtie2Outputs:
 
 
 @lore.task(
-    key="alignment_bowtie2",
+    key="alignment.bowtie2",
     inputs=Bowtie2Inputs,
     outputs=Bowtie2Outputs,
     name="Bowtie2 Alignment",
@@ -64,16 +64,28 @@ class Bowtie2Outputs:
 def bowtie2_alignment_handler(
     ctx: lore.ExecutionContext,
     target: str,
-    query: list[str],
+    fastq_paths: list[lore.PathBundle],
 ):
     """
     Aligns short sequencing reads to a reference database using Bowtie2.
     Requires an indexing step, then performs base-level mapping.
     """
-    if not query:
-        raise ValueError("No query FASTQ files provided for Bowtie2 alignment.")
-    if len(query) > 2:
-        raise ValueError("Bowtie2 plugin currently only supports up to 2 FASTQ files (Paired-End).")
+    ctx.logger.info("DEBUG fastq_paths: %r", fastq_paths)
+    # 1. Flatten fastq_paths to a list of Path objects
+    unique_paths = {}
+    for bundle in fastq_paths:
+        for path in bundle.get_all_paths():
+            unique_paths[str(path)] = path
+    all_files = list(unique_paths.values())
+
+    # 2. Validation
+    if not all_files:
+        raise ValueError("No FASTQ files provided for alignment.")
+    if len(all_files) > 2:
+        ctx.logger.warning(
+            "This task plugin currently only supports up to 2 FASTQ files (Paired-End). "
+            "Using the first two files for alignment."
+        )
 
     # 1. Config extraction
     config_model = ctx.get_config("bowtie2")
@@ -85,8 +97,7 @@ def bowtie2_alignment_handler(
     bowtie2_build_binary = f"{bowtie2_binary}-build"
 
     # 2. Output pathing
-    first_query = Path(query[0])
-    base_name = first_query.stem.replace("_1", "").replace("_R1", "")  # common in paired reads
+    base_name = all_files[0].stem.replace("_1", "").replace("_R1", "")
 
     idx_dir = ctx.get_temp_dir("bt2_index")
     idx_prefix = idx_dir / "target_index"
@@ -126,11 +137,13 @@ def bowtie2_alignment_handler(
     ]
 
     # Handle single-end vs paired-end reads
-    if len(query) == 1:
-        map_cmd.extend(["-U", str(query[0])])
-    elif len(query) >= 2:
-        map_cmd.extend(["-1", str(query[0]), "-2", str(query[1])])
-        if len(query) > 2:
+    if len(all_files) == 1:
+        ctx.logger.info("Detected single-end reads. %s", all_files[0])
+        map_cmd.extend(["-U", str(all_files[0])])
+    elif len(all_files) >= 2:
+        ctx.logger.info("Detected paired-end reads. %s (forward) and %s (reverse)", all_files[0], all_files[1])
+        map_cmd.extend(["-1", str(all_files[0]), "-2", str(all_files[1])])
+        if len(all_files) > 2:
             ctx.logger.warning(">2 FASTQ files: only first two are used for paired-end alignment.")
 
     ctx.logger.info("Running Bowtie2 with command: " + " ".join(map_cmd))
@@ -161,7 +174,7 @@ def bowtie2_alignment_handler(
         name=sam_out_path.name,
         metadata={
             "description": f"Bowtie2 alignment of {base_name} to {target}.",
-            "reads_type": "Paired-End" if len(query) == 2 else "Single-End",
+            "reads_type": "Paired-End" if len(fastq_paths) == 2 else "Single-End",
         },
         move=True,
     )

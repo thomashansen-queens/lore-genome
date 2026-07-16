@@ -61,8 +61,12 @@ class BamReader(lore.BaseReader):
                     # Geometry
                     "start": read.reference_start,
                     "end": read.reference_end,
-                    "is_reverse": read.is_reverse,
                     "query_length": read.query_length,
+                    "is_reverse": read.is_reverse,
+                    # Paired information
+                    "is_paired": read.is_paired,
+                    "is_proper_pair": read.is_proper_pair,
+                    "mate_is_reverse": read.mate_is_reverse,
                     # CIGAR strings
                     "cigar": read.cigarstring,
                     "mapping_quality": read.mapping_quality,

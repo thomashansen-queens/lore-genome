@@ -427,10 +427,13 @@ class Session(AbstractContextManager):
         if not artifact_file:
             raise ValueError(f"Artifact ID: {artifact_id} does not have a file for key: '{key}'.")
 
+        all_exts = [f.extension for f in artifact.files.values()]
         path = self.artifacts.resolve_path(
             artifact_id,
             recorded_path=artifact_file.path,
             bundle_key=key,
+            extension=artifact_file.extension,
+            all_extensions=all_exts,
         )
         return path
 
@@ -447,12 +450,15 @@ class Session(AbstractContextManager):
         if not artifact.files:
             raise ValueError(f"Artifact ID: {artifact_id} contains no files.")
 
+        all_exts = [f.extension for f in artifact.files.values()]
         resolved_paths = {}
         for key, artifact_file in artifact.files.items():
             path = self.artifacts.resolve_path(
                 artifact_id,
                 recorded_path=artifact_file.path,
                 bundle_key=key,
+                extension=artifact_file.extension,
+                all_extensions=all_exts,
             )
             resolved_paths[key] = str(path)
 

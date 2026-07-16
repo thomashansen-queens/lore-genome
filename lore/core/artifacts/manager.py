@@ -62,7 +62,8 @@ class ArtifactManager:
         artifact_id: str,
         name: str,
         extension: str,
-        bundle_key: str = "main",
+        bundle_key: str,
+        all_extensions: list[str],
     ) -> Path:
         """Generates a filesystem path for an artifact based on its ID and name."""
         # Allow double-extensions like .csv.gz, but avoid doubling all
@@ -72,10 +73,13 @@ class ArtifactManager:
         safe_name = slugify(name)
         id_prefix = artifact_id[:8]
 
-        # Keyed access to bundles
-        key_slug = "" if bundle_key == "main" else f"_{bundle_key}"
-        suffix = f".{extension}" if extension else ""
+        # Keyed file names in case of colliding extensions (e.g. paired-end fastq)
+        if bundle_key == "main" or all_extensions.count(extension) == 1:
+            key_slug = ""
+        else:
+            key_slug = f"_{bundle_key}"
 
+        suffix = f".{extension}" if extension else ""
         filename = f"{id_prefix}_{safe_name}{key_slug}{suffix}"
         return self.dir / filename
 
@@ -105,14 +109,25 @@ class ArtifactManager:
 
         # 1. Pre-calculate hases and sizes (individual)
         file_hashes = {}
+        all_exts = []
         for key, source_str in sources.items():
             source_str = str(source_str).strip()
             if source_str.startswith(("http://", "https://", "s3://", "gs://", "ftp://")):
+                # Extension
+                clean_path = urlparse(source_str).path
+                filename_part = posixpath.basename(clean_path)
+                all_exts.append(filename_part.split(".", 1)[1] if "." in filename_part else "")
+
+                # Hash
                 file_hashes[key] = hashlib.sha256(source_str.encode("utf-8")).hexdigest()
             else:
+                # Extension
                 source_path = Path(source_str).resolve()
+                all_exts.append(source_path.name.split(".", 1)[1] if "." in source_path.name else "")
                 if not source_path.exists():
                     raise FileNotFoundError(f"Artifact source file not found: {source_path}")
+
+                # Hash
                 file_hashes[key] = self._calculate_hash(source_path)
 
         # 2. Calculate deterministic master hash for the entire bundle
@@ -132,7 +147,7 @@ class ArtifactManager:
             else:
                 source_path = Path(source_str).resolve()
                 ext = source_path.name.split(".", 1)[1] if "." in source_path.name else ""
-                target_path = self._generate_path(artifact_id, name or "unnamed", ext, key)
+                target_path = self._generate_path(artifact_id, name or "unnamed", ext, key, all_exts)
                 stats = self._process_local_file(
                     source_path, target_path, transfer_mode, file_hashes[key],
                 )
@@ -215,6 +230,7 @@ class ArtifactManager:
         Renames all physical files in a bundle to match the new slug name.
         Returns a dict of {bundle_key: new_relative_path}
         """
+        all_exts = [f.extension for f in files_dict.values() if f.extension]
         new_paths = {}
         for key, artifact_file in files_dict.items():
             old_path = self.dir / artifact_file.path
@@ -223,7 +239,7 @@ class ArtifactManager:
                 continue
 
             ext = artifact_file.extension
-            new_path = self._generate_path(artifact_id, new_name, ext, key)
+            new_path = self._generate_path(artifact_id, new_name, ext, key, all_exts)
 
             if old_path != new_path:
                 try:
@@ -245,7 +261,14 @@ class ArtifactManager:
             if path.exists() and path.is_relative_to(self.dir):
                 path.unlink()
 
-    def resolve_path(self, artifact_id: str, recorded_path: str, bundle_key: str = "main") -> Path:
+    def resolve_path(
+        self,
+        artifact_id: str,
+        recorded_path: str,
+        bundle_key: str = "main",
+        extension: str = "",
+        all_extensions: list[str] | None = None,
+    ) -> Path:
         """
         Resolved path with self-healing for "ghost files" (i.e., artifacts that
         are in the manifest but not on disk).
@@ -263,8 +286,14 @@ class ArtifactManager:
         # 3. Self-healing: Try to find the file by hash if it's missing (crash corruption)
         # Pattern: [ID]_*[Key].[Ext]
         id_prefix = artifact_id[:8]
-        key_slug = "" if bundle_key == "main" else f"_{bundle_key}"
-        search_pattern = f"{id_prefix}_*{key_slug}{path.suffix}"
+        if bundle_key == "main" or (all_extensions and all_extensions.count(extension) == 1):
+            key_slug = ""
+        else:
+            key_slug = f"_{bundle_key}"
+
+        # 4. Build search pattern using full extension if provided (so e.g. .vcf.gz is preserved)
+        ext_pattern = f".{extension}" if extension else Path(recorded_path).suffix
+        search_pattern = f"{id_prefix}_*{key_slug}{ext_pattern}"
 
         candidates = list(self.dir.glob(search_pattern))
         candidates = [c for c in candidates if not c.name.endswith((".tmp", ".bak"))]

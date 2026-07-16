@@ -22,5 +22,9 @@ class BamAdapter(lore.TabularAdapter):
             "end": "end",
             "length": "query_length",
             "is_reverse": "is_reverse",
+            "mate_is_reverse": "mate_is_reverse",
             "mapping_quality": "mapping_quality",
+            "is_paired": "is_paired",
+            "is_proper_pair": "is_proper_pair",
+            "is_unmapped": "is_unmapped",
         }
