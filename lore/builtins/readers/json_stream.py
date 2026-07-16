@@ -33,8 +33,13 @@ class JsonStreamReader(JsonReader):
                 f"'{self.path.name}' is not a JSON array; read_full() handles it."
             )
 
+        kwconfig = config.copy() if config else {}
+        kwconfig.update(kwargs)
+
+        use_float = kwconfig.get("use_float", True)
+
         with open(self.path, "rb") as f:
-            yield from ijson.items(f, "item")
+            yield from ijson.items(f, "item", use_float=use_float)
 
     def _first_nonspace_byte(self) -> bytes:
         """Peek the first non-whitespace byte without reading the whole file."""
