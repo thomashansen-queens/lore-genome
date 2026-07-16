@@ -48,7 +48,7 @@ def clean(
     v: Any,
     *,
     empty_to_none: bool = True,
-    bad_chars: BadChars = _DEFAULT_BAD_CHARS,
+    bad_chars: BadChars = None,
     replace_with: str | None = None,
 ) -> str | None:
     """Helper cleans strings. Guards against objects to prevent type errors."""

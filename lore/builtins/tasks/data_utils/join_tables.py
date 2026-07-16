@@ -15,6 +15,13 @@ class JoinHow(StrEnum):
     RIGHT = "right"
 
 
+class JoinConflict(StrEnum):
+    """How to handle column name collisions"""
+    SUFFIX = "suffix"
+    DROP_LEFT = "drop_left"
+    DROP_RIGHT = "drop_right"
+
+
 class JoinTablesInputs:
     """Inputs for JoinTables Task"""
     left_table = lore.ArtifactInput(
@@ -48,6 +55,18 @@ class JoinTablesInputs:
         label="Join type",
         description="Type of merge to be performed.",
     )
+    key_regex_clean = lore.ValueInput(
+        str | None,
+        default=None,
+        label="Column cleaning regex",
+        description="Optional regex pattern to apply to column values before joining. For example, to remove version suffixes from NCBI accessions, use: \\.\\d+",
+    )
+    conflict_strategy = lore.ValueInput(
+        JoinConflict,
+        default=JoinConflict.SUFFIX,
+        label="Column name conflict strategy",
+        description="How to handle identitcal column names when joining tables.",
+    )
 
 
 class JoinTablesOutputs:
@@ -56,6 +75,24 @@ class JoinTablesOutputs:
         data_type=lore.Passthrough("left_table"),  # inherits the data type of the left table
         label="Joined Table",
         is_primary=True,
+    )
+
+
+def check_column(df: pd.DataFrame, target_col: str, table_name: str):
+    """Check if a column exists in a DataFrame (permissive)."""
+    # 1. Direct match
+    if target_col in df.columns:
+        return target_col
+
+    # 2. Case-insensitive match
+    target_lower = target_col.lower()
+    for actual_col in df.columns:
+        if actual_col.lower() == target_lower:
+            return actual_col
+
+    # 3. Fail
+    raise ValueError(
+        f"Column '{target_col}' not found in {table_name}. Available columns: {list(df.columns)}"
     )
 
 
@@ -75,6 +112,8 @@ def join_tables(
     left_on: str,
     right_on: str | None,
     how: JoinHow = JoinHow.INNER,
+    key_regex_clean: str | None = None,
+    conflict_strategy: JoinConflict = JoinConflict.SUFFIX,
 ):
     """
     Joins two tabular artifacts based on a common key/column.
@@ -96,19 +135,29 @@ def join_tables(
         raise ValueError("Right table is empty after adaptation.")
 
     # 2. Validate columns and configuration
-    if left_on not in df_left.columns:
-        raise ValueError(
-            f"Column '{left_on}' not found in Left Table. Available: {list(df_left.columns)}"
-        )
+    left_on = check_column(df_left, left_on, "Left Table")
 
     if right_on is None:
         right_on = left_on
-    if right_on not in df_right.columns:
-        raise ValueError(
-            f"Column '{right_on}' not found in Right Table. Available: {list(df_right.columns)}"
-        )
+    else:
+        right_on = check_column(df_right, right_on, "Right Table")
 
-    # 3. Perform the join (simple pandas)
+    # 3. Key cleaning (optional)
+    if key_regex_clean:
+        ctx.logger.info(f"Applying regex '{key_regex_clean}' to join keys...")
+        df_left["_join_key"] = df_left[left_on].astype(str).str.replace(key_regex_clean, "", regex=True)
+        df_right["_join_key"] = df_right[right_on].astype(str).str.replace(key_regex_clean, "", regex=True)
+
+    # 4. Merge conflict resolution
+    col_collisions = set(df_left.columns).intersection(set(df_right.columns)) - {"_join_key", left_on, right_on}
+    if col_collisions:
+        ctx.logger.warning(f"Resolving overlapping columns: {col_collisions}. Strategy: {conflict_strategy.value}")
+        if conflict_strategy == JoinConflict.DROP_LEFT:
+            df_left = df_left.drop(columns=list(col_collisions))
+        elif conflict_strategy == JoinConflict.DROP_RIGHT:
+            df_right = df_right.drop(columns=list(col_collisions))
+
+    # 5. Perform the join (simple pandas)
     df_left[left_on] = df_left[left_on].astype(str)
     df_right[right_on] = df_right[right_on].astype(str)
 
@@ -117,13 +166,17 @@ def join_tables(
         df_joined = pd.merge(
             df_left,
             df_right,
-            left_on=left_on,
-            right_on=right_on,
+            left_on=left_on if not key_regex_clean else "_join_key",
+            right_on=right_on if not key_regex_clean else "_join_key",
             how=how.value,
+            suffixes=("_left", "_right"),  # if strategy is DROP, this will never be used
         )
     except Exception as e:
         ctx.logger.error(f"Error during join operation: {e}")
         raise RuntimeError(f"Error during join operation: {e}") from e
+
+    if "_join_key" in df_joined.columns:
+        df_joined = df_joined.drop(columns=["_join_key"])
 
     # 4. Materialize the output table as a new artifact
     out_path = ctx.get_temp_path("joined_table.tsv")
