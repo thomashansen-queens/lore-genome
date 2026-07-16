@@ -108,12 +108,41 @@
             let prevProtein = null;
             let lastSelectedTooltip = null;
             let proteinSeqExists = true;
-            const selectedProteins = new Map();
-
+            
             // Makes the tooltip visible and does collision math to place the tooltip at the given coordinates without squashing it.
             function placeTooltip(x, y) {
                 // Generate tooltip from selected proteins and domains
                 if (svgType == "protein") {
+                    const selectedProteins = new Map();
+                    selected.forEach(el => {
+                        const proteinSeq = el.parentElement.querySelector(".protein-label").querySelector(".copy-text");
+                        const proteinAcc = el.parentElement.querySelector(".protein-label").querySelector(".protein-accession").textContent;
+                        const tooltipContainer = el.querySelector(".has-tooltip");                    
+                        const start = tooltipContainer.dataset.start - 1;
+                        const end = tooltipContainer.dataset.end;
+                        lastSelectedTooltip = tooltipContainer;
+    
+                        if (!proteinSeq) {
+                            proteinSeqExists = false;
+                        }
+                        else {
+                            if (!selectedProteins.has(proteinAcc)) {
+                                if (el.classList.contains('protein-label')) {
+                                    selectedProteins.set(proteinAcc, [true, proteinSeq.dataset.title, proteinSeq.dataset.title.length - 1]);
+                                }
+                                else{
+                                    selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(start, end), proteinSeq.dataset.title.length - 1, start, end]);  // False to indicate subsequence selection; true for full protein sequence (in which start & end are ignored)
+                                }
+                            }
+                            else if (!(el.classList.contains('protein-label') || selectedProteins.get(proteinAcc)[0])) {
+                                proteinData = selectedProteins.get(proteinAcc);
+                                selected_min = Math.min(start, proteinData[3]);
+                                selected_max = Math.max(end, proteinData[4]);
+                                selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(selected_min, selected_max), proteinSeq.dataset.title.length - 1, selected_min, selected_max]);
+                            }
+                        }
+                    });
+
                     if (selected.length > 1) {
                         let proteinAccs = []
                         // Behavior when selecting different proteins
@@ -220,35 +249,10 @@
             function selectElement(el) {
                 selected.push(el);
                 el.classList.add("selected");
-                
-                if (svgType == "protein") {
-                    const proteinSeq = el.parentElement.querySelector(".protein-label").querySelector(".copy-text");
-                    const proteinAcc = el.parentElement.querySelector(".protein-label").querySelector(".protein-accession").textContent;
-                    const tooltipContainer = el.querySelector(".has-tooltip");                    
-                    const start = tooltipContainer.dataset.start - 1;
-                    const end = tooltipContainer.dataset.end;
-                    lastSelectedTooltip = tooltipContainer;
+            }
 
-                    if (!proteinSeq) {
-                        proteinSeqExists = false;
-                    }
-                    else {
-                        if (!selectedProteins.has(proteinAcc)) {
-                            if (el.classList.contains('protein-label')) {
-                                selectedProteins.set(proteinAcc, [true, proteinSeq.dataset.title, proteinSeq.dataset.title.length - 1]);
-                            }
-                            else{
-                                selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(start, end), proteinSeq.dataset.title.length - 1, start, end]);  // False to indicate subsequence selection; true for full protein sequence (in which start & end are ignored)
-                            }
-                        }
-                        else if (!(el.classList.contains('protein-label') || selectedProteins.get(proteinAcc)[0])) {
-                            proteinData = selectedProteins.get(proteinAcc);
-                            selected_min = Math.min(start, proteinData[3]);
-                            selected_max = Math.max(end, proteinData[4]);
-                            selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(selected_min, selected_max), proteinSeq.dataset.title.length - 1, selected_min, selected_max]);
-                        }
-                    }
-                }
+            function unselectElement(el) {
+                selected.splice(selected.indexOf(el), 1);
             }
 
             // Clears all selected elements
@@ -262,7 +266,6 @@
                 prevProtein = null;
                 lastSelectedTooltip = null;
                 proteinSeqExists = true;
-                selectedProteins.clear();
             }
 
             // Copyable text snippets
@@ -370,7 +373,9 @@
                         toBeSelected.forEach(el => {
                             el.classList.remove("selected");
                         });
-                        selected = selected.filter(e => !(toBeSelected.includes(e)));
+                        selected.forEach(el => {
+                            if (toBeSelected.includes(el)) unselectElement(el);
+                        });
                     }
                     // Display or hide tooltip
                     if (selected.length > 0) {
