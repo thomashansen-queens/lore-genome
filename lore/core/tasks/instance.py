@@ -242,6 +242,14 @@ class Task(BaseModel):
         which can chain together multiple TaskDefinitions and Adapters to 
         resolve the final data type of an output.
         """
+        # 1. Runtime check: If output has been materialized, just use that
+        if output_key in self.outputs:
+            output_val = self.outputs[output_key]
+            if output_val and container.get_artifact(output_val[0]):
+                artifact = container.get_artifact(output_val[0])
+                return {"data_type": artifact.data_type}
+
+        # 2. Definition check: See how the Task defines its own outputs
         from lore.core.tasks.registry import task_registry
 
         task_def = task_registry[self.registry_key]
@@ -253,15 +261,15 @@ class Task(BaseModel):
         _, meta = task_def.field_meta(output_key, is_output=True)
         data_type = meta.get("data_type", "unknown")
 
-        # 1. Base case: Static type (e.g. "protein_sequence")
+        # 3. Base case: Static type (e.g. "protein_sequence")
         if not isinstance(data_type, Passthrough):
             return {"data_type": data_type}
 
-        # 2. Recursive case: Passthrough to an input slot
+        # 4. Recursive case: Passthrough to an input slot
         passthrough_slot = data_type.slot
         bindings = self.inputs.get(passthrough_slot, [])
 
-        # 3. Empty slots: nothing plugged in
+        # 5. Empty slots: nothing plugged in
         if not bindings:
             # Fall back to what the slot theoretically accepts based on the 
             # TaskDefinitions's input model
@@ -270,7 +278,7 @@ class Task(BaseModel):
             fallback_type = accepted[0] if accepted else "*"
             return {"data_type": fallback_type}
 
-        # 4. Traverse the bindings
+        # 6. Traverse the bindings
         for b in bindings:
             if isinstance(b, ReferenceBinding):
                 upstream_task = container.get_task(b.source_id)
