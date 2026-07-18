@@ -9,6 +9,7 @@ from time import sleep
 import httpx
 import lore
 import re
+from typing import Any
 from .config import retry
 
 
@@ -38,9 +39,10 @@ class BlastpInputs:
     Input parameters for the BLASTP task.
     """
     query = lore.ArtifactInput(
-        description="Accession, GI, or FASTA sequence to search against the database.",
-        accepted_data=["fasta, protein_fasta, nucleotide_fasta", "protein_accession", "gene_accession"],
+        description="Sequence to search against the database. Accessions and GI numbers are not supported by this plugin.",
+        accepted_data=["fasta", "protein_fasta", "nucleotide_fasta"],
         load_as="adapted",
+        select="multiple",
         label="Query",
     )
     database = lore.ValueInput(
@@ -88,6 +90,43 @@ class BlastpOutputs:
     )
 
 
+def _extract_fasta_data(record: dict | str) -> tuple[str, str]:
+    """
+    Extracts the header and sequence from an adapted FASTA dict or raw string.
+    Returns a tuple of (header, sequence).
+    """
+    # Fallback for raw text blocks
+    if isinstance(record, str):
+        record_str = record.strip()
+        if not record_str.startswith(">"):
+            return "", ""
+        lines = record_str.splitlines()
+        header = lines[0]
+        seq = "".join(l.strip() for l in lines[1:])
+        return header, seq
+
+    # Duck-typing for Adapted Dictionaries
+    if isinstance(record, dict):
+        # 1. Sniff the Accession/ID
+        acc = next((str(v) for k, v in record.items() if k.lower().endswith(("accession", "id", "acc", "name"))), "Unknown")
+
+        # 2. Sniff the Description (optional)
+        desc = next((str(v) for k, v in record.items() if k.lower().endswith(("description", "desc"))), "")
+
+        # 3. Sniff the Sequence (catches "seq", "sequence", "protein_sequence", etc.)
+        seq = next((str(v) for k, v in record.items() if k.lower().endswith(("seq", "sequence"))), "")
+
+        if not seq:
+            raise ValueError(f"Could not locate sequence data in record keys: {list(record.keys())}")
+
+        header = acc if acc.startswith(">") else f">{acc}"
+        header += f" {desc}" if desc else ""
+
+        return header, seq
+
+    return "", ""
+
+
 @lore.task(
     "ncbi.blast",
     inputs=BlastpInputs,
@@ -99,7 +138,7 @@ def blast_handler(
     ctx: lore.ExecutionContext,
     program: BlastProgram,
     database: BlastDb,
-    query: list[str],
+    query: list[Any],
     organism: str = "",
     expect: float = 0.01,
     hitlist_size: int = 5000,
@@ -111,17 +150,36 @@ def blast_handler(
     ncbi_config = ctx.get_config("ncbi")
     email = ncbi_config.email if ncbi_config else None
     if not email:
-        ctx.logger.warning("No email set in Settings! Authentication may be rate-limited.")
+        ctx.logger.debug("No NCBI email set in Settings!")
 
     entrez_query = f"{organism}[Organism]" if organism else ""
-    query_newline = "\n".join(query)
+
+    # 2. Parse query input
+    parsed_queries = []
+
+    for i, val in enumerate(query):
+        header, seq = _extract_fasta_data(val)
+        # A. FASTA records
+        if seq:
+            parsed_queries.append(f"{header}\n{seq}")
+        # B. Manual sequence strings
+        elif isinstance(val, str) and not val.startswith(">"):
+            parsed_queries.append(f">input_{i}\n{val.strip()}")
+
+    if not parsed_queries:
+        raise ValueError("No valid query sequences found.")
 
     # 2. === Submit Put request ===
+    ctx.logger.info(f"Preparing to submit {len(parsed_queries)} sequence(s) to NCBI BLAST...")
+    ctx.logger.info(f"First query header: {parsed_queries[0].splitlines()[0]}")
+    ctx.logger.info(f"First query seq   : {parsed_queries[0].splitlines()[1][:80]}")
+    ctx.logger.info(f"First query len   : {len(parsed_queries[0].splitlines()[1])}")
+
     put_params = {
         "CMD": "Put",
         "PROGRAM": program.value,
         "DATABASE": database.value,
-        "QUERY": query_newline,
+        "QUERY": "\n".join(parsed_queries),
         "EXPECT": expect,
         "HITLIST_SIZE": hitlist_size,
         "ENTREZ_QUERY": entrez_query,
@@ -135,31 +193,26 @@ def blast_handler(
 
     ctx.logger.info("Submitting query to NCBI...")
     put_response = submit_job()
+    response_text = put_response.text
 
-    rid_match = re.search(r"^\s*RID\s*=\s*(.+)$", put_response.text, re.MULTILINE)
-    rtoe_match = re.search(r"^\s*RTOE\s*=\s*(\d+)$", put_response.text, re.MULTILINE)
+    # Get the request ID (RID) and request time-of-execution (RTOE) from response HTML
+    rid_match = re.search(r"^\s*RID\s*=\s*([\w-]+)$", response_text, re.MULTILINE)
+    rtoe_match = re.search(r"^\s*RTOE\s*=\s*(\d+)$", response_text, re.MULTILINE)
 
     if not rid_match:
-        ctx.logger.debug(f"NCBI response text:\n{put_response.text[:1000]}")
+        ctx.logger.debug(f"NCBI response text:\n{response_text[:1000]}")
         raise ValueError("Failed to parse Request ID (RID) from NCBI response.")
 
     rid = rid_match.group(1).strip()
+    ctx.logger.info(f"Successfully secured BLAST RID: {rid}")
 
-    if not rtoe_match:
-        ctx.logger.debug(f"NCBI response text:\n{put_response.text[:1000]}")
-        raise ValueError("Failed to parse Remaining Time (RTOE) from NCBI response.")
+    if rtoe_match:
+        rtoe = int(rtoe_match.group(1).strip())
+        ctx.logger.info(f"NCBI estimates {rtoe} seconds until results will be ready.")
     else:
         rtoe = 60
-        ctx.logger.warning("Failed to parse RTOE from NCBI response. Defaulting to 60 seconds.")
+        ctx.logger.warning(f"Failed to parse RTOE from NCBI response. Defaulting to {rtoe} seconds.")
 
-    for line in put_response.text.splitlines():
-        if line.startswith("RID="):
-            rid = line.split("=")[1].strip()
-        if line.startswith("RTOE="):
-            rtoe = int(line.split("=")[1].strip())
-            ctx.logger.info(f"Estimated time to completion: {rtoe} seconds.")
-
-    ctx.logger.info(f"Submitted BLAST job with RID: {rid}. Polling for results...")
     sleep(rtoe)
 
     # 3. === Poll for results ===
@@ -178,8 +231,9 @@ def blast_handler(
         status_response = check_status()
 
         if "Status=WAITING" in status_response.text:
-            ctx.logger.info("Job still running. Sleeping for 60 seconds (NCBI policy)...")
-            sleep(60)
+            snooze = 60
+            ctx.logger.info(f"Job still running. Sleeping for {snooze} seconds (NCBI policy)...")
+            sleep(snooze)
             continue
         if "Status=FAILED" in status_response.text:
             raise RuntimeError(f"BLAST job {rid} failed on NCBI servers.")
@@ -203,13 +257,13 @@ def blast_handler(
         "CMD": "Get",
         "FORMAT_TYPE": "JSON2_S",
         "RID": rid,
-        "EMAIL": email or "",
-        "TOOL": "lore-genome",
     }
 
     @retry(tries=4, delay=2, default_logger=ctx.logger)
     def fetch_results():
-        return httpx.get(BLAST_URL, params=get_params, timeout=60.0)
+        response = httpx.get(BLAST_URL, params=get_params, timeout=60.0)
+        response.raise_for_status()
+        return response
 
     final_results = fetch_results()
     json_results = final_results.text
