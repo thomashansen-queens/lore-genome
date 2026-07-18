@@ -63,7 +63,10 @@ def extract_column(
     except StopIteration:
         raise ValueError("The input table is empty.")
 
-    if column_name not in first_row:
+    # Case-insensitive column lookup
+    actual_key = next((k for k in first_row.keys() if k.lower() == column_name.lower()), None)
+
+    if not actual_key:
         raise ValueError(
             f"Column '{column_name}' not found in the table. Available columns: {first_row}"
         )
@@ -84,7 +87,7 @@ def extract_column(
                 continue
 
             # Get value and skip if empty or duplicate and deduplicate is True
-            val = str(row.get(column_name, "")).strip()
+            val = str(row.get(actual_key, "")).strip()
             if not val:
                 continue
             if deduplicate:
