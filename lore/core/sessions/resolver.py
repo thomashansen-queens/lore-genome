@@ -143,7 +143,7 @@ def resolve_task_outputs(session: "Session", task_id: str) -> dict[str, Resolved
     if not task.outputs:
         return {}
 
-    task_def = task_registry[task.registry_key]
+    task_def = task_registry.get(task.registry_key)
     schema_fields = task_def.output_model.model_fields if (task_def and task_def.output_model) else {}
 
     resolved = {}

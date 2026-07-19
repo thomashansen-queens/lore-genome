@@ -105,17 +105,30 @@ def view_session_task(
     ctx: PageContext = Depends(),
 ):
     """
-    Ready-only view of a Task's details, outputs, and metadata
+    Ready-only view of a Task's details, outputs, and metadata.
+    If a Task exists that is not currently registered in the task registry, it
+    will be displayed with a warning and cannot be edited or re-run.
     """
     task = s.get_task(task_id)
     if task is None:
         raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-    resolved_outputs = resolve_task_outputs(s, task_id)
-
+    # Stale task definition (e.g. deleted from registry) is still viewable
     task_def = task_registry.get(task.registry_key)
     if not task_def:
-        raise HTTPException(404, detail=f"Task definition '{task.registry_key}' not found in registry.")
+        ctx.add_msg(
+            f"The definition for '{task.registry_key}' is no longer in the registry. "
+            "Showing stored results only; this Task cannot be re-run until the definition is restored.",
+            "warning",
+        )
+
+    try:
+        resolved_outputs = resolve_task_outputs(s, task_id)
+    except Exception as e:
+        s.logger.warning(
+            "Failed to resolve outputs for task '%s' (%s): %s", task_id, task.registry_key, e
+        )
+        resolved_outputs = {}
 
     task_log = s.get_task_log(task_id)
 
