@@ -20,6 +20,12 @@ class ExtractColumnInputs:
         label="Column to extract",
         description="The name of the column to extract from the table.",
     )
+    new_name = lore.ValueInput(
+        str | None,
+        label="New column name (optional)",
+        description="Optional new name for the extracted column. If not provided, the original column name will be used.",
+        default=None,
+    )
     deduplicate = lore.ValueInput(
         bool,
         label="Deduplicate",
@@ -50,6 +56,7 @@ def extract_column(
     ctx: lore.ExecutionContext,
     table: Iterator[dict],
     column_name: str,
+    new_name: str | None = None,
     deduplicate: bool = False,
 ):
     """
@@ -101,13 +108,14 @@ def extract_column(
         raise ValueError(f"No values found for column '{column_name}'.")
 
     # 3. Materialize the output
+    out_name = new_name if new_name else column_name
     ctx.materialize_file(
         source=out_path,
         output_key="column",
-        data_type=column_name.lower().strip(),
+        data_type=out_name.lower().strip(),
         extension="tsv",
         metadata={
-            "columns": [column_name],
+            "columns": [out_name],
             "deduplicate": deduplicate,
             "header": False,
         }
