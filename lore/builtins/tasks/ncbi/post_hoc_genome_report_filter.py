@@ -5,6 +5,7 @@ them after the fact, a user can iteratively test different filters without needi
 to re-query NCBI's API. Furthermore, it provides knowledge of how much data is
 being filtered out at each step.
 """
+import collections
 from datetime import date, datetime
 from typing import Any
 
@@ -38,6 +39,15 @@ class NcbiPostHocInputs(NcbiFilterOptions):
         accepted_data="ncbi_genome_reports",
         select="single",
         load_as="raw",
+    )
+    best_ani_match = lore.ValueInput(
+        str | None,
+        label="Best ANI Match",
+        description=(
+            "Best average nucleotide identity (ANI) match is automatically computed by NCBI. "
+            "Occasionally, this is different from the taxon of the assembly itself."
+        ),
+        default=None,
     )
 
 
@@ -124,6 +134,29 @@ def ncbi_post_hoc_handler(
             "exclude_multi_isolate",
         )
 
+    if kwargs.get("tax_exact_match"):
+        tax_ids = [r.get("tax_id") for r in records if r.get("tax_id")]
+        if tax_ids:
+            most_common_taxid = collections.Counter(tax_ids).most_common(1)[0][0]
+            apply_filter(lambda r: r.get("tax_id") == most_common_taxid, "tax_exact_match")
+            ctx.logger.warning(
+                "tax_exact_match applied post-hoc. Guessed target tax_id=%s based on frequency. "
+                "WARNING: This will incorrectly drop valid records if the original query was a "
+                "higher taxonomic rank (e.g., Genus or Family)!",
+                most_common_taxid
+            )
+        else:
+            ctx.logger.warning("No tax_id found in any record; skipping tax_exact_match filter.")
+
+    if kwargs.get("best_ani_match"):
+        wanted_ani = str(kwargs.get("best_ani_match")).lower()
+        def has_ani_match(r):
+            ani = r.get("average_nucleotide_identity", {})
+            best_ani = ani.get("best_ani_match", {})
+            organism_name = best_ani.get("organism_name", "")
+            return organism_name.lower() == wanted_ani
+        apply_filter(has_ani_match, "best_ani_match")
+
     levels = kwargs.get("filters_assembly_level")
     if levels:
         # Normalize enum / "Complete Genome" -> "complete_genome".
@@ -172,7 +205,6 @@ def ncbi_post_hoc_handler(
             ("filters_is_type_material", "Is type material"),
             ("filters_is_ictv_exemplar", "Is ICTV exemplar"),
             ("filters_type_material_category", "Type material category"),
-            ("tax_exact_match", "Exact taxon match (needs the original query)"),
         )
         if kwargs.get(key)
     ]
