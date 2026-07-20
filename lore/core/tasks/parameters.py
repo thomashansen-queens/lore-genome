@@ -2,7 +2,7 @@
 LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum, StrEnum
 from typing import Any, Literal, Type, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field
@@ -177,6 +177,8 @@ class TaskInput:
             return ""
         if isinstance(self.default, datetime):
             return self.default.strftime("%Y-%m-%dT%H:%M")
+        if isinstance(self.default, date):
+            return self.default.strftime("%Y-%m-%d")
         return self.default
 
 
@@ -335,6 +337,10 @@ class ValueInput(TaskInput):
 
         elif target_type is datetime:
             extra["widget"] = Widget.DATETIME
+
+        # Must come after datetime (which is a subclass of date)
+        elif target_type is date:
+            extra["widget"] = Widget.DATE
 
         elif target_type is str:
             # Base class sets Widget.TEXT.value by default, but explicit is better than implicit
