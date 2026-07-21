@@ -31,12 +31,7 @@ class QueryInputs:
     query_string = lore.ValueInput(
         str | None,
         label="Query string",
-        description="Pandas query string."
-            "Copy and paste for NCBI Strict PostHoc Filter: ➜ "
-            "~(genome_accession.str.startswith('GCA_', na=False) & paired_accession.str.startswith('GCF_', na=False)) "
-            "and assembly_level in ['Complete Genome', 'Chromosome'] "
-            "and genome_notes.isnull() "
-            "and best_ani_match.str.contains('YOUR ORGANISM HERE', na=False)",
+        description="Query string. Can be a pandas query string, a regex pattern, or a substring to filter for.",
         default=None,
         examples=["assembly_level == 'Complete Genome' and year > 2020"],
     )
@@ -61,8 +56,20 @@ def _load_dataframe(
     config: dict,
 ) -> pd.DataFrame:
     """Helper function to allow use of memoization for loading."""
+    # 1. Load parsed records into a DataFrame
     adapted_records = adapter.adapt(parsed_records, config=config)
     df = pd.DataFrame(adapted_records).reset_index(drop=True)
+
+    # 2. None-ify empty strings
+    df = df.replace("", None)
+
+    # 3. Attempt to coerce numeric-only columns to numeric types
+    for col in df.columns:
+        coerced = pd.to_numeric(df[col], errors="coerce")
+        if coerced.notna().sum() == df[col].notna().sum():
+            df[col] = coerced
+
+    df = df.convert_dtypes()
     return df
 
 

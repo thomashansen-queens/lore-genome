@@ -33,7 +33,8 @@ def _load_and_merge_cluster_data(
         )
 
     cluster_df = cluster_df.rename(columns={"cluster_rep": "mmseqs_cluster_id"})
-    annotations_df[["begin", "end", "protein_length"]] = annotations_df[["begin", "end", "protein_length"]].astype("Int64")
+    int_cols = ["begin", "end", "protein_length"]
+    annotations_df[int_cols] = annotations_df[int_cols].apply(pd.to_numeric, errors="coerce").astype("Int64")
 
     # 3. Count the prevalence of each protein accession across the annotations
     protein_counts = annotations_df["protein_accession"].value_counts().reset_index()
@@ -120,6 +121,8 @@ def summarize_cluster_origins(
 
     # 2. Find the "True" Representative (most frequent member in each cluster)
     cluster_df = cluster_df.sort_values(by=["mmseqs_cluster_id", "occurrence_count"], ascending=[True, False])
+    cluster_df["weighted_length"] = cluster_df["protein_length"] * cluster_df["occurrence_count"]
+
     best_reps_df = cluster_df.groupby("mmseqs_cluster_id").agg(
         best_representative=pd.NamedAgg(column="protein_accession", aggfunc="first"),
         cluster_name=pd.NamedAgg(column="name", aggfunc="first"),
@@ -127,7 +130,17 @@ def summarize_cluster_origins(
         protein_occurences=pd.NamedAgg(column="occurrence_count", aggfunc="sum"),
         cluster_size=pd.NamedAgg(column="protein_accession", aggfunc="count"),
         cluster_members=pd.NamedAgg(column="protein_accession", aggfunc=lambda x: ",".join(x.dropna().astype(str).unique())),
+
+        min_protein_length=pd.NamedAgg(column="protein_length", aggfunc="min"),
+        max_protein_length=pd.NamedAgg(column="protein_length", aggfunc="max"),
+        unique_mean_length=pd.NamedAgg(column="protein_length", aggfunc="mean"),
+        _total_weighted_length=pd.NamedAgg(column="weighted_length", aggfunc="sum"),
     ).reset_index().copy()
+
+    best_reps_df["population_mean_length"] = (best_reps_df["_total_weighted_length"] / best_reps_df["protein_occurences"]).round(1)
+    best_reps_df["unique_mean_length"] = best_reps_df["unique_mean_length"].round(1)
+    best_reps_df = best_reps_df.drop(columns=["_total_weighted_length"])
+
     ctx.logger.debug("Found %s clusters with best representatives", len(best_reps_df))
 
     # 3. Group by representative sequence and summarize the contributing genomes
@@ -139,12 +152,7 @@ def summarize_cluster_origins(
     cluster_df = cluster_df.groupby("mmseqs_cluster_id").agg(
         num_genomes=pd.NamedAgg(column="genome_accession", aggfunc="nunique"),
         genomes=pd.NamedAgg(column="genome_accession", aggfunc=lambda x: ",".join(sorted(x.dropna().astype(str).unique()))),
-        min_protein_length=pd.NamedAgg(column="protein_length", aggfunc="min"),
-        max_protein_length=pd.NamedAgg(column="protein_length", aggfunc="max"),
-        mean_protein_length=pd.NamedAgg(column="protein_length", aggfunc="mean"),
     ).reset_index()
-    cluster_df["mean_protein_length"] = cluster_df["mean_protein_length"].round(1)
-    cluster_df[["min_protein_length", "max_protein_length"]] = cluster_df[["min_protein_length", "max_protein_length"]].astype("Int64")
 
     ctx.logger.debug("Found %s clusters with genome information", len(cluster_df))
 
@@ -168,10 +176,12 @@ def summarize_cluster_origins(
         final_summary_df = final_summary_df.merge(seq_df, on="best_representative", how="left")
 
     # 4. Reorder the columns
-    final_cols = ["mmseqs_cluster_id", "cluster_name", "cluster_symbol",
+    final_cols = [
+        "mmseqs_cluster_id", "cluster_name", "cluster_symbol",
         "best_representative", "min_protein_length", "max_protein_length",
-        "mean_protein_length", "cluster_size", "protein_occurences",
-        "num_genomes", "cluster_members", "genomes"]
+        "unique_mean_length", "population_mean_length", "cluster_size",
+        "protein_occurences", "num_genomes", "cluster_members", "genomes"
+    ]
     if protein_fasta:
         final_cols.append("protein_sequence")
 
@@ -286,6 +296,8 @@ def inspect_cluster(
                     "source_accessions": ", ".join(protein_accession),
                 }
             )
+        elif save_fasta:
+            raise ValueError("Cannot save FASTA for cluster members because no source FASTA was provided.")
 
         # Convert to a DataFrame and merge
         seq_df = pd.DataFrame(list(extracted_seqs.items()), columns=["protein_accession", "protein_sequence"])
