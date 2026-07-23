@@ -172,6 +172,9 @@ def ncbi_cd_search(
             else:
                 iterating = False
                 break
+        if len(search_fragments) == 0:
+            iterating = False
+            break
         result = cd_search(ctx, "\n".join(search_fragments), database, data_mode, e_value, include_domain_definition, protein_lengths)
         with open(out_path, file_write_mode) as f:
             if file_write_mode == 'w':
