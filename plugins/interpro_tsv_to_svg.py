@@ -217,7 +217,7 @@ def parse_interpro_tsvs(tsv_paths: list[str], proteins: dict, undefined_domain_s
         protein_length = protein["protein_length"]
         
         # Create list of ranges covered by known domains
-        ranges = [[0, 0], (protein_length+1, protein_length+1)]
+        ranges = [[0, 0], [protein_length+1, protein_length+1]]
         for domain in domains:
             start, end = domain["start"], domain["end"]
             for i in range(len(ranges)):
@@ -271,7 +271,7 @@ def parse_fastas(fasta_paths: list[str]):
                     sequence_fragments = []
                     accession = line[1:].split()[0]
                 else:
-                    sequence_fragments.append(line)
+                    sequence_fragments.append(line.strip())
                 line = f.readline() 
         if accession:
             proteins[accession] = "".join(sequence_fragments)
