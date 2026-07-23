@@ -63,8 +63,11 @@ def _load_dataframe(
     # 2. None-ify empty strings
     df = df.replace("", None)
 
-    # 3. Attempt to coerce numeric-only columns to numeric types
+    # 3. Attempt to coerce numeric-only columns to numeric types (skip empty)
     for col in df.columns:
+        if df[col].notna().sum() == 0:
+            continue
+
         coerced = pd.to_numeric(df[col], errors="coerce")
         if coerced.notna().sum() == df[col].notna().sum():
             df[col] = coerced
@@ -122,7 +125,7 @@ def filter_query_handler(
 
     # 3. Adapt to DataFrame
     artifact_ids = "_".join(sorted(a.id for a in source_artifacts))
-    cache_key = f"{adapter.name}_{artifact_ids}"
+    cache_key = f"{adapter.name}_{artifact_ids}_{len(parsed_records)}"
 
     df = _load_dataframe(ctx, parsed_records, adapter, cache_key, config)
 

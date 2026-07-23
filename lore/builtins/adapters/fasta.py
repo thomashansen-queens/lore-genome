@@ -4,7 +4,6 @@ Adapter for handling FASTA files in LoRē Genome.
 from typing import Any, ClassVar, Iterator
 
 import lore
-import numpy as np
 
 
 class BaseFastaAdapter(lore.TabularAdapter):
@@ -45,9 +44,10 @@ class BaseFastaAdapter(lore.TabularAdapter):
         if isinstance(raw_data, str):
             return list(self.parse_stream(iter(raw_data.splitlines()), kwconfig))
 
-        # 2. Preview mode: Peeks at first n lines
+        # 2. A list of strings: Process chunks to account for newline in sequences
         if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], str):
-            return list(self.parse_stream(iter(raw_data), kwconfig))
+            lines = (line for chunk in raw_data for line in chunk.splitlines())
+            return list(self.parse_stream(lines, kwconfig))
 
         # 3. Already parsed? Return as-is
         if isinstance(raw_data, list) and raw_data and isinstance(raw_data[0], dict):
@@ -120,14 +120,16 @@ class BaseFastaAdapter(lore.TabularAdapter):
         lines = []
         for r in records:
             # 1. Rebuild header
-            header = f">{r.get('accession', 'unknown_entry')}"
-            description = r.get("description")
+            accession = r.get("accession") or r.get("protein_accession") or r.get("nucleotide_accession") or r.get("id") or "unknown_entry"
+            header = f">{accession}"
+
+            description = r.get("description") or r.get("protein_description") or r.get("nucleotide_description") or r.get("name")
             if description:
                 header += f" {description}"
             lines.append(header)
 
             # 2. Rebuild sequence with optional line wrapping
-            seq = r.get("sequence", "")
+            seq = r.get("sequence") or r.get("protein_sequence") or r.get("nucleotide_sequence") or r.get("seq") or ""
             if line_length and line_length > 0:
                 lines.extend(seq[i:i+line_length] for i in range(0, len(seq), line_length))
             else:
@@ -150,13 +152,15 @@ class BaseFastaAdapter(lore.TabularAdapter):
 
         for r in records_stream:
             # 1. Rebuild header
-            header = f">{r.get('accession', 'unknown_entry')}"
-            description = r.get("description")
+            accession = r.get("accession") or r.get("protein_accession") or r.get("nucleotide_accession") or r.get("id") or "unknown_entry"
+            header = f">{accession}"
+
+            description = r.get("description") or r.get("protein_description") or r.get("nucleotide_description") or r.get("name")
             if description:
                 header += f" {description}"
 
             # 2. Rebuild sequence with optional line wrapping
-            seq = r.get("sequence", "")
+            seq = r.get("sequence") or r.get("protein_sequence") or r.get("nucleotide_sequence") or r.get("seq") or ""
             if line_length and line_length > 0:
                 wrapped_seq = "\n".join(
                     seq[i:i+line_length] for i in range(0, len(seq), line_length)
