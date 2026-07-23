@@ -83,14 +83,27 @@ def visualize_interproscan_results(
     max_length_seen = 0
 
     for accession in accs_to_draw:
+        # Strict match first, then allow for missing version suffix
         record = record_map.get(accession)
+        if record is None:
+            item = next(
+                (
+                    (k, v)
+                    for k, v in record_map.items()
+                    if k.startswith(accession + ".")
+                ),
+                None
+            )
+            if item:
+                accession, record = item
+
         if not record:
             ctx.logger.warning(f"Accession '{accession}' not found in InterProScan results.")
             continue
 
         # Deal with InterProScan naming conventions
         name = record.get("xref", [{}])[0].get("name", "")
-        name = name.lstrip(accession).strip()
+        name = name.removeprefix(accession).strip()
         # disp = name[:47] + "..." if len(name) > 50 else name
         parts = name.split(" [", 1)
         if len(parts) > 1:
