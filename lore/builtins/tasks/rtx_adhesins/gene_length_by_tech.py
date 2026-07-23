@@ -3,8 +3,11 @@ Plot the length of genes by sequencing technology.
 Used in the RTX Adhesins project to verify the need for long-read sequencing.
 """
 import lore
+import json
 from matplotlib import pyplot as plt
 import pandas as pd
+from scipy import stats
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import seaborn as sns
 
 
@@ -25,6 +28,10 @@ class GeneLengthByTechOutputs:
         label="Gene length by sequencing technology",
         is_primary=True,
     )
+    statistics = lore.TaskOutput(
+        data_type="json",
+        label="Gene length statistics by sequencing technology",
+    )
 
 
 def categorize_tech(raw_tech):
@@ -37,7 +44,7 @@ def categorize_tech(raw_tech):
     has_pacbio = any(x in tech for x in ["pacbio", "smrt", "sequel", "rsii", "rs ii"])
     has_nanopore = any(x in tech for x in ["ont", "nanopore", "minion", "promethion", "flongle", "gridion"])
 
-    has_legacy = any(x in tech for x in ["454", "sanger", "ion", "torrent", "solid", "bgi", "mgi"])
+    has_other = any(x in tech for x in ["454", "sanger", "ion", "torrent", "solid", "bgi", "mgi"])
 
     if has_illumina and has_pacbio:
         return "PacBio + Illumina"
@@ -51,16 +58,85 @@ def categorize_tech(raw_tech):
         return "PacBio"
     elif has_nanopore:
         return "Nanopore"
-    elif has_legacy:
-        return "Legacy"
+    elif has_other:
+        return "Other"
     else:
         return "Unknown"
+
+
+def _statistics_by_tech(df: pd.DataFrame) -> dict:
+    """Compute statistics and significance tests on gene lengths by tech"""
+    clean_df = df.dropna(subset=["subject_length", "tech"]).copy()
+
+    stats_out = {"summary": {}, "anova": {}, "tukey_hsd": None}
+
+    # 1. Summary statistics
+    for tech, group in clean_df.groupby("tech"):
+        stats_out["summary"][tech] = {
+            "count": int(len(group)),
+            "mean_length": float(group["subject_length"].mean()),
+            "median_length": float(group["subject_length"].median()),
+            "min_length": int(group["subject_length"].min()),
+            "max_length": int(group["subject_length"].max()),
+        }
+
+    # 2. ANOVA test
+    groups = [group["subject_length"].values for name, group in clean_df.groupby("tech")]
+
+    if len(groups) > 1:
+        # A. One-way ANOVA
+        f_stat, p_val = stats.f_oneway(*groups)
+        stats_out["anova"] = {
+            "f_statistic": float(f_stat),
+            "p_value": float(p_val),
+            "significant": bool(p_val < 0.05),
+        }
+
+        # B. Tukey's Post-Hoc (honest significant difference/HSD)
+        tukey = pairwise_tukeyhsd(
+            endog=clean_df["subject_length"],
+            groups=clean_df["tech"],
+            alpha=0.05,
+        )
+
+        # C. Parse statsmodels summary table into a list of dicts
+        reject = tukey.reject
+        meandiffs = tukey.meandiffs
+        pvalues = tukey.pvalues
+
+        if reject is None or meandiffs is None or pvalues is None:
+            raise RuntimeError("Tukey HSD returned incomplete results")
+
+        pair_i, pair_j = tukey._multicomp.pairindices
+        group_names = tukey.groupsunique
+
+        tukey_results = [
+            {
+                "group1": str(group_names[i]),
+                "group2": str(group_names[j]),
+                "meandiff": float(mean_diff),
+                "p_adj": float(p_adj),
+                "reject_null": bool(reject_null),
+            }
+            for i, j, mean_diff, p_adj, reject_null in zip(
+                pair_i,
+                pair_j,
+                meandiffs,
+                pvalues,
+                reject,
+                strict=True,
+            )
+        ]
+        stats_out["tukey_hsd"] = tukey_results
+
+    return stats_out
+
 
 @lore.task(
     "rtx_adhesins.gene_length_by_tech",
     inputs=GeneLengthByTechInputs,
     outputs=GeneLengthByTechOutputs,
-    name="Gene Length by Sequencing Technology",
+    name="Plot Gene Length by Sequencing Technology",
     category="RTX Adhesins",
     preview_mode="full",
 )
@@ -84,12 +160,21 @@ def gene_length_by_tech(
         "Illumina",
         "PacBio",
         "PacBio + Illumina",
+        # "PacBio + Nanopore",  # not typically present
         "Nanopore",
         "Nanopore + Illumina",
-        "Legacy",
+        "Other",
     ]
 
-    # 2. Build the plot
+    # 2. Compute statistics
+    stats_out = _statistics_by_tech(df)
+    ctx.materialize_content(
+        content=json.dumps(stats_out),
+        output_key="statistics",
+        extension="json",
+    )
+
+    # 3. Build the plot
     fig, ax = plt.subplots(
         nrows=2,
         figsize=(10, 6),
@@ -134,12 +219,12 @@ def gene_length_by_tech(
         ax=ax[1],
     )
     ax[1].set_xlabel("Sequencing technology")
-    ax[1].set_ylabel("Gene length (bp)")
+    ax[1].set_ylabel("Protein length (aa)")
 
     plt.xticks(rotation=45, ha="right")
     sns.despine()
 
-    # 3. Save the plot
+    # 4. Save the plot
     png_path = ctx.get_temp_path("length_by_tech_violinplot.png")
 
     plt.rcParams["svg.fonttype"] = "none"  # Editable text rather than vectorized paths
@@ -150,7 +235,7 @@ def gene_length_by_tech(
 
     plt.close(fig)
 
-    return ctx.materialize_file(
+    ctx.materialize_file(
         source={
             "main": svg_path,
             "png": png_path,
@@ -160,3 +245,4 @@ def gene_length_by_tech(
             "gene_count": len(df),
         }
     )
+
