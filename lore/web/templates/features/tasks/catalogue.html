@@ -6,14 +6,14 @@
     <h4>
         🛠 Task Catalogue
     </h4>
-    <p class="muted">Select a tool to configure and preview in real-time before saving.</p>
+    <p class="muted">Select a Task to configure.</p>
 
     <div class="column">
         <div class="scroll-area" style="padding-right: var(--spacing-md);">
             {% for category, tasks in task_definitions | groupby('category') | sort %}
-                <details open style="margin-bottom: var(--spacing-sm);">
-                    <summary style="cursor: pointer;">
-                        <h4>{{ category }}</h4>
+                <details open class="catalogue-category" data-category="{{ category }}" style="margin-bottom: var(--spacing-sm);">
+                    <summary style="cursor: pointer;" class="ui-label">
+                        {{ category }}
                     </summary>
 
                     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--spacing-sm);">
@@ -42,3 +42,31 @@
 </div>
 
 {% endblock workspace %}
+
+{# === Collapse state memory === #}
+{% block scripts %}
+    {{ super() }}
+    <script>
+    (function() {
+        document.addEventListener('DOMContentLoaded', function() {
+            const STORAGE_KEY = 'lore-catalogue-';
+            const categories = document.querySelectorAll('.catalogue-category');
+
+            categories.forEach(function(category) {
+                const key = STORAGE_KEY + category.getAttribute('data-category');
+                const isExpanded = localStorage.getItem(key);
+
+                if (isExpanded === 'false') {
+                    category.removeAttribute('open');
+                } else if (isExpanded === 'true') {
+                    category.setAttribute('open', '');
+                }
+
+                category.addEventListener('toggle', function() {
+                    localStorage.setItem(key, category.open ? 'true' : 'false');
+                });
+            });
+        });
+    })();
+    </script>
+{% endblock scripts %}

@@ -89,6 +89,7 @@ class SpadesOutputs:
     name="SPAdes Assembly",
     description="Assemble genomes from short reads using SPAdes.",
     category="Assembly",
+    icon="🧩",
     inputs=SpadesInputs,
     outputs=SpadesOutputs,
 )
