@@ -238,25 +238,32 @@ class WorkflowManager:
                     # C. LiteralBinding may be to a concrete Artifact; convert to Reference
                     elif isinstance(b, LiteralBinding):
                         # c1. Upgrade an Artifact to a DAG edge binding
-                        if accepts_artifact and b.value in artifact_to_creator:
-                            creator_task_id, out_key = artifact_to_creator[b.value]
-                            ref_sig = (creator_task_id, out_key)
+                        if accepts_artifact:
+                            # Unpack select="multiple"
+                            vals = b.value if isinstance(b.value, list) else [b.value]
 
-                            if ref_sig not in seen_refs:
-                                seen_refs.add(ref_sig)
-                                dehydrated_list.append(ReferenceBinding(
-                                    source_id=creator_task_id,
-                                    output_key=out_key,
-                                ))
+                            for val in vals:
+                                if not isinstance(val, str):
+                                    continue  # Skip non-string values
 
-                        # c2. Upgrade an input to a DAG start node
-                        elif accepts_artifact:
-                            # Artifact must be provided by user at runtime
-                            if session.get_artifact(b.value):
-                                dehydrated_list.append(UserInputBinding(input_key=input_key))
-                            # Value must be provided by user at runtime
-                            else:
-                                dehydrated_list.append(LiteralBinding(value=b.value))
+                                if val in artifact_to_creator:
+                                    creator_task_id, out_key = artifact_to_creator[val]
+                                    ref_sig = (creator_task_id, out_key)
+
+                                    if ref_sig not in seen_refs:
+                                        seen_refs.add(ref_sig)
+                                        dehydrated_list.append(ReferenceBinding(
+                                            source_id=creator_task_id,
+                                            output_key=out_key,
+                                        ))
+
+                                # c2. Upgrade an input to a DAG start node
+                                # Artifact must be provided by user at runtime
+                                elif session.get_artifact(val):
+                                    dehydrated_list.append(UserInputBinding(input_key=input_key))
+                                # Value must be provided by user at runtime
+                                else:
+                                    dehydrated_list.append(LiteralBinding(value=val))
 
                         # D. ValueInput (primitive literal)
                         else:
@@ -283,7 +290,9 @@ class WorkflowManager:
         if name is None:
             name = f"Workflow from {session.name}"
 
-        return Workflow(id=new_workflow_id, name=name, tasks=workflow_tasks)
+        workflow = Workflow(id=new_workflow_id, name=name, tasks=workflow_tasks)
+        self.save_workflow(workflow)
+        return workflow
 
     def hydrate_workflow(
         self,
