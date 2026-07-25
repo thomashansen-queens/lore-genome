@@ -178,7 +178,7 @@ def main() -> int:
     print(f"run.bat    : {bat_state}")
 
     current_os = platform.system().lower()
-    print(f"\nCurrent OS   : {current_os}")
+    print(f"\nCurrent OS : {current_os}")
 
     print_header("Setup complete!")
     print("\nNow, you can run LoRē with the following file:")
