@@ -5,6 +5,7 @@ import json
 from collections.abc import Iterator
 import pytest
 
+from lore.core.artifacts.artifact import ArtifactPathBundle
 from lore.core.execution.materializer import _materialize_single_artifact
 from lore.core.tasks import AdapterStrategy, Materialization
 
@@ -26,7 +27,7 @@ def staged_artifact(temp_session, dummy_jsonl_file):
 
 
 def test_materialization_path(temp_session, staged_artifact):
-    """Proves PATH materialization returns a raw string."""
+    """Proves PATH materialization returns an ArtifactPathBundle."""
     result, io_meta = _materialize_single_artifact(
         session=temp_session,
         artifact=staged_artifact,
@@ -34,8 +35,8 @@ def test_materialization_path(temp_session, staged_artifact):
         accepted_data=["*"],
     )
 
-    assert isinstance(result, str)
-    assert "materialization_test.jsonl" in result
+    assert isinstance(result, ArtifactPathBundle)
+    assert "materialization_test.jsonl" in str(result.main)
     assert isinstance(io_meta, dict)
 
 
