@@ -74,7 +74,7 @@ def elink(
                     "dbfrom": dbfrom.value,
                     "db": db.value,
                     "id": clean_uids,  # using a list formats to 'id=UDI1&id=UID2', which separates linksets by UID
-                    "byid": "y",  # this only works for retmode='xml'... leaving for now
+                    # "byid": "y",  # this only works for retmode='xml'... leaving for now
                 },
             )
             response.raise_for_status()
