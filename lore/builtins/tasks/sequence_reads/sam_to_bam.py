@@ -44,9 +44,9 @@ class SamToBamOutputs:
     inputs=SamToBamInputs,
     outputs=SamToBamOutputs,
     name="SAM to BAM Conversion",
-    category="Alignment",
+    category="Sequence reads",
     preview_mode="dry_run",
-    icon="🔄",
+    icon="🗘",
 )
 def sam_to_bam_handler(
     ctx: lore.ExecutionContext,

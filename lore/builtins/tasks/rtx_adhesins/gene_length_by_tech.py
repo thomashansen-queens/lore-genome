@@ -137,7 +137,8 @@ def _statistics_by_tech(df: pd.DataFrame) -> dict:
     inputs=GeneLengthByTechInputs,
     outputs=GeneLengthByTechOutputs,
     name="Plot Gene Length by Sequencing Technology",
-    category="RTX Adhesins",
+    category="Adhesins manuscript",
+    icon="🗠",
     preview_mode="full",
 )
 def gene_length_by_tech(

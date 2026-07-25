@@ -105,7 +105,7 @@ def _build_read_filter(min_mapping_quality, read_filters):
     inputs=FilterBamInputs,
     outputs=FilterBamOutputs,
     name="Filter BAM",
-    category="Alignment",
+    category="Sequence reads",
     icon="✂",
     preview_mode="dry_run",
 )

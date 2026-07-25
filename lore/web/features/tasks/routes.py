@@ -49,7 +49,7 @@ async def list_available_tasks(
         name="features/tasks/catalogue.html",
         context=ctx.render(
             session=s,
-            tasks=available_tasks,
+            task_definitions=available_tasks,
         )
     )
 

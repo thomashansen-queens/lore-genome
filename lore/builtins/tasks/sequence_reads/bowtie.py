@@ -53,11 +53,11 @@ class Bowtie2Outputs:
 
 
 @lore.task(
-    key="alignment.bowtie2",
+    key="sequence_reads.bowtie2",
     inputs=Bowtie2Inputs,
     outputs=Bowtie2Outputs,
     name="Bowtie2 Alignment",
-    category="Alignment",
+    category="Sequence reads",
     preview_mode="dry_run",
     icon="B",
 )

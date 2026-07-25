@@ -81,7 +81,7 @@ class Minimap2Outputs:
     inputs=Minimap2Inputs,
     outputs=Minimap2Outputs,
     name="Minimap2 Alignment",
-    category="Alignment",
+    category="Sequence reads",
     preview_mode="dry_run",
     icon="M",
 )

@@ -86,10 +86,12 @@ class BamPileupOutputs:
 
 
 @lore.task(
-    "alignment.bam_pileup",
+    "sequence_reads.bam_pileup",
+    category="Sequence reads",
     inputs=BamPileupInputs,
     outputs=BamPileupOutputs,
     description="Generate a pileup plot of aligned reads to a reference genome",
+    icon="☷",
     preview_mode="full",
 )
 def bam_pileup(

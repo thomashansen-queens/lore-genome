@@ -56,6 +56,7 @@ class RegionFeaturesOutputs:
     inputs=RegionFeaturesInputs,
     outputs=RegionFeaturesOutputs,
     description="Generate a feature track for a specific genomic window from genome annotations.",
+    icon="☷",
     preview_mode="live_full",
 )
 def region_features(

@@ -120,6 +120,7 @@ def _check_system_deps(ctx: lore.ExecutionContext):
 @lore.task(
     "FAL_prediction",
     description="Run FAL_prediction to find bacterial fribrillar adhesins-like (FA-Like) proteins",
+    category="Adhesins manuscript",
     inputs=FALPredictionInputs,
     outputs=FALPredictionOutputs,
     icon="🦠",

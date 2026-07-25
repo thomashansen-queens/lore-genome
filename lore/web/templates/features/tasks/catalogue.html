@@ -10,20 +10,31 @@
 
     <div class="column">
         <div class="scroll-area" style="padding-right: var(--spacing-md);">
-            {% for task in tasks %}
-                <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}" 
-                class="card clickable"
-                style="margin-top: var(--spacing-sm);">
-                    <div>
-                        <h3>
-                            <span style="margin-right: 0.5rem;">{{ task.icon }}</span> 
-                            {{ task.name }}
-                        </h3>
-                        <p class="muted">
-                            {{ task.description }}
-                        </p>
+            {% for category, tasks in task_definitions | groupby('category') | sort %}
+                <details open style="margin-bottom: var(--spacing-sm);">
+                    <summary style="cursor: pointer;">
+                        <h4>{{ category }}</h4>
+                    </summary>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--spacing-sm);">
+                    {% for task in tasks | sort(attribute='name') %}
+                        <a href="/sessions/{{ session.id }}/tasks/configure/{{ task.key }}" 
+                        class="card clickable"
+                        style="margin-top: var(--spacing-sm);">
+                            <div>
+                                <h3>
+                                    <span style="margin-right: 0.5rem;">{{ task.icon }}</span> 
+                                    {{ task.name }}
+                                </h3>
+                                <p class="muted">
+                                    {{ task.description }}
+                                </p>
+                            </div>
+                        </a>
+                    {% endfor %}
                     </div>
-                </a>
+
+                </details>
             {% endfor %}
         </div>
     </div>

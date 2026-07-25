@@ -25,10 +25,11 @@ class BamToFastqOutputs:
 
 
 @lore.task(
-    key="alignment.bam_to_fastq",
+    key="sequence_reads.bam_to_fastq",
     name="BAM to FASTQ",
     description="Extracts sequences from a BAM file into synchronized Paired-End FASTQ files.",
-    category="Alignment",
+    category="Sequence reads",
+    icon="🗘",
     inputs=BamToFastqInputs,
     outputs=BamToFastqOutputs,
 )
