@@ -3,7 +3,6 @@ Synthesizing and anaylzing protein clusters
 """
 import pandas as pd
 
-# from lore.core.adapters import adapter_registry, TableAdapter
 import lore
 from lore.core.utils.parse import fasta_lookup
 
@@ -80,6 +79,12 @@ class BaseClusterInputs:
         select="optional",
         load_as="path",
     )
+    save_fasta = lore.ValueInput(
+        bool,
+        label="Cluster FASTA",
+        description="Create a new FASTA file containing only the top sequences from each cluster.",
+        default=True,
+    )
 
 # --- Summarize cluster origins ---
 
@@ -95,6 +100,11 @@ class SummarizeClusterOriginsOutputs:
         label="Cluster origins summary",
         description="A tabular report detailing how many and which genomes contribute to each cluster.",
         is_primary=True,
+    )
+    cluster_fasta = lore.TaskOutput(
+        data_type="protein_fasta",
+        label="Cluster representative FASTA",
+        is_primary=False,
     )
 
 
@@ -112,6 +122,7 @@ def summarize_cluster_origins(
     cluster_map: list[dict],
     genome_annotations: list[dict],
     protein_fasta: str | None = None,
+    save_fasta: bool = True,
 ):
     """
     Summarize the origins of protein clusters by counting how many and which genomes contribute to each cluster.
@@ -198,6 +209,33 @@ def summarize_cluster_origins(
         }
     )
 
+    # 5. Write new FASTA file
+    if save_fasta and protein_fasta:
+        ctx.logger.info("Writing new FASTA file with %s cluster representatives...", len(final_summary_df))
+        fasta_adapter = ctx.get_input_adapter("protein_fasta")
+        if not fasta_adapter:
+            ctx.logger.error("No FASTA adapter found for protein_fasta input; cannot write new FSATA file.")
+            return
+
+        clean_df = final_summary_df.dropna(subset=["protein_sequence"])
+        records = (
+            clean_df
+            .rename(columns={
+                "best_representative": "accession",
+                "cluster_name": "name",
+                "protein_sequence": "sequence",
+            })
+            [["accession", "name", "sequence"]]
+            .to_dict(orient="records")
+        )
+
+        ctx.materialize_content(
+            output_key="cluster_fasta",
+            content=fasta_adapter.serialize(records),
+            extension="fasta",
+        )
+
+
 # --- Individual cluster report ---
 
 class InspectClusterInputs(BaseClusterInputs):
@@ -214,7 +252,7 @@ class InspectClusterInputs(BaseClusterInputs):
         bool,
         description="Whether to write the sequences of the cluster members to a new FASTA file. This is not very useful for LoRē thanks to the semantic typing system, but maybe you want to download the FASTA for use elsewhere?",
         default=False,
-        label="Write cluster FASTA",
+        label="Save cluster FASTA",
     )
 
 

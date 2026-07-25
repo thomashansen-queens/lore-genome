@@ -71,11 +71,32 @@ class EfetchProteinInputs:
 
 class EfetchProteinOutputs:
     """Outputs for EFetch Protein task"""
-    protein_records = lore.TaskOutput(
-        data_type="overridden_in_task",
-        label="Protein records",
-        description="Data retrieved from NCBI per the selected fetch format.",
+    protein_fasta = lore.TaskOutput(
+        data_type="protein_fasta",
+        label="Protein FASTA",
+        description="FASTA sequences retrieved from NCBI for the given protein accession(s).",
     )
+    ipg_records = lore.TaskOutput(
+        data_type="ipg_records",
+        label="Protein records",
+        description="Identical Protein Groups (IPG) records, containing linked metadata for each protein.",
+    )
+    feature_table = lore.TaskOutput(
+        data_type="feature_table",
+        label="Feature Table",
+        description="Feature table retrieved from NCBI for the given protein accession(s).",
+    )
+    native_xml = lore.TaskOutput(
+        data_type="protein_xml",
+        label="Native XML",
+        description="Native XML data retrieved from NCBI for the given protein accession(s).",
+    )
+    gbseq_xml = lore.TaskOutput(
+        data_type="protein_xml",
+        label="GBSeq XML",
+        description="GBSeq XML data retrieved from NCBI for the given protein accession(s).",
+    )
+
 
 
 @lore.task(
@@ -149,15 +170,16 @@ def efetch_protein(
 
     if not accumulated_data:
         ctx.logger.warning(f"No {fetch_format.value} results found for the provided accessions.")
-        return ctx.materialize_content("", output_key="protein_records", extension=extension)
+        return ctx.materialize_content("", output_key=out_type, extension=extension)
 
     final_content = join_char.join(accumulated_data) + "\n"  # Ensure final newline
     file_prefix = "ipg_mapping" if fetch_format == ProteinFormat.IPG else "protein_records"
-    
+
     ctx.logger.info(f"Successfully fetched {len(accumulated_data) - 1} rows of {fetch_format.value}.")
+
     return ctx.materialize_content(
         content=final_content,
-        output_key="protein_records",
+        output_key=out_type,
         name=file_prefix,
         extension=extension,
         data_type=out_type,

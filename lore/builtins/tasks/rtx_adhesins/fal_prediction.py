@@ -22,6 +22,9 @@ it to your PATH.
 
 scikit-learn: pip install scikit-learn
 Used by the FAL_prediction script for its machine learning model. Install via pip or conda.
+
+TODO: The T-Reks output is currently discarded, but it would be quite interesting to keep it
+and visualize it using the built-in visualization system used for InterProScan.
 """
 import lore
 from pathlib import Path
