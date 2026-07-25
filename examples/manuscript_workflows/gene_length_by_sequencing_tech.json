@@ -1,0 +1,478 @@
+{
+  "id": "gene_length_by_sequencing_tech",
+  "name": "Gene length by sequencing tech",
+  "description": "Compare how long protein sequences are listed as being depending on the technology used to sequence them.",
+  "created_at": "2026-07-25T03:45:29.195689Z",
+  "tasks": [
+    {
+      "id": "7b25a0b1-80f0-42e8-948f-4a13e2a037d3",
+      "registry_key": "rtx_adhesins.gene_length_by_tech",
+      "name": "Plot length v tech",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "genome_reports": [
+          {
+            "type": "reference",
+            "source_id": "f4f0c2b0-4138-4761-bce9-1271615f4339",
+            "output_key": "joined_table",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.188338Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "f4f0c2b0-4138-4761-bce9-1271615f4339",
+      "registry_key": "data.join_tables",
+      "name": "Attach assembly meta",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "conflict_strategy": [
+          {
+            "type": "literal",
+            "value": "suffix"
+          }
+        ],
+        "how": [
+          {
+            "type": "literal",
+            "value": "inner"
+          }
+        ],
+        "left_on": [
+          {
+            "type": "literal",
+            "value": "assembly"
+          }
+        ],
+        "right_on": [
+          {
+            "type": "literal",
+            "value": "genome_accession"
+          }
+        ],
+        "right_table": [
+          {
+            "type": "reference",
+            "source_id": "eca4dea7-565f-4289-ac1a-7da5b83d856b",
+            "output_key": "metadata",
+            "artifact_id": null
+          }
+        ],
+        "key_regex_clean": [],
+        "left_table": [
+          {
+            "type": "reference",
+            "source_id": "622c0c30-b6b3-4ccd-8e09-c5f73b4220fc",
+            "output_key": "joined_table",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.189401Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "eca4dea7-565f-4289-ac1a-7da5b83d856b",
+      "registry_key": "ncbi.datasets.assembly_metadata",
+      "name": "Fetch assembly metadata",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "accessions": [
+          {
+            "type": "reference",
+            "source_id": "86d56db1-ae7e-4827-9a83-ba07b86265f9",
+            "output_key": "column",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.190443Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "86d56db1-ae7e-4827-9a83-ba07b86265f9",
+      "registry_key": "extract_column",
+      "name": "Unique genome assemblies",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "622c0c30-b6b3-4ccd-8e09-c5f73b4220fc",
+            "output_key": "joined_table",
+            "artifact_id": null
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "new_name": [
+          {
+            "type": "literal",
+            "value": "genome_accession"
+          }
+        ],
+        "column_name": [
+          {
+            "type": "literal",
+            "value": "assembly"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.191443Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "622c0c30-b6b3-4ccd-8e09-c5f73b4220fc",
+      "registry_key": "data.join_tables",
+      "name": "Join NCBI data to BLAST result",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "conflict_strategy": [
+          {
+            "type": "literal",
+            "value": "suffix"
+          }
+        ],
+        "how": [
+          {
+            "type": "literal",
+            "value": "inner"
+          }
+        ],
+        "left_on": [
+          {
+            "type": "literal",
+            "value": "accession"
+          }
+        ],
+        "right_on": [
+          {
+            "type": "literal",
+            "value": "protein"
+          }
+        ],
+        "right_table": [
+          {
+            "type": "reference",
+            "source_id": "76cb06ba-f951-42dc-b6ff-0eed6a0edf2b",
+            "output_key": "protein_fasta",
+            "artifact_id": null
+          }
+        ],
+        "key_regex_clean": [
+          {
+            "type": "literal",
+            "value": "\\.\\d+"
+          }
+        ],
+        "left_table": [
+          {
+            "type": "reference",
+            "source_id": "53168325-4a99-4ad7-a140-3744f54910ef",
+            "output_key": "ipg_records",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.192412Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "53168325-4a99-4ad7-a140-3744f54910ef",
+      "registry_key": "ncbi.entrez.efetch_protein",
+      "name": "Get assembly accessions",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "fetch_format": [
+          {
+            "type": "literal",
+            "value": "IPG Table"
+          }
+        ],
+        "uid": [
+          {
+            "type": "reference",
+            "source_id": "73daa4f2-7b1d-47ad-a2ff-fcdbc52d49ab",
+            "output_key": "filtered_data",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.193110Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "73daa4f2-7b1d-47ad-a2ff-fcdbc52d49ab",
+      "registry_key": "filter.query",
+      "name": "require hit length > 600",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "regex": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "26845b5b-40fd-4408-8ba4-e1cd3e3607e7",
+            "output_key": "results",
+            "artifact_id": null
+          }
+        ],
+        "query_string": [
+          {
+            "type": "literal",
+            "value": "alignment_length > 600"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.193794Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "26845b5b-40fd-4408-8ba4-e1cd3e3607e7",
+      "registry_key": "ncbi.blast",
+      "name": "BLASTp other assemblies",
+      "description": "",
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "query": [
+          {
+            "type": "reference",
+            "source_id": "7071b5d9-e003-4fed-95e4-f196807728de",
+            "output_key": "sliced_fasta",
+            "artifact_id": null
+          }
+        ],
+        "database": [
+          {
+            "type": "literal",
+            "value": "nr"
+          }
+        ],
+        "program": [
+          {
+            "type": "literal",
+            "value": "blastp"
+          }
+        ],
+        "organism": [
+          {
+            "type": "user_input",
+            "input_key": "organism",
+            "value": null
+          }
+        ],
+        "expect": [
+          {
+            "type": "literal",
+            "value": 0.01
+          }
+        ],
+        "hitlist_size": [
+          {
+            "type": "literal",
+            "value": 4000
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.194527Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "7071b5d9-e003-4fed-95e4-f196807728de",
+      "registry_key": "sequence.slice",
+      "name": "Trim to 800 C-terminal resis",
+      "description": "",
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "sequences": [
+          {
+            "type": "reference",
+            "source_id": "76cb06ba-f951-42dc-b6ff-0eed6a0edf2b",
+            "output_key": "protein_fasta",
+            "artifact_id": null
+          }
+        ],
+        "start": [
+          {
+            "type": "literal",
+            "value": "-800"
+          }
+        ],
+        "end": [],
+        "keep_remainder": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.195073Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "76cb06ba-f951-42dc-b6ff-0eed6a0edf2b",
+      "registry_key": "ncbi.entrez.efetch_protein",
+      "name": "fetch sequence",
+      "description": "",
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "user_input",
+            "input_key": "uid",
+            "value": null
+          }
+        ],
+        "fetch_format": [
+          {
+            "type": "literal",
+            "value": "FASTA Sequence"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T03:45:29.195597Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

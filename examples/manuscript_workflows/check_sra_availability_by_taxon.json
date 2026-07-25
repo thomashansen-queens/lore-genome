@@ -1,0 +1,300 @@
+{
+  "id": "check_sra_availability_by_taxon",
+  "name": "Check SRA availability by taxon",
+  "description": "Check which long-read datasets are available on the sequence read archive (SRA)",
+  "created_at": "2026-07-25T05:04:24.138035Z",
+  "tasks": [
+    {
+      "id": "4351d159-7310-4ab6-be5d-c12bfefee40a",
+      "registry_key": "filter.query",
+      "name": "Long-read only",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "regex": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "11c25f01-5a71-48b7-8ef7-a6917ec73b43",
+            "output_key": "report",
+            "artifact_id": null
+          }
+        ],
+        "query_string": [
+          {
+            "type": "literal",
+            "value": "sequencing_tech.str.contains(\"nanopore|ont|minion|gridion|flongle|pacbio|smrt|rs ii|rsii|sequel\", case=False, na=False)"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.134446Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "11c25f01-5a71-48b7-8ef7-a6917ec73b43",
+      "registry_key": "ncbi.fetch_genome_reports",
+      "name": "Fetch NCBI Genome Reports",
+      "description": "",
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "taxon": [
+          {
+            "type": "user_input",
+            "input_key": "taxon",
+            "value": null
+          }
+        ],
+        "filters_reference_only": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_has_annotation": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_exclude_paired_reports": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_exclude_atypical": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_is_type_material": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_is_ictv_exemplar": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_exclude_multi_isolate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "tax_exact_match": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_assembly_level": [
+          {
+            "type": "literal",
+            "value": "complete_genome"
+          },
+          {
+            "type": "literal",
+            "value": "chromosome"
+          }
+        ],
+        "filters_assembly_source": [
+          {
+            "type": "literal",
+            "value": "all"
+          }
+        ],
+        "filters_assembly_version": [
+          {
+            "type": "literal",
+            "value": "current"
+          }
+        ],
+        "filters_is_metagenome_derived": [
+          {
+            "type": "literal",
+            "value": "METAGENOME_DERIVED_UNSET"
+          }
+        ],
+        "filters_type_material_category": [
+          {
+            "type": "literal",
+            "value": "NONE"
+          }
+        ],
+        "filters_first_release_date": [],
+        "filters_last_release_date": [],
+        "search_terms": [],
+        "fetch_limit": []
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.135377Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "7bf5967d-083c-4210-858d-e30c6f2c68ca",
+      "registry_key": "ncbi.entrez.esummary",
+      "name": "SRA metadata",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "reference",
+            "source_id": "48e6624d-103c-493e-b78a-eadc11fb02c7",
+            "output_key": "link_results",
+            "artifact_id": null
+          }
+        ],
+        "database": [
+          {
+            "type": "literal",
+            "value": "sra"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.136046Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "48e6624d-103c-493e-b78a-eadc11fb02c7",
+      "registry_key": "ncbi.entrez.elink",
+      "name": "BioSample to SRA",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "dbfrom": [
+          {
+            "type": "literal",
+            "value": "biosample"
+          }
+        ],
+        "uid": [
+          {
+            "type": "reference",
+            "source_id": "50114acc-ad30-4874-85e4-8f92eecd30a5",
+            "output_key": "search_results",
+            "artifact_id": null
+          }
+        ],
+        "db": [
+          {
+            "type": "literal",
+            "value": "sra"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.136687Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "50114acc-ad30-4874-85e4-8f92eecd30a5",
+      "registry_key": "ncbi.entrez.esearch",
+      "name": "Accession to UID",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "terms": [
+          {
+            "type": "reference",
+            "source_id": "597edb72-ef62-4c36-a1e9-d72331a3abf7",
+            "output_key": "column",
+            "artifact_id": null
+          }
+        ],
+        "database": [
+          {
+            "type": "literal",
+            "value": "biosample"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.137313Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "597edb72-ef62-4c36-a1e9-d72331a3abf7",
+      "registry_key": "extract_column",
+      "name": "Grab biosample accession",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "4351d159-7310-4ab6-be5d-c12bfefee40a",
+            "output_key": "filtered_data",
+            "artifact_id": null
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "column_name": [
+          {
+            "type": "literal",
+            "value": "biosample_accession"
+          }
+        ],
+        "new_name": []
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:04:24.137941Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

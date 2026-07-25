@@ -1,0 +1,737 @@
+{
+  "id": "rtx_adhesin_identification",
+  "name": "RTX adhesin identification",
+  "description": "The pipeline used in \"Identification and characterization of bacterial repeat-in-toxin adhesins using long-read genome analysis\"",
+  "created_at": "2026-07-25T04:06:00.558761Z",
+  "tasks": [
+    {
+      "id": "32a7ed50-f98c-4987-9dd5-765532d7f1e0",
+      "registry_key": "interproscan.visualize_scan",
+      "name": "Visualize all long InterProScan results",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "protein_accessions": [],
+        "e_threshold": [
+          {
+            "type": "literal",
+            "value": 0.00001
+          }
+        ],
+        "max_proteins": [
+          {
+            "type": "literal",
+            "value": 75
+          }
+        ],
+        "interproscan_results": [
+          {
+            "type": "reference",
+            "source_id": "d91740d1-c50a-4392-8545-2085f85c5465",
+            "output_key": "annotations_json",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.553612Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "d91740d1-c50a-4392-8545-2085f85c5465",
+      "registry_key": "annotation.interproscan",
+      "name": "InterProScan",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "disable_precalc": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "input_file": [
+          {
+            "type": "reference",
+            "source_id": "11c9c25b-ab96-4a12-ac79-ee942e37ba83",
+            "output_key": "filtered_data",
+            "artifact_id": null
+          }
+        ],
+        "appl": [
+          {
+            "type": "literal",
+            "value": "CDD"
+          },
+          {
+            "type": "literal",
+            "value": "COILS"
+          },
+          {
+            "type": "literal",
+            "value": "Gene3D"
+          },
+          {
+            "type": "literal",
+            "value": "HAMAP"
+          },
+          {
+            "type": "literal",
+            "value": "MobiDBLite"
+          },
+          {
+            "type": "literal",
+            "value": "PANTHER"
+          },
+          {
+            "type": "literal",
+            "value": "Pfam"
+          },
+          {
+            "type": "literal",
+            "value": "PIRSF"
+          },
+          {
+            "type": "literal",
+            "value": "PRINTS"
+          },
+          {
+            "type": "literal",
+            "value": "PROSITEPATTERNS"
+          },
+          {
+            "type": "literal",
+            "value": "PROSITEPROFILES"
+          },
+          {
+            "type": "literal",
+            "value": "SFLD"
+          },
+          {
+            "type": "literal",
+            "value": "SMART"
+          },
+          {
+            "type": "literal",
+            "value": "SUPERFAMILY"
+          },
+          {
+            "type": "literal",
+            "value": "NCBIFAM"
+          }
+        ],
+        "seq_type": [
+          {
+            "type": "literal",
+            "value": "protein"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.554134Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "11c9c25b-ab96-4a12-ac79-ee942e37ba83",
+      "registry_key": "filter.query",
+      "name": "very long clusters (>1500)",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "regex": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "5d4030b3-7b39-4d9f-bbc9-73a001e12175",
+            "output_key": "cluster_fasta",
+            "artifact_id": null
+          }
+        ],
+        "query_string": [
+          {
+            "type": "literal",
+            "value": "protein_sequence.str.len() > 1500"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.554548Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "5d4030b3-7b39-4d9f-bbc9-73a001e12175",
+      "registry_key": "analysis.summarize_cluster_origins",
+      "name": "Summarize cluster origins",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "genome_annotations": [
+          {
+            "type": "reference",
+            "source_id": "904ebc53-4291-4a40-90fb-dfe70c8bce15",
+            "output_key": "report",
+            "artifact_id": null
+          }
+        ],
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "2e7e50d2-f15f-44c4-8a5e-074414a04767",
+            "output_key": "merged_data",
+            "artifact_id": null
+          }
+        ],
+        "save_fasta": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "cluster_map": [
+          {
+            "type": "reference",
+            "source_id": "f7069d80-8cc3-4cc2-9720-c331da27f127",
+            "output_key": "cluster_tsv",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.554952Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "904ebc53-4291-4a40-90fb-dfe70c8bce15",
+      "registry_key": "ncbi.fetch_genome_annotation_package",
+      "name": "Fetch gene annotations",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "search_text": [],
+        "fetch_limit": [],
+        "locations": [],
+        "gene_types": [],
+        "genome_accession": [
+          {
+            "type": "reference",
+            "source_id": "6277ff10-9082-47d6-8148-5d9c39b979ca",
+            "output_key": "sampled_data",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.555363Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "f7069d80-8cc3-4cc2-9720-c331da27f127",
+      "registry_key": "mmseqs.easy_cluster",
+      "name": "MMseqs2 cluster by C-terminal 800",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "min_seq_id": [
+          {
+            "type": "literal",
+            "value": 0.8
+          }
+        ],
+        "keep_truncated": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "cluster_window": [
+          {
+            "type": "literal",
+            "value": "-800"
+          }
+        ],
+        "keep_representative_fasta": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "sensitivity": [
+          {
+            "type": "literal",
+            "value": 4.0
+          }
+        ],
+        "coverage": [
+          {
+            "type": "literal",
+            "value": 0.8
+          }
+        ],
+        "source_fasta": [
+          {
+            "type": "reference",
+            "source_id": "2e7e50d2-f15f-44c4-8a5e-074414a04767",
+            "output_key": "merged_data",
+            "artifact_id": null
+          }
+        ],
+        "strict_window": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.555913Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "2e7e50d2-f15f-44c4-8a5e-074414a04767",
+      "registry_key": "merge",
+      "name": "Merge and deduplicate FASTAs",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "0f7dfa44-0d03-42d8-978e-a1e18e4e50bd",
+            "output_key": "protein_fastas",
+            "artifact_id": null
+          }
+        ],
+        "group_by": [
+          {
+            "type": "literal",
+            "value": "protein_accession"
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.556364Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "0f7dfa44-0d03-42d8-978e-a1e18e4e50bd",
+      "registry_key": "ncbi.fetch_assembly_package",
+      "name": "Fetch protein FASTAs",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "fetch_limit": [],
+        "extract_catalog": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "chromosomes": [],
+        "include_annotation_type": [
+          {
+            "type": "literal",
+            "value": "PROT_FASTA"
+          }
+        ],
+        "extract_assembly_report": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "genome_accession": [
+          {
+            "type": "reference",
+            "source_id": "6277ff10-9082-47d6-8148-5d9c39b979ca",
+            "output_key": "sampled_data",
+            "artifact_id": null
+          }
+        ],
+        "hydrated": [
+          {
+            "type": "literal",
+            "value": "FULLY_HYDRATED"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.556801Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "6277ff10-9082-47d6-8148-5d9c39b979ca",
+      "registry_key": "filter.sample",
+      "name": "Stratified sample (country, year)",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "sample_size": [
+          {
+            "type": "literal",
+            "value": 50
+          }
+        ],
+        "partition": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "sample_by": [
+          {
+            "type": "literal",
+            "value": "collection_country"
+          },
+          {
+            "type": "literal",
+            "value": "collection_date"
+          }
+        ],
+        "seed": [
+          {
+            "type": "literal",
+            "value": 42
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "f1169869-510a-459c-90d7-1d713d6f51f5",
+            "output_key": "filtered_data",
+            "artifact_id": null
+          }
+        ],
+        "strategy": [
+          {
+            "type": "literal",
+            "value": "stratified_strict"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.557246Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "f1169869-510a-459c-90d7-1d713d6f51f5",
+      "registry_key": "filter.query",
+      "name": "Long-read only",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "regex": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "9f7bddae-a617-422b-b8a1-c01b882d65ac",
+            "output_key": "filtered_data",
+            "artifact_id": null
+          }
+        ],
+        "query_string": [
+          {
+            "type": "literal",
+            "value": "sequencing_tech.str.contains(\"nanopore|ont|minion|gridion|flongle|pacbio|smrt|rs ii|rsii|sequel\", case=False, na=False)"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.557717Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "9f7bddae-a617-422b-b8a1-c01b882d65ac",
+      "registry_key": "ncbi.filter_post_hoc",
+      "name": "Complete/chromosome level",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "filters_assembly_level": [
+          {
+            "type": "literal",
+            "value": "complete_genome"
+          },
+          {
+            "type": "literal",
+            "value": "chromosome"
+          }
+        ],
+        "filters_assembly_version": [
+          {
+            "type": "literal",
+            "value": "current"
+          }
+        ],
+        "filters_exclude_atypical": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_has_annotation": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_is_type_material": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_is_ictv_exemplar": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "38dca8c3-6422-48c2-acba-ede3b6c8d239",
+            "output_key": "report",
+            "artifact_id": null
+          }
+        ],
+        "filters_assembly_source": [
+          {
+            "type": "literal",
+            "value": "all"
+          }
+        ],
+        "filters_type_material_category": [
+          {
+            "type": "literal",
+            "value": "NONE"
+          }
+        ],
+        "filters_last_release_date": [],
+        "tax_exact_match": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_exclude_paired_reports": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_first_release_date": [],
+        "filters_reference_only": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "best_ani_match": [],
+        "filters_is_metagenome_derived": [
+          {
+            "type": "literal",
+            "value": "METAGENOME_DERIVED_UNSET"
+          }
+        ],
+        "filters_exclude_multi_isolate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.558206Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "38dca8c3-6422-48c2-acba-ede3b6c8d239",
+      "registry_key": "ncbi.fetch_genome_reports",
+      "name": "Find genome assemblies",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "filters_assembly_level": [
+          {
+            "type": "literal",
+            "value": "complete_genome"
+          },
+          {
+            "type": "literal",
+            "value": "chromosome"
+          },
+          {
+            "type": "literal",
+            "value": "scaffold"
+          },
+          {
+            "type": "literal",
+            "value": "contig"
+          }
+        ],
+        "fetch_limit": [],
+        "filters_assembly_version": [
+          {
+            "type": "literal",
+            "value": "current"
+          }
+        ],
+        "taxon": [
+          {
+            "type": "user_input",
+            "input_key": "taxon",
+            "value": null
+          }
+        ],
+        "filters_exclude_atypical": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_has_annotation": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_is_type_material": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_is_ictv_exemplar": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_assembly_source": [
+          {
+            "type": "literal",
+            "value": "all"
+          }
+        ],
+        "filters_type_material_category": [
+          {
+            "type": "literal",
+            "value": "NONE"
+          }
+        ],
+        "filters_last_release_date": [],
+        "tax_exact_match": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "search_terms": [],
+        "filters_exclude_paired_reports": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "filters_first_release_date": [],
+        "filters_reference_only": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "filters_is_metagenome_derived": [
+          {
+            "type": "literal",
+            "value": "METAGENOME_DERIVED_UNSET"
+          }
+        ],
+        "filters_exclude_multi_isolate": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T04:06:00.558685Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

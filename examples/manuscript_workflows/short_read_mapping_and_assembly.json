@@ -1,0 +1,305 @@
+{
+  "id": "short_read_mapping_and_assembly",
+  "name": "Short read mapping and assembly",
+  "description": "Attempts a de novo assembly of short reads from an existing sequencing project. Uses read mapping to check original assembly success against final sequence.",
+  "created_at": "2026-07-25T05:37:36.812093Z",
+  "tasks": [
+    {
+      "id": "002773fa-44a5-4b06-8bd0-06285aa46dbd",
+      "registry_key": "assembly.spades",
+      "name": "De novo assembly (SPAdes)",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "error_correction": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "reads": [
+          {
+            "type": "reference",
+            "source_id": "f8c07dbc-b7f2-43ed-8688-8a5d3bf0c797",
+            "output_key": "fastq_bundles",
+            "artifact_id": null
+          }
+        ],
+        "kmer_sizes": []
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.809169Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "89ff79ab-8d54-4898-96e8-0e1897e8b52e",
+      "registry_key": "alignment.bam_pileup",
+      "name": "Draw read pileup plot",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "end_bp": [
+          {
+            "type": "literal",
+            "value": 25000
+          }
+        ],
+        "overhang_reads": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "replicon": [],
+        "sort_strategy": [
+          {
+            "type": "literal",
+            "value": "start"
+          }
+        ],
+        "start_bp": [
+          {
+            "type": "literal",
+            "value": 0
+          }
+        ],
+        "max_depth": [
+          {
+            "type": "literal",
+            "value": 1000
+          }
+        ],
+        "genome_fasta": [
+          {
+            "type": "reference",
+            "source_id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+            "output_key": "genome_fastas",
+            "artifact_id": null
+          }
+        ],
+        "min_window_coverage": [
+          {
+            "type": "literal",
+            "value": 0.0
+          }
+        ],
+        "bam_file": [
+          {
+            "type": "reference",
+            "source_id": "b51ffe62-b6a9-4fd7-917d-f985807686b7",
+            "output_key": "bam",
+            "artifact_id": null
+          }
+        ],
+        "max_reads": [
+          {
+            "type": "literal",
+            "value": 10000
+          }
+        ],
+        "include_metadata": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.809771Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "b51ffe62-b6a9-4fd7-917d-f985807686b7",
+      "registry_key": "alignment.sam_to_bam",
+      "name": "SAM to BAM Conversion",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "sam_file": [
+          {
+            "type": "reference",
+            "source_id": "5474a7a5-cc84-4c9d-a79f-1583eb6631c3",
+            "output_key": "alignment_file",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.810255Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "5474a7a5-cc84-4c9d-a79f-1583eb6631c3",
+      "registry_key": "alignment.bowtie2",
+      "name": "Bowtie2 Alignment",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "target": [
+          {
+            "type": "reference",
+            "source_id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+            "output_key": "genome_fastas",
+            "artifact_id": null
+          }
+        ],
+        "fastq_paths": [
+          {
+            "type": "reference",
+            "source_id": "f8c07dbc-b7f2-43ed-8688-8a5d3bf0c797",
+            "output_key": "fastq_bundles",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.810711Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+      "registry_key": "ncbi.fetch_assembly_package",
+      "name": "Fetch genome FASTA",
+      "description": "",
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "genome_accession": [
+          {
+            "type": "user_input",
+            "input_key": "genome_accession",
+            "value": null
+          }
+        ],
+        "fetch_limit": [],
+        "chromosomes": [],
+        "include_annotation_type": [
+          {
+            "type": "literal",
+            "value": "GENOME_FASTA"
+          }
+        ],
+        "hydrated": [
+          {
+            "type": "literal",
+            "value": "FULLY_HYDRATED"
+          }
+        ],
+        "extract_assembly_report": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "extract_catalog": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.811197Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "f8c07dbc-b7f2-43ed-8688-8a5d3bf0c797",
+      "registry_key": "sra.fasterq_dump",
+      "name": "SRA Toolkit fasterq-dump",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "sra_files": [
+          {
+            "type": "reference",
+            "source_id": "619dc06e-ea76-42c1-b0b8-1c164bcb6676",
+            "output_key": "sra_files",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.811626Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "619dc06e-ea76-42c1-b0b8-1c164bcb6676",
+      "registry_key": "sra.fasterq_prefetch",
+      "name": "SRA Toolkit fasterq-dump prefetch",
+      "description": "",
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "srr_accession": [
+          {
+            "type": "user_input",
+            "input_key": "srr_accession",
+            "value": null
+          }
+        ],
+        "sra_lite": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "resume": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "force": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:37:36.812026Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}
