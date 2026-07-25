@@ -8,23 +8,6 @@ import click
 
 from lore.core.runtime import build_runtime, Runtime
 
-# Don't need to use invoke, but saving for reference
-# def pass_runtime(f):
-#     """
-#     Decorator to pass a Runtime to Click commands that need it.
-#     Ensures a Runtime is created and passed as the first argument.
-#     """
-#     @click.pass_context
-#     def new_func(ctx: click.Context, *args, **kwargs):
-#         ctx.ensure_object(dict)
-#         rt = ctx.obj.get('rt')
-#         if rt is None:
-#             opts = ctx.obj.get('global_opts', {})  # user overrides
-#             rt = build_runtime(**opts)
-#             ctx.obj['rt'] = rt
-#         # call the function with the Runtime context
-#         return ctx.invoke(f, rt, *args, **kwargs)
-#     return update_wrapper(new_func, f)
 
 def pass_runtime(f):
     """
@@ -52,7 +35,7 @@ def pass_runtime(f):
 @click.version_option()
 @click.pass_context
 def main(ctx, data_root, verbose):
-    """LoRē Genome: A tool for comparitive genomic analysis."""
+    """LoRē Genome: A tool for comparative genomic analysis."""
     ctx.ensure_object(dict)
     ctx.obj["global_opts"] = {
         "data_root": data_root,
@@ -79,6 +62,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
         run_ui_reload(rt, host=host, port=port)
     else:
         run_ui(rt, host=host, port=port)
+
 
 @main.command(name="run-task", hidden=True)
 @click.option("--session", required=True, help="ID of Session containing the Task.")
