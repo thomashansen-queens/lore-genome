@@ -20,7 +20,7 @@ requires-python = ">=3.11"
 authors = [{name = "Thomas Hansen"}]
 description="An extensible workflow orchestrator engine for bioinformatics."
 readme = "README.md"
-license = "MIT"
+license = "BSD-3-Clause"
 
 [project.optional-dependencies]
 dev = [

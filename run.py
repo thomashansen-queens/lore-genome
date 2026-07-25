@@ -18,11 +18,16 @@ import sys
 import time
 from pathlib import Path
 
-if sys.version_info < (3, 10):
-    print("LoRē bootstrap")
-    print("==============")
-    print("WARNING: Python 3.10 or higher is required to run this script.")
-    print(f"Your current Python version is: {sys.version.split()[0]}")
+# --- Formatting Helpers ---
+def print_header(title: str):
+    print("\n" + "=" * 50)
+    print(f" {title}")
+    print("=" * 50 + "\n")
+
+if sys.version_info < (3, 11):
+    print_header("LoRē bootstrap")
+    print("WARNING: Python 3.11 or higher is required to run this script.")
+    print("Your current Python version is: %s", {sys.version.split()[0]})
     try:
         time.sleep(3)
     except KeyboardInterrupt:
@@ -38,20 +43,29 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-PY=python3
+# 1. Check Python version (requires 3.11+)
+PY=""
+for candidate in python3 python3.13 python3.12 python3.11 /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+            PY="$candidate"
+            break
+        fi
+    fi
+done
 
-# Python 3.10+ is required
-if ! $PY -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
-    echo "ERROR: Python 3.10 or higher is required to run LoRe."
-    echo "Your default $PY is: $($PY --version 2>&1)"
+if [ -z "$PY" ]; then
+    print_header("ERROR: Python 3.11 or higher is required to run LoRe.")
+    echo "No valid Python 3.11+ executable was found in your PATH."
     echo ""
     echo "To fix:"
-    echo "Option A: Edit this run.sh file and change 'PY=python3' to"
-    echo "point to your specific version (e.g. 'PY=python3.10')."
-    echo "Option B: Install a newer version of Python and ensure it's in your PATH."
+    echo "Option A: Install a newer version of Python and ensure it's in your PATH."
+    echo "Option B: If you think this is a mistake, edit this run.sh file and change"
+    echo "'PY=your_python_here' to point to your specific binary."
     exit 1
 fi
 
+# 2. Set up virtual environment
 if [ ! -d ".venv" ]; then
   $PY -m venv .venv
 fi
@@ -73,16 +87,17 @@ cd /d "%~dp0"
 set "PY_CMD=python"
 where py >nul 2>nul && set "PY_CMD=py -3"
 
-%PY_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+%PY_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: Python 3.10 or higher is required to run LoRe.
+    echo ERROR: Python 3.11 or higher is required to run LoRe.
     echo Your current version is:
     %PY_CMD% --version
     echo.
     echo To fix:
-    echo Option A: Edit this run.bat file and change 'set "PY_CMD=python"' to 
-    echo point to your specific version, e.g. 'set "PY_CMD=py -3.10"'.
-    echo Option B: Install a newer version of Python and ensure it's in your PATH.
+    echo Option A: Install a newer version of Python and ensure it's in your PATH.
+    echo Option B: If you think this is a mistake, edit this run.bat file and change
+    echo 'set "PY_CMD=python"' to point to your specific version,
+    echo e.g. 'set "PY_CMD=py -3.11"'.
     pause
     exit /b 1
 )
@@ -156,13 +171,16 @@ def main() -> int:
     )
     make_executable(run_sh_path, dry_run=args.dry_run)
 
-    print("LoRē bootstrap")
-    print("==============")
-    print(f"Repository: {REPO_ROOT}")
-    print(f"run.sh: {sh_state}")
-    print(f"run.bat: {bat_state}")
+    print_header("LoRē bootstrap")
+
+    print(f"Repository : {REPO_ROOT}")
+    print(f"run.sh     : {sh_state}")
+    print(f"run.bat    : {bat_state}")
 
     current_os = platform.system().lower()
+    print(f"\nCurrent OS   : {current_os}")
+
+    print_header("Setup complete!")
     print("\nNow, you can run LoRē with the following file:")
     if "windows" in current_os:
         print("  Run: .\\run.bat")
@@ -175,6 +193,7 @@ def main() -> int:
     print("\n\nNote:")
     print("  If you do not want automatic virtual environment setup or pip upgrades,"
     " please refer to the 'Manual setup' section of the README.")
+
     return 0
 
 
