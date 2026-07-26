@@ -192,20 +192,32 @@
       "registry_key": "data.join_tables",
       "name": "Join NCBI data to BLAST result",
       "description": "",
-      "status": "template",
+      "status": "ready",
       "integrity": "unknown",
-      "exec_config": {},
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
       "inputs": {
-        "conflict_strategy": [
+        "left_table": [
           {
-            "type": "literal",
-            "value": "suffix"
+            "type": "reference",
+            "source_id": "26845b5b-40fd-4408-8ba4-e1cd3e3607e7",
+            "output_key": "results",
+            "artifact_id": null
           }
         ],
-        "how": [
+        "right_table": [
           {
-            "type": "literal",
-            "value": "inner"
+            "type": "reference",
+            "source_id": "53168325-4a99-4ad7-a140-3744f54910ef",
+            "output_key": "ipg_records",
+            "artifact_id": null
           }
         ],
         "left_on": [
@@ -220,12 +232,10 @@
             "value": "protein"
           }
         ],
-        "right_table": [
+        "how": [
           {
-            "type": "reference",
-            "source_id": "76cb06ba-f951-42dc-b6ff-0eed6a0edf2b",
-            "output_key": "protein_fasta",
-            "artifact_id": null
+            "type": "literal",
+            "value": "inner"
           }
         ],
         "key_regex_clean": [
@@ -234,12 +244,10 @@
             "value": "\\.\\d+"
           }
         ],
-        "left_table": [
+        "conflict_strategy": [
           {
-            "type": "reference",
-            "source_id": "53168325-4a99-4ad7-a140-3744f54910ef",
-            "output_key": "ipg_records",
-            "artifact_id": null
+            "type": "literal",
+            "value": "suffix"
           }
         ]
       },
