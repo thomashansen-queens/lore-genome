@@ -63,19 +63,42 @@ git pull
 pip install .
 ```
 
-## Key features
+## Using the program
+
+### Walkthroughs
+Once installed, please refer to our [getting started](examples/getting_started.md) for an orientation on how to run and use LoRē.
+
+### Key features
 * **Local**: The orchestrator runs on your hardware!
 * **Interactive**: Tinker with individual bioinformatic tasks and preview results in real time. When you are satisfied, you can 'commit' those settings to your Session.
 * **Explore**: The built-in browser makes it easy to inspect data (no more digging through huge `.fasta` or `.json` files)
 * **Pipelines**: LoRē routes data (Artifacts) from one task directly to the next one, automatically slicing tables and parsing file types
 * **Workflows**: Once you have a set of tasks in a session, you can export it to a Workflow template for re-use. Setting independent variables in Workflows ('user inputs') speeds up customization of subsequent runs.
 
-## External tools
+### External tools
 Some plugins may require local third-party tools. The ability to write a thin wrapper plugin around an external tool, giving it a simple GUI and the ability to pipe data in/out is one of the key advantages of LoRē. If a plugin is not available or not working, check the logs to see if there is a missing dependency.
 
 Paths to external tools can be set in the Settings page. You can add them to your system `PATH` or copy-and-paste the direct path to the tool's binary/executable, e.g.:
 * Mac/Linux: `/Users/My Name/mmseqs/bin/mmseqs`
 * Windows: `C:\Users\My Name\mmseqs\bin\mmseqs.exe`
+
+## Uninstalling
+Because LoRē is installed and runs locally from source code, removing it is straightforward:
+
+### 1. Remove the program
+If you installed using `python run.py`, the codebase, virtual environment (`.venv`), and launcher scripts are all contained inside the `lore-genome` repository folder. Simply delete the folder! This can be done in your file explorer, or from your terminal:
+* Mac/Linux: `rm -rf lore-genome`
+* Windows: `Remove-Item -Recurse -Force lore-genome`
+
+If you installed manually (e.g. with pip or conda):
+1. Activate the environment you installed it to (if you are unsure, type `pip list`)
+2. Uninstall with `pip uninstall lore-genome`
+3. Delete the cloned `lore-genome` directory
+
+### 2. Remove cached files
+LoRē creates a cache in your Home directory. To clean this up, either find it and delete it in file explorer, or use a console command:
+* Mac/Linux: `rm -rf ~/lore-genome`
+* Windows: `Remove-Item -Recurse -Force ~$env:USERPROFILE\lore-genome`
 
 ## How to cite
 If you use LoRē in research, cite:

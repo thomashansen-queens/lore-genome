@@ -152,7 +152,7 @@ class TaskRegistry:
             except ValueError:
                 raise ValueError(
                     f"Invalid preview_mode '{preview_mode}' for task '{key}'. "
-                    f"Must be one of {", ".join([mode.value for mode in PreviewMode])}."
+                    f"Must be one of {', '.join([mode.value for mode in PreviewMode])}."
                 )
 
             # 2. Resolve input model (LoRe TaskInput or Pydantic BaseModel)

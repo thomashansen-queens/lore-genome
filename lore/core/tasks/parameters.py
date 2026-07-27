@@ -362,7 +362,7 @@ class ValueInput(TaskInput):
             except ValueError:
                 raise ValueError(
                     f"Invalid widget override: '{self.widget_override}'. "
-                    f"Must be one of: {", ".join([w.value for w in Widget])}"
+                    f"Must be one of: {', '.join([w.value for w in Widget])}"
                 )
 
 
