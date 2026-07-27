@@ -1,6 +1,6 @@
 # LoRē Genome
 
-[![DOI](https://zenodo.org/badge/966943098.svg)](https://doi.org/10.5281/zenodo.21562774)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21615247.svg)](https://doi.org/10.5281/zenodo.21615247)
 
 LoRē is an extensible workflow orchestrator for bioinformatics. It is designed with accessibility to scientists in mind, providing a browser-based GUI to manage scripts, data, and workflows entirely locally.
 
