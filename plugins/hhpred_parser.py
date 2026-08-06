@@ -81,7 +81,7 @@ def hhpred_to_tsv(
                 line = f.readline().split(maxsplit=1)
                 if not line[0] == "Query":
                     raise ValueError(f"Expected \"Query\" at the beginning of the file {file_path}. Are you sure it's formatted correctly?")
-                query_name = line[1].strip()
+                query_name = line[1].split(maxsplit=1)[0].strip()
                 
                 # Seek the table section
                 line = f.readline()
