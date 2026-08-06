@@ -542,7 +542,7 @@ def _apply_virtual_layout(
     df["is_clamped_gene"] = False
 
     if clamp_gene:
-        clamp_mask = df["gene_length"] > clamp_gene
+        clamp_mask = abs(df["gene_length"]) > clamp_gene
         df.loc[clamp_mask, "gene_shrink"] = df["gene_length"] - clamp_gene
         df.loc[clamp_mask, "is_clamped_gene"] = True
 
@@ -589,7 +589,7 @@ def _apply_virtual_layout(
     if clamp_gap:
         wrap_col_exists = "is_wrapped" in df.columns
         if wrap_col_exists:
-            gap_breaks_df = df[(df["gap_shrink"] > 0) & (~df["wrap_boundary"])]
+            gap_breaks_df = df[(df["gap_shrink"] > 0)]
         else:
             gap_breaks_df = df[df["gap_shrink"] > 0]
 
