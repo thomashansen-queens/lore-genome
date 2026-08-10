@@ -16,6 +16,8 @@
         padding: var(--spacing-xs) var(--spacing-sm);
         z-index: 1000;
         pointer-events: auto; /* Allow clicking inside tooltip */
+
+        max-width: 50%;
     }
     
     .tooltip-line {
@@ -30,6 +32,14 @@
         transition: background 0.2s;
     }
     .copy-value:hover { background: var(--secondary-hover); }
+    
+    .copy-value-long {
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+    }
 
     #copy-flash {
         position: fixed;
@@ -50,9 +60,31 @@
         cursor: pointer;
         transition: filter 0.2s;
     }
+
+    .selected {
+        --selected-tooltip-brightness: 0.85;
+    }
+
+    .temp-selected,
+    .has-tooltip:hover {
+        --hover-tooltip-brightness: 0.85;
+    }
     
-    .has-tooltip:hover, .has-tooltip.selected {
-        filter: brightness(0.85);
+    .selected,
+    .temp-selected,
+    .has-tooltip:hover
+    {
+        transition: filter 0.2s;
+        filter: brightness(calc(var(--hover-tooltip-brightness, 1) * var(--selected-tooltip-brightness, 1)));
+        cursor: pointer;
+    }
+
+    .select-box {
+        position: fixed;
+        border: 1px solid #3399ff;
+        background: rgba(80,160,255,0.2);
+        pointer-events: none;
+        display: none;
     }
 </style>
 
@@ -64,47 +96,189 @@
     
     <div class="scroll-area preview-scroll-area" style="position: relative;">
         {{ data | safe }}
-
+        
         {# Hidden pop-up tooltip populated from metadata #}
         <div id="tooltip"></div>
         {# Feedback for clicking on tooltip value #}
         <div id="copy-flash">Copied!</div>
-        
+        <div id="selectionBox" class="select-box"></div>
     </div>
 </div>
 
 <script>    
     (() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+        
+        const viewport = document.querySelector(".preview-scroll-area");
         const tooltip = document.getElementById("tooltip");
         const copyMsg = document.getElementById("copy-flash");
-        const svgContainer = document.querySelector(".preview-scroll-area");
+        
+        let svgType = null;
+
         let activeTooltip = null;
+
+        if (viewport.querySelector(".protein-container")){
+            svgType = "protein";
+            let prevProtein = null;
+            let proteinSeqExists = true;
+        }
+        else {
+            svgType = "gene";
+        } 
+            
+        let selected = [];
+        let selected_min = Infinity;
+        let selected_max = 0;
+        let lastSelectedTooltip = null;
 
         // 1. Format the tooltip text into clickable copy-values
         function populateTooltip(rawText) {
-            tooltip.innerHTML = ""; // clear
             const lines = rawText.split("\n");
             
             lines.forEach(line => {
-                const div = document.createElement("div");
-                div.className = "tooltip-line";
-                
-                // If the string is "Key: Value", make the Value copyable
+                // Check for key-value pairs separated by a colon
                 const splitIdx = line.indexOf(":");
                 if (splitIdx !== -1) {
-                    const key = line.slice(0, splitIdx + 1);
+                    const key = line.slice(0, splitIdx);
                     const val = line.slice(splitIdx + 1).trim();
                     
-                    div.innerHTML = `${key} <span class="copy-value" data-copy="${val}">${val}</span>`;
+                    appendTextToTooltip(val, key);
                 } else {
-                    div.textContent = line;
+                    appendTextToTooltip(line, null);
                 }
-                tooltip.appendChild(div);
             });
+        }
+
+        /** 
+         * Appends the given string of text to the tooltip, optionally with a key label 
+         * and elipsizing for long values. If copy data is provided, that will be copied 
+         * to the clipboard instead of the displayed text.
+        **/
+         function appendTextToTooltip(text, key=null, elipsize=false, copyData=null) {
+            const div = document.createElement("div");
+            const copy = copyData || text;
+            const classname = elipsize ? "copy-value-long copy-value" : "copy-value";
+            const elcontainer = elipsize ? "div" : "span";
+
+            if (key) {
+                div.innerHTML = `<span class="copy-value" data-copy="${key}">${key}</span>: <${elcontainer} class="${classname}" data-copy="${copy}">${text}</${elcontainer}>`;
+            } else {
+                div.innerHTML = `<${elcontainer} class="${classname}" data-copy="${copy}">${text}</${elcontainer}>`;
+            }
+            tooltip.appendChild(div);
         }
 
         // 2. Smart Positioning
         function placeTooltip(x, y) {
+            tooltip.innerHTML = ""; // clear
+            // Generate tooltip from selected proteins and domains
+            if (svgType == "protein") {
+                const selectedProteins = new Map();
+                selected.forEach(el => {
+                    const proteinSeq = el.parentElement.querySelector(".protein-label").querySelector(".copy-text");
+                    const proteinAcc = el.parentElement.querySelector(".protein-label").querySelector(".protein-accession").textContent;
+                    const start = el.dataset.start - 1;
+                    const end = el.dataset.end;
+                    lastSelectedTooltip = el;
+
+                    if (proteinSeq) {
+                        // Select the whole protein if the accession label is selected
+                        if (el.classList.contains('protein-label')) {
+                                selectedProteins.set(proteinAcc, [true, proteinSeq.dataset.title, proteinSeq.dataset.title.length - 1]);
+                            }
+                        // First selected domain in a protein - add to map
+                        else if (!selectedProteins.has(proteinAcc)) {
+                            selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(start, end), proteinSeq.dataset.title.length - 1, start, end]);  // False to indicate subsequence selection; true for full protein sequence (in which start & end are ignored)
+                        }
+                        // Subsequent selected domain in the same protein - update min/max range
+                        else if (!selectedProteins.get(proteinAcc)[0]) {
+                            proteinData = selectedProteins.get(proteinAcc);
+                            selected_min = Math.min(start, proteinData[3]);
+                            selected_max = Math.max(end, proteinData[4]);
+                            selectedProteins.set(proteinAcc, [false, proteinSeq.dataset.title.substring(selected_min, selected_max), proteinSeq.dataset.title.length - 1, selected_min, selected_max]);
+                        }
+                    }
+                });
+
+                if (selected.length > 1) {
+                    let proteinAccs = []
+                    // Behavior when selecting different proteins
+                    if (selectedProteins.size > 1) {
+                        if (proteinSeqExists) {
+                            let fasta = "";
+                            let ranges = [];
+                            selectedProteins.forEach((proteinData, proteinAcc) => {
+                                proteinAccs.push(proteinAcc);
+                                if (proteinData[0]) {
+                                    fasta += `>${proteinAcc} (Length: ${proteinData[2]})\n${proteinData[1]}`;
+                                    ranges.push("Full");
+                                }
+                                else {
+                                    fasta += `>${proteinAcc} (aa: ${proteinData[3] + 1}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}\n`;
+                                    ranges.push(`${proteinData[3] + 1}-${proteinData[4]}`);
+                                }
+                            });
+                            appendTextToTooltip(selectedProteins.size, "Proteins");
+                            appendTextToTooltip(proteinAccs.join(","), "Accessions", true);
+                            appendTextToTooltip(ranges.join(","), "Residue ranges", true);
+                            appendTextToTooltip(fasta, "Protein FASTA", true);
+                        }
+                    }
+                    // Multiple domains in the same protein - get span between last and first selected domain
+                    else {
+                        const proteinAcc = selectedProteins.keys().next().value;
+                        proteinData = selectedProteins.get(proteinAcc);
+                        appendTextToTooltip(proteinAcc, "Accession");
+                        if (proteinData[0]) {
+                            appendTextToTooltip(proteinData[2], "Length");
+                            const fasta = `>${proteinAcc} (Length: ${proteinData[2]})\n${proteinData[1]}`;
+                            appendTextToTooltip(fasta, null, true);
+                        }
+                        else {
+                            appendTextToTooltip(proteinData[3] + 1, "Start");
+                            appendTextToTooltip(proteinData[4], "End");
+                            appendTextToTooltip(proteinData[4] - proteinData[3], "Selected Length");
+                            appendTextToTooltip(proteinData[2], "Original Length");
+                            const fasta = `>${proteinAcc} (aa ${proteinData[3]+1}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}`;
+                            appendTextToTooltip(fasta, null, true);
+                        }
+                    }
+                // Selecting a single protein domain
+                } else {
+                    populateTooltip(lastSelectedTooltip.dataset.title);
+                    const proteinAcc = selectedProteins.keys().next().value;
+                    
+                    if (proteinSeqExists) {
+                        proteinData = selectedProteins.get(proteinAcc);
+                        let fasta;
+                        if (proteinData[0]){
+                            fasta = `>${proteinAcc} (Length: ${proteinData[2]})\n${proteinData[1]}`;
+                        } else {
+                            fasta = `>${proteinAcc} (aa: ${proteinData[3] + 1}-${proteinData[4]}) (Length: ${proteinData[4] - proteinData[3]}) (Original Length: ${proteinData[2]})\n${proteinData[1]}\n`;
+                        }
+                        appendTextToTooltip(fasta, null, true);
+                    }
+                }
+            // Generate tooltip from selected genes
+            } else if (svgType == "gene") {
+                if (selected.length == 1) {
+                    populateTooltip(selected[0].querySelector("title").textContent);
+                }
+                else {
+                    const accessions = new Set();
+                    selected.forEach(el => {
+                        accessions.add(el.dataset.accession);
+                    });
+                    appendTextToTooltip(accessions.size, "Unique accessions");
+                    appendTextToTooltip(selected.length, "Total selected");
+                    appendTextToTooltip([...accessions].join(","), null, true);
+                }
+            // As a fallback, just show whatever is in the title tag of the first selected element
+            } else {
+                populateTooltip(selected[0].querySelector("title").textContent);
+            }
+
             tooltip.style.display = "block";
             const rect = tooltip.getBoundingClientRect();
             const offset = 15;
@@ -124,6 +298,64 @@
             tooltip.style.top = `${posY}px`;
         }
 
+        let copyMsgTimeoutId = null;
+        // Copyable text snippets
+        tooltip.addEventListener("click", event => {
+            const copyTarget = event.target.closest(".copy-value");
+
+            if (copyTarget) {
+                const selectedText = window.getSelection().toString();
+                let textToCopy, copyMsgText;
+                if (selectedText) {
+                    textToCopy = selectedText;
+                    copyMsgText = "Copied highlight!";
+                }
+                else {
+                    textToCopy = copyTarget.textContent;
+                    copyMsgText = "Copied!";
+                }
+                navigator.clipboard.writeText(textToCopy);
+
+                copyMsg.textContent = copyMsgText;
+                copyMsg.style.left = `${event.clientX}px`;
+                copyMsg.style.top = `${event.clientY - 10}px`;
+                copyMsg.style.display = "block";
+                copyMsg.offsetHeight; // force browser reflow
+                copyMsg.style.opacity = 1;
+                
+                if (copyMsgTimeoutId) clearTimeout(copyMsgTimeoutId);
+                copyMsgTimeoutId = setTimeout(() => {
+                    copyMsg.style.opacity = 0;
+                    setTimeout(() => copyMsg.style.display = "none", 200);
+                    copyMsgTimeoutId = null;
+                }, 1500);
+                return;
+            }
+        }, { signal });
+        
+        function selectElement(el) {
+            selected.push(el);
+            el.classList.add("selected");
+        }
+
+        function unselectElement(el) {
+            selected.splice(selected.indexOf(el), 1);
+            el.classList.remove("selected");
+        }
+
+        // Clears all selected elements
+        function clearSelected() {
+            selected.forEach(element => {
+                element.classList.remove("selected");
+            });
+            selected = [];
+            selected_min = Infinity;
+            selected_max = 0;
+            prevProtein = null;
+            lastSelectedTooltip = null;
+            proteinSeqExists = true;
+        }
+        
         function clearSelection() {
             if (activeTooltip) {
                 activeTooltip.classList.remove("selected");
@@ -131,64 +363,153 @@
             }
             tooltip.style.display = "none";
         }
-
-        // 3. Event Delegation for SVG Clicks
-        if (svgContainer) {
-            svgContainer.addEventListener("click", event => {   
-                // --- Copy tooltip value ---
-                const copyTarget = event.target.closest(".copy-value");
-                if (copyTarget) {
-                    const textToCopy = copyTarget.getAttribute("data-copy");
-                    navigator.clipboard.writeText(textToCopy);
-                    
-                    copyMsg.style.left = `${event.clientX}px`;
-                    copyMsg.style.top = `${event.clientY - 10}px`;
-                    copyMsg.style.display = "block";
-                    copyMsg.offsetHeight; // force browser reflow
-                    copyMsg.style.opacity = 1;
-
-                    setTimeout(() => {
-                        copyMsg.style.opacity = 0;
-                        setTimeout(() => copyMsg.style.display = "none", 200);
-                    }, 1500);
-                    return;
-                }
-
-                // --- Spawn tooltip ---
-                const hasTooltip = event.target.closest(".has-tooltip");
-                if (hasTooltip) {
-                    // Prevent native browser tooltip from overlapping our custom one
-                    const titleTag = hasTooltip.querySelector("title");
-                    if (!titleTag) return;
-
-                    // If clicking a new tooltip element, update selection
-                    if (activeTooltip !== hasTooltip) {
-                        clearSelection();
-                        activeTooltip = hasTooltip;
-                        activeTooltip.classList.add("selected");
-                        
-                        populateTooltip(titleTag.textContent);
-                        placeTooltip(event.clientX, event.clientY);
-                    }
-                    return;
-                }
-
-                // --- Clicked inside the tooltip ---
-                if (event.target.closest("#tooltip")) {
-                    return;
-                }
-
-                // --- Clicked away; clear selection ---
-                clearSelection();
+        
+        // 4. Parallax marker logic (retained from your original script)
+        const marker = viewport.querySelector(".marker");
+        if (marker) {
+            viewport.addEventListener("scroll", () => {
+                marker.style.transform = `translateY(${viewport.scrollTop}px)`;
             });
-            
-            // 4. Parallax marker logic (retained from your original script)
-            const marker = document.querySelector(".marker");
-            if (marker) {
-                svgContainer.addEventListener("scroll", () => {
-                    marker.style.transform = `translateY(${svgContainer.scrollTop}px)`;
-                });
-            }
         }
+            
+        // Drag and select variables
+        let dragging = mouseDown = false;
+        let startX, startXAdjusted, startY, startYAdjusted;
+        let currentX, currentY;
+        let toBeSelected = [];
+        const selectionBox = document.getElementById("selectionBox");
+
+        // Start dragging
+        viewport.addEventListener("mousedown", e => {
+            // Don't start dragging if clicking on tooltips and ignore right click
+            if (e.target.closest("#tooltip") || e.button !== 0) {
+                return;
+            }
+        
+                mouseDown = true;
+                startX = startXAdjusted = currentX = e.clientX;
+                startY = startYAdjusted = currentY = e.clientY;
+                startXScroll = viewport.scrollLeft;
+                startYScroll = viewport.scrollTop;
+                selectionBox.style.display = "block";
+
+                updateSelection();  // Select the clicked-on element
+        }, { signal });
+            
+        // Drag to change box
+        window.addEventListener("mousemove", e => {
+            if (!mouseDown) {
+                return;
+            }
+            if (!dragging) {
+                if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+                    dragging = true;
+                } else {
+                    return;
+                }
+            }
+            currentX = e.clientX;
+            currentY = e.clientY;
+            updateSelection();
+        }, { signal });
+        
+        // Finish box-selection or select elements with click
+        window.addEventListener("mouseup", event => {
+            if (!mouseDown) return;  // Ignore event if clicking on tooltips
+            mouseDown = false;
+            dragging = false;
+            selectionBox.style.display = "none";
+            
+            let wipeTooltip = false;
+            window.getSelection().removeAllRanges();
+            if (!event.ctrlKey) {
+                // Unselect if the single selected element is clicked on again
+                if (selected.length == 1 && toBeSelected.length == 1 && selected[0] == toBeSelected[0]) {
+                    wipeTooltip = true;
+                    selected[0].classList.remove("temp-selected");
+                }
+                clearSelected();
+                tooltip.style.display = "none";
+            }
+                
+            let allSelected = true;
+            if (!wipeTooltip) {
+                // Select the box-selected or clicked-on elements
+                toBeSelected.forEach(el => {
+                    el.classList.remove("temp-selected");
+                    if (!el.classList.contains("selected")) {
+                        allSelected = false;
+                        selectElement(el);
+                    }
+                });
+                // Unselect selected entries that are already selected when box selecting while holding ctrl
+                if (allSelected) toBeSelected.forEach(el => unselectElement(el));
+
+                // Display or hide tooltip
+                if (selected.length > 0) {
+                    placeTooltip(event.clientX, event.clientY);
+                } else {
+                    tooltip.style.display = "none"; 
+                }
+                toBeSelected = [];
+            }
+        }, { signal });
+        
+        // Update if the user scrolls while dragging
+        viewport.addEventListener("scroll", () => {
+            if (dragging) {
+                startXAdjusted = startX + startXScroll - viewport.scrollLeft;
+                startYAdjusted = startY + startYScroll - viewport.scrollTop;
+                updateSelection();
+            }
+        }, { signal });
+        
+        // Update the to-be-selected elements when clicking/box-selecting
+        function updateSelection() {
+            const left   = Math.min(startXAdjusted, currentX);
+            const top    = Math.min(startYAdjusted, currentY);
+            const right  = Math.max(startXAdjusted, currentX);
+            const bottom = Math.max(startYAdjusted, currentY);
+    
+            selectionBox.style.left = left + "px";
+            selectionBox.style.top = top + "px";
+            selectionBox.style.width = (right - left) + "px";
+            selectionBox.style.height = (bottom - top) + "px";
+    
+            viewport.querySelectorAll(".has-tooltip").forEach(el => {
+                const elRect = el.getBoundingClientRect();
+                const elLeft = elRect.left;
+                const elTop = elRect.top;
+                const elRight = elLeft + elRect.width;
+                const elBottom = elTop + elRect.height;
+    
+                const overlaps =
+                    elLeft < right &&
+                    elRight > left &&
+                    elTop < bottom &&
+                    elBottom > top;
+    
+                if (overlaps) {
+                    if (!toBeSelected.includes(el)) {
+                        el.classList.add("temp-selected");
+                        toBeSelected.push(el);
+                    }
+                } else if (toBeSelected.includes(el)) {
+                    el.classList.remove("temp-selected");
+                    toBeSelected = toBeSelected.filter(e => e !== el);
+                }
+            });
+        }
+
+        // Script cleanup on preview reload
+        if (!window.viewerScripts) {
+            window.viewerScripts = [];
+        }
+        
+        window.viewerScripts.push({
+            destroy() {
+                controller.abort();
+            }
+        });
     })();
 </script>

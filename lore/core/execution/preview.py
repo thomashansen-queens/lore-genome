@@ -17,6 +17,8 @@ from .materializer import materialize_task_inputs
 from lore.core.readers import get_reader_for
 from lore.core.tasks import AdapterStrategy, Task
 
+import traceback
+
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
 
