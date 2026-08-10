@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 // Clean up old viewer script event listeners when reloading preview content.
-                window.viewerScripts.slice(0, -1).forEach( script => {
+                window.viewerScripts?.slice(0, -1).forEach( script => {
                     script.destroy();
                 });
                 window.viewerScripts = window.viewerScripts.slice(-1);

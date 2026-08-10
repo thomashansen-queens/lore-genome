@@ -175,5 +175,5 @@ def hhpred_to_tsv(
 
     ctx.materialize_file(
         output_key="tsv",
-        source_path=out_path,
+        source=out_path,
     )

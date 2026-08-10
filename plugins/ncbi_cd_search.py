@@ -187,5 +187,5 @@ def ncbi_cd_search(
             
     ctx.materialize_file(
         output_key="ncbi_cd_search_tsv",
-        source_path=out_path,
+        source=out_path,
     )

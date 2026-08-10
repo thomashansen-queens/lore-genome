@@ -110,8 +110,8 @@ def parse_interpro_tsvs(tsv_paths: list[str], proteins: dict, undefined_domain_s
     """
     
     parsed_result = dict()
-    prev_protein = None
     for path in tsv_paths:
+        prev_protein = None
         tsv_path = Path(path)
         with open(tsv_path, 'r', newline='') as f:
             reader = csv.reader(f, delimiter='\t')
@@ -335,15 +335,21 @@ def interpro_viz_handler(
         track_count = 1
         
         track_group.add(v.SvgLine(
-            x1=track_min_x, y1=y_center, x2=track_max_x, y2=y_center,
-            style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=2.0),
+            x1=track_min_x, y1=y_center, x2=track_max_x, y2=y_center, stroke=config["color_backbone"], stroke_width=2.0,
         ))
         
-        protein_label = v.SvgGroup(classes=["protein-label", "parents-tooltip"])
+        protein_label = v.SvgGroup(
+            classes=["protein-label", "has-tooltip"],
+            data={
+                "title": f"Length: {protein_length}",
+                "start": 1,
+                "end": protein_length,
+            }
+        )
         
         protein_label.add(v.SvgRect(
             x=0, y=y_center - (row_height / 2), width=config["label_margin"] - 10, height=row_height,
-            style=v.SvgStyle(fill=config["color_bg"], opacity=0.9),
+            stroke=config["color_bg"], stroke_width=1.0, fill=config["color_bg"], opacity=0.9,
         ))
         
         # Draw the protein accession to the left of the track
@@ -351,17 +357,10 @@ def interpro_viz_handler(
             x=config["label_margin"] - 15,
             y=y_center + 4,  # eyeball centering
             text=protein_accession,
-            style=v.SvgStyle(
-                text_anchor="end",
-                font_size=config["font_size"],
-                font_family=config["font_family"],
-            ),
-            classes=["has-tooltip", "protein-accession"],
-            data={
-                "title": f"Total Length: {protein_length}",
-                "start": 1,
-                "end": protein_length,
-            }
+            text_anchor="end",
+            font_size=config["font_size"],
+            font_family=config["font_family"],
+            classes=["protein-accession"],
         ))
         
         if protein_accession in proteins.keys():
@@ -398,8 +397,6 @@ def interpro_viz_handler(
                     
                 y_center = track["y_center"]
                 
-                domain_group = v.SvgGroup(classes=["domain-container", "parents-tooltip"])
-                
                 arrow_h = row_height * 0.5  # thickness
                 head_w = min(10.0, abs(end - start))  # arrowhead can't exceed gene length
 
@@ -432,15 +429,18 @@ def interpro_viz_handler(
                 else:
                     tooltip_text = "\n".join([f"{key.replace("_", " ").title()}: {value}" for key, value in domain.items()])
                 
-                arrow = v.SvgPolygon(
-                    points=pts,
-                    classes=["protein-domain", "has-tooltip"],
+                domain_group = v.SvgGroup(
+                    classes=["domain-container", "has-tooltip"],
                     data={
                         "title": tooltip_text,
                         "start": domain["start"],
                         "end": domain["end"],
-                    },
-                    style=v.SvgStyle(fill=fill_color, stroke=stroke_color, stroke_width=1.0),
+                    },)
+                
+                arrow = v.SvgPolygon(
+                    points=pts,
+                    classes=["protein-domain"],
+                    fill=fill_color, stroke=stroke_color, stroke_width=1.0,
                 )
                 domain_group.add(arrow)
                 
@@ -474,12 +474,10 @@ def interpro_viz_handler(
                         x=(start + end) / 2,
                         y=y_center + (config["font_size"] * 0.35), # True vertical centering for text
                         text=text_label,
-                        style=v.SvgStyle(
-                            text_anchor="middle",
-                            fill=text_color,
-                            font_size=config["font_size"] * 0.8,
-                            font_family=config["font_family"],
-                        ),
+                        text_anchor="middle",
+                        fill=text_color,
+                        font_size=config["font_size"] * 0.8,
+                        font_family=config["font_family"],
                     )
                     domain_group.add(label)
                 track_group.add(domain_group)
@@ -495,24 +493,22 @@ def interpro_viz_handler(
     marker = v.SvgGroup(classes=["marker"])
     
     # Marker background
-    marker.add(v.SvgRect(x=0, y=-50, width=global_max + config["label_margin"], height=config["marker_margin"] + 50, style=v.SvgStyle(fill="#FFFFFF", opacity=0.9)))
+    marker.add(v.SvgRect(x=0, y=-50, width=global_max + config["label_margin"], height=config["marker_margin"] + 50, fill="#FFFFFF", opacity=0.9))
     
     # Marker main line
-    marker.add(v.SvgRect(x=track_min_x, y=config["marker_margin"], width=global_max, height=config["marker_thickness"], style=v.SvgStyle(fill=config["color_backbone"])))
+    marker.add(v.SvgRect(x=track_min_x, y=config["marker_margin"], width=global_max, height=config["marker_thickness"], fill=config["color_backbone"]))
     
     # Marker segments
     for x in range(0, longest_length + residue_interval, residue_interval):
         line_x = x * horizontal_scale + track_min_x
-        marker.add(v.SvgLine(x1=line_x, x2=line_x, y1=config["marker_margin"]+5, y2=config["marker_margin"]+10, style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=2.0),))
+        marker.add(v.SvgLine(x1=line_x, x2=line_x, y1=config["marker_margin"]+5, y2=config["marker_margin"]+10, stroke=config["color_backbone"], stroke_width=2.0),)
         marker.add(v.SvgText(
             x=line_x,
             y=config["marker_margin"] - 2,  # eyeball centering
             text=str(x),
-            style=v.SvgStyle(
-                text_anchor="middle",
-                font_size=config["font_size"],
-                font_family=config["font_family"],
-            ),
+            text_anchor="middle",
+            font_size=config["font_size"],
+            font_family=config["font_family"],
         ))
     
     

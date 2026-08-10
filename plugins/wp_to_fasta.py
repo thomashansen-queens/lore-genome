@@ -200,5 +200,5 @@ def wp_to_fasta(
 
     ctx.materialize_file(
         output_key="fasta",
-        source_path=out_path,
+        source=out_path,
     )
