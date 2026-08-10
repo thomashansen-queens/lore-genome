@@ -1,5 +1,5 @@
 """
-Manual entry point for the LoRe Genome CLI.
+Manual entry point for the LoRē Genome CLI.
 """
 from lore.cli import main
 

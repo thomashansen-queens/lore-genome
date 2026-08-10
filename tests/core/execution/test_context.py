@@ -63,7 +63,7 @@ def test_context_output_tracking(
     output_path.write_text("Hello, world!")
 
     ctx.materialize_file(
-        source_path=output_path,
+        source=output_path,
         output_key="greeting_file",
         name="test_greeting",
     )
@@ -104,7 +104,7 @@ def test_preview_context_interception(
     dummy_file.write_text("This is a preview.")
 
     ctx.materialize_file(
-        source_path=dummy_file,
+        source=dummy_file,
         output_key="greeting_file",
         name="preview_greeting",
     )

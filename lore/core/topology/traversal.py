@@ -15,7 +15,7 @@ from lore.core.bindings import ReferenceBinding
 
 if TYPE_CHECKING:
     from lore.core.sessions.session import Session
-    from lore.core.tasks.models import Task
+    from lore.core.tasks import Task
     from lore.core.workflows.models import Workflow
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,7 @@ def find_valid_upstream_tasks(
     """
     # Lazy import to avoid circular dependency
     from lore.core.adapters import adapter_registry
+    from lore.core.sessions.session import Session
     from lore.core.tasks.registry import task_registry
 
     valid_upstream = []
@@ -257,6 +258,14 @@ def find_valid_upstream_tasks(
                     adapters=out_adapters,
                 ):
                     valid_outputs.append(out_key)
+                # JIT matching: static type can't satisfy, but concrete columns might
+                elif isinstance(container, Session):
+                    accepted = set(field_extra.get("accepted_data", ["*"]))
+                    for aid in (upstream_task.outputs.get(out_key) or []):
+                        artifact = container.get_artifact(aid)
+                        if artifact and (accepted & artifact.resolvable_types()):
+                            valid_outputs.append(out_key)
+                            break  # No need to check other artifacts for this output slot
 
             # iii. Path B: Primitive matching (strict Python type compatibility)
             else:

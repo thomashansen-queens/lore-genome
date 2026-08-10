@@ -34,15 +34,9 @@ class NcbiAnnotationPackageInputs:
         description="List of genome assembly accessions (e.g. GCF_000005845.2) to fetch annotation packages for",
         select="multiple",
         load_as="adapted",
-        accepted_data="genome_accession",
+        accepted_data=["genome_accession", "assembly_accession"],
         label="Genome accessions",
         examples=["GCF_000005845.2, GCF_000006945.2"],
-    )
-    annotation_ids = lore.ValueInput(
-        list[str] | None,
-        default=None,
-        description="Limit the reports by internal, unstable annotation ids.",
-        examples=["b7a1c8e4-8c9b-4d2a-9f1e-2c3d4e5f6a7b"],
     )
     fetch_limit = lore.ValueInput(
         int | None,
@@ -67,18 +61,13 @@ class NcbiAnnotationPackageInputs:
         description="Search text filters (e.g. gene name, product name, locus tag)",
         examples=["DNA polymerase"],
     )
-    include_annotation_type = lore.ValueInput(
-        V2GenomeAnnotationRequestAnnotationType | None,
-        default=None,
-        description="Included annotation type to fetch for the assembly package.",
-        widget="radio",
-    )
-    table_fields = lore.ValueInput(
-        list[str] | None,
-        default=None,
-        description="Specify which fields to include in the tabular report",
-        examples=["gene_symbol", "gene_type", "product_name"],
-    )
+    # TODO: Could be implemented later, since it is in the NCBI API spec
+    # include_annotation_type = lore.ValueInput(
+    #     V2GenomeAnnotationRequestAnnotationType | None,
+    #     default=None,
+    #     description="Included annotation type to fetch for the assembly package.",
+    #     widget="radio",
+    # )
 
 
 class NcbiAnnotationPackageOutputs:
@@ -221,7 +210,7 @@ def fetch_genome_annotation_package_handler(
     # 3. Materialize (Hand off to Session)
     ctx.materialize_file(
         output_key="report",
-        source_path=out_path,
+        source=out_path,
         metadata={
             "record_count": record_count,
             "accessions_failed": failed_accessions,
@@ -236,5 +225,5 @@ def fetch_genome_annotation_package_handler(
 
         ctx.materialize_file(
             output_key="failed_accessions",
-            source_path=failed_path,
+            source=failed_path,
         )

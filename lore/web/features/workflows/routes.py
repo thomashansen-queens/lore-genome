@@ -6,12 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from lore.core.tasks import task_registry
-from lore.core.utils import is_collection_type
 from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.web.deps import PageContext, RT, templates
 from lore.web.utils.configure_task import build_widget_context, build_task_configure_context
-from lore.web.utils.forms import get_form_list, get_form_str
+from lore.web.utils.forms import get_form_list, get_form_str, form_html_to_dict
 
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -276,23 +275,27 @@ async def update_workflow_task_action(
     # 1. Get form data
     form_data = await ctx.request.form()
     description = get_form_str(form_data, "description") or ""
+    raw_inputs = form_html_to_dict(form_data, task_def.input_model, blank_to_default=False)
     new_inputs = {}  # rebuild config from scratch
+    processed_keys = set()  # track which keys we've processed to avoid duplicates
 
     # 2. Parse form data back into bindings
     for field_name, value in form_data.items():
-        if not field_name.startswith("binding__"):
+        # Get the binding type for this field
+        if not field_name.startswith("__mode__"):
             continue
 
-        parts = field_name.split("__")
-        if len(parts) != 3:
+        key = field_name[len("__mode__"):]
+        if key in processed_keys:
             continue
+        processed_keys.add(key)
 
-        _, key, idx = parts
-        binding_type = value
+        binding_type = get_form_str(form_data, field_name) or "literal"
+        binding_vals = get_form_list(form_data, key)
 
-        # Grab that value from the form data
-        val_field = f"val__{key}__{idx}"
-        binding_vals = get_form_list(form_data, val_field)
+        # Catch HTML arrays
+        if not binding_vals:
+            binding_vals = get_form_list(form_data, f"{key}[]")
 
         # Ensure the key exists in our new config list
         if key not in new_inputs:
@@ -300,38 +303,35 @@ async def update_workflow_task_action(
 
         # 3. Construct the correct Binding object
         if binding_type == "literal":
-            # i. Preserve blanks: Empty string means user cleared the value
-            if not binding_vals or (len(binding_vals) == 1 and not binding_vals[0].strip()):
+            # Preserve blanks: a field absent from raw_inputs means the user cleared it
+            if key not in raw_inputs:
                 new_inputs[key].append(LiteralBinding(value=None))
             else:
-                field_info, extra = task_def.field_meta(key)
-                is_multiple = extra.get("multiple", False)
-                is_multiple = is_multiple or is_collection_type(field_info.annotation)
-                is_multiple = is_multiple or len(binding_vals) > 1  # fallback heuristic
-
-                # ii. Shatter comma-separated UI strings back to lists
-                if is_multiple:
-                    for b in binding_vals:
-                        # Just in case the list came from a text input widget
-                        vals = [v.strip() for v in b.split(",") if v.strip()]
-                        for v in vals:
-                            new_inputs[key].append(LiteralBinding(value=v))
-
-                # iii. Allow commas in values
+                val = raw_inputs[key]
+                if isinstance(val, list):
+                    # Task inputs are a list of Bindings,  one LiteralBinding per item
+                    if val:
+                        new_inputs[key].extend(LiteralBinding(value=item) for item in val)
+                    else:
+                        new_inputs[key].append(LiteralBinding(value=None))
                 else:
-                    new_inputs[key].append(LiteralBinding(value=binding_vals[0].strip()))
+                    new_inputs[key].append(LiteralBinding(value=val))
 
         elif binding_type == "user_input":
+            # Instantiate a UserInputBinding for each value (even if empty)
             new_inputs[key].append(UserInputBinding(input_key=key))
 
         elif binding_type == "reference":
-            # HTML input uses format "step_id.output_key"
-            ref_parts = binding_vals[0].split(".", 1) if binding_vals else []
-            if len(ref_parts) == 2:
-                new_inputs[key].append(ReferenceBinding(source_id=ref_parts[0], output_key=ref_parts[1]))
+            # HTML input uses format "ref:task_id::output_key"
+            ref_val = binding_vals[0] if binding_vals else ""
+            if ref_val.startswith("ref:") and "::" in ref_val:
+                stripped = ref_val[len("ref:"):]
+                source_id, out_key = stripped.split("::", 1)
+                new_inputs[key].append(ReferenceBinding(source_id=source_id, output_key=out_key))
             else:
-                # This will break the workflow until fixed
-                new_inputs[key].append(task.inputs[key][int(idx)])  # fallback to original binding if parsing fails
+                # Fallback to the original binding if the form is invalid
+                if task.inputs.get(key):
+                    new_inputs[key].append(task.inputs[key][0])
 
     # 4. Update the task and save the workflow
     rt.workflows.update_task(workflow_id, task_id, description, new_inputs)

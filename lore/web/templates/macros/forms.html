@@ -173,7 +173,13 @@
             <input type="datetime-local" name="{{ name }}"
                 value="{{ prefill.strftime('%Y-%m-%dT%H:%M') if prefill and prefill.strftime else prefill }}"
                 class="form-control">
-        
+
+        {# Date (no time component) #}
+        {% elif widget == 'date' %}
+            <input type="date" name="{{ name }}"
+                value="{{ prefill.strftime('%Y-%m-%d') if prefill and prefill.strftime else (prefill if prefill is not none else '') }}"
+                class="form-control">
+
         {# Fallback to standard input types #}
         {% else %}
             <input type="{{ widget }}" name="{{ name }}" 

@@ -19,6 +19,9 @@
 
 <script>
     (() => {
+        const controller = new AbortController();
+        const { signal } = controller;
+
         // Scope to this panel
         const root = document.currentScript.previousElementSibling;
         const copyArea = root?.querySelector("[data-copyable]");
@@ -42,6 +45,17 @@
                 selection.removeAllRanges();
                 // Select the previewed contents of the raw text data 
                 selection.addRange(range);
+            }
+        }, { signal });
+        
+        if (!window.viewerScripts) {
+            window.viewerScripts = [];
+        }
+        
+        window.viewerScripts.push({
+            destroy() {
+                controller.abort();
+                console.log("Aborted all old event listeners for raw viewer");
             }
         });
     })();

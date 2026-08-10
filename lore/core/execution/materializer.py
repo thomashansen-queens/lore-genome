@@ -6,10 +6,12 @@ data transformation, ETL, or heavy lifting should be done in Task handlers.
 Slicing and dicing of data are done here according to DSL instructions and
 semantic types.
 """
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import io
 import itertools
-import types
+import logging
+import re
 from typing import TYPE_CHECKING, Any, get_origin
 from pydantic import TypeAdapter
 from pydantic.fields import FieldInfo
@@ -23,6 +25,9 @@ from lore.core.utils.pydantic import is_collection_type
 if TYPE_CHECKING:
     from lore.core.sessions import Session
     from lore.core.artifacts import Artifact
+    from lore.core.readers import BaseReader
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -158,7 +163,10 @@ def materialize_task_inputs(
         # 6. Handle packaging & concatenation
         # Auto-concatenate if it's a series type and multiple items are allowed
         if allows_multiple:
-            if processed_artifacts and isinstance(processed_artifacts[0], types.GeneratorType):
+            # A lazy stream (generator, itertools.chain, ...) is chained lazily;
+            # materialized values (lists, scalars) fall through to flatten. Note a
+            # list is Iterable but not an Iterator, so it correctly takes the else.
+            if processed_artifacts and isinstance(processed_artifacts[0], Iterator):
                 dto.data[key] = itertools.chain(*processed_artifacts)
             else:
                 flattened = []
@@ -187,6 +195,44 @@ def materialize_task_inputs(
     return dto
 
 
+# Only warn on full-read fallbacks if the file is large enough to matter
+_FALLBACK_WARN_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _stream_with_fallback(
+    reader: "BaseReader",
+    config: dict | None = None,
+    *,
+    adapted: bool = False,
+) -> tuple[Iterator[Any], dict]:
+    """
+    Resolve a reader to (record_iterator, io_metadata), transparently falling
+    back to a whole-file read_full() for non-streamable formats (those whose
+    stream() raises NotImplementedError, e.g. a monolithic JSON document).
+    Checking first iteration raises here rather than inside handler code.
+    """
+    suffix = " (Adapted)" if adapted else ""
+    gen = reader.stream(config)
+    try:
+        first = next(gen)
+    except NotImplementedError:
+        # Warn only when the full in-memory load is large enough to matter
+        size = reader.path.stat().st_size if reader.path.exists() else 0
+        if size >= _FALLBACK_WARN_BYTES:
+            logger.warning(
+                "%s cannot stream '%s' (%.0f MB); fell back to a full in-memory read, "
+                "forfeiting streaming's memory efficiency. Consider a streaming reader "
+                "for this format.",
+                type(reader).__name__, reader.path.name, size / 1024 / 1024,
+            )
+        # Then read the whole file but wrap it in an iterator for streaming handlers
+        data = reader.read_full(config)
+        return iter(data), {"io_strategy": f"Full load{suffix}"}
+    except StopIteration:
+        return iter(()), {"io_strategy": f"Streamed{suffix}"}  # empty stream
+    return itertools.chain([first], gen), {"io_strategy": f"Streamed{suffix}"}
+
+
 def _materialize_single_artifact(
     session: "Session",
     artifact: "Artifact",
@@ -195,96 +241,94 @@ def _materialize_single_artifact(
     strategy: AdapterStrategy = AdapterStrategy.AUTO,
 ) -> tuple[Any, dict]:
     """
-    Helper to Materialize an Artifact into real data per DSL instructions
-    If loading as CONTENT, will prioritize the narrowest type of accepted data
-    i.e. Series > Adapted > Raw
+    Materialize one Artifact into the data a handler asked for, per the DSL.
 
-    returns: Tuple of (materialized data, io_metadata)
-    io_metadata is a dict that can include info like total_rows, truncated, etc.
-    that is currently only populated for PEEK previews. Could be useful in the
-    future to include io metadata for other materialization strategies.
+    Two things to consider when materializing an Artifact:
+      - Shape (from TaskDefinition's 'load_as'): A pointer (ARTIFACT / PATH), the
+        reader's raw records (RAW*), or adapted records (ADAPTED*). For ADAPTED,
+        if 'accepted_data' names a column the adapter can slice, the handler gets
+        that column as a flat list.
+      - Delivery (from 'strategy'): How the handler wants the data. 'stream' (lazy,
+        O(1) memory) vs materialized, and how much is read (a PEEK for fast UI
+        previews).
+    returns: (data, io_metadata)
     """
     m = Materialization(materialization)
-    path = session.get_artifact_path(artifact.id)
-    peek_limit = session.runtime.settings.preview_peek_limit
-    io_meta = {}
 
-    # --- Adapter can override Task contract ---
-
-    if strategy == AdapterStrategy.PEEK:
-        if m in (Materialization.ADAPTED, Materialization.ADAPTED_STREAM):
-            m = Materialization.PREVIEW
-        elif m in (Materialization.RAW, Materialization.RAW_STREAM):
-            reader = get_reader_for(path)
-            raw_data, io_meta = reader.preview(peek_limit=peek_limit)
-            return raw_data, io_meta
-
-    elif strategy == AdapterStrategy.LAZY:
-        if m == Materialization.ADAPTED:
-            m = Materialization.ADAPTED_STREAM
-        elif m == Materialization.RAW:
-            m = Materialization.RAW_STREAM
-
-    elif strategy == AdapterStrategy.EAGER:
-        if m == Materialization.ADAPTED_STREAM:
-            m = Materialization.ADAPTED
-        elif m == Materialization.RAW_STREAM:
-            m = Materialization.RAW
-
-    # --- Post-override: Follow DSL instructions ---
-
-    # 1. Pure Manifest lookup
+    # 1. Pointer to a file or artifact: No reading or adapting, just give to handler
     if m == Materialization.ARTIFACT:
-        return artifact, io_meta
-
-    # 2. The handler will access the filepath directly
+        return artifact, {}
     if m == Materialization.PATH:
-        return str(path), io_meta
+        bundle = session.get_artifact_path_bundle(artifact.id)
+        return bundle, {}
 
-    # 3. Read data for the handler
+    path = session.get_artifact_path(artifact.id)
     reader = get_reader_for(path)
-
-    if m == Materialization.RAW:
-        return reader.read_full(), {"io_strategy": "Full load"}
-
-    if m == Materialization.RAW_STREAM:
-        return reader.stream(), {"io_strategy": "Streamed"}
-
-    # 4. Adapt the data for the handler - metadata is passed as config
-    adapters = artifact.get_adapters()
-    adapter = adapters[0] if adapters else None
     config = {**(artifact.metadata or {}), "ext": artifact.extension}
+    peek_limit = session.runtime.settings.preview_peek_limit
 
-    if m == Materialization.ADAPTED_STREAM:
-        raw_generator = reader.stream()
-        data = adapter.adapt_stream(raw_generator, config=config) if adapter else raw_generator
-        return data, {"io_strategy": "Streamed (Adapted)"}
+    # 2. Resolve delivery: 'load_as' sets the defaults. LAZY forces streaming, EAGER forces a
+    #    full load, PEEK bounds the read.
+    wants_adapted = m in (Materialization.ADAPTED, Materialization.ADAPTED_STREAM)
+    stream = m in (Materialization.RAW_STREAM, Materialization.ADAPTED_STREAM)
+    if strategy == AdapterStrategy.LAZY:
+        stream = True
+    elif strategy == AdapterStrategy.EAGER:
+        stream = False
+    peek = strategy == AdapterStrategy.PEEK
 
-    if m == Materialization.PREVIEW:
-        raw_data, io_meta = reader.preview(peek_limit=peek_limit)
-        if adapter:
-            return adapter.adapt(raw_data, config=config), io_meta
-        return raw_data, io_meta
+    # 3. Acquire the reader's records. Streaming is a lazy full read. Peek
+    #    bounds a materialized read. io_metadata reports reader completeness.
+    if stream and not peek:
+        records, io_meta = _stream_with_fallback(reader, config, adapted=wants_adapted)
+    elif stream:  # peeked stream: partial load, but still handed back as an iterator
+        peeked, io_meta = reader.preview(peek_limit=peek_limit)
+        records = iter(peeked)
+    elif peek:
+        records, io_meta = reader.preview(peek_limit=peek_limit)
+    else:
+        label = "Full load (Adapted)" if wants_adapted else "Full load"
+        records, io_meta = reader.read_full(), {"io_strategy": label}
 
-    if m == Materialization.ADAPTED:
-        raw_data = reader.read_full()
-        io_meta = {"io_strategy": "Full load (Adapted)"}
+    # 4. RAW: hand the reader's records straight to the handler
+    if not wants_adapted:
+        return records, io_meta
 
-        # A. Try to provide a series (only for TabularAdapters)
-        for adapter in adapters:
-            for accepted in accepted_data:
-                series = adapter.get_series(raw_data, accepted, config=config)
-                if series is not None:
-                    return series, io_meta
+    # 5. ADAPTED: run records through the best-matching adapter. No adapter
+    #    available? Best-effort raw passthrough
+    adapters = artifact.get_adapters()
+    if not adapters:
+        return records, io_meta
 
-            # B. If no series, try adapting the entire payload
-            adapted_data = adapter.adapt(raw_data, config=config)
-            return adapted_data, io_meta
+    adapter = adapters[0]
+    adapted = adapter.adapt_stream(records, config=config) if stream else adapter.adapt(records, config=config)
 
-        # C. Fallback to raw content if no adapters worked
-        return raw_data, io_meta
+    # 5a. Peek at first record to see if accepted_data is present as a column
+    first_record = None
+    if stream:
+        adapted = iter(adapted)
+        try:
+            first_record = next(adapted)
+            adapted = itertools.chain([first_record], adapted)
+        except StopIteration:
+            pass  # Empty stream
+    elif isinstance(adapted, list):
+        first_record = adapted[0] if adapted else None
 
-    return artifact.id, io_meta  # fallback to ID if no instructions
+    target_col = next(
+        (col for col in accepted_data if isinstance(first_record, dict) and col in first_record),
+        None,
+    )
+    if target_col is None:
+        return adapted, io_meta
+
+    # 5b. Apply slicing. Generator for streaming, list for materialized.
+    if stream:
+        sliced = (str(r[target_col]) for r in adapted if r.get(target_col) is not None)
+        return sliced, io_meta
+    else:
+        sliced = [str(r[target_col]) for r in adapted if r.get(target_col) is not None]
+        return sliced, io_meta
 
 
 def _materialize_manual_input(
@@ -324,15 +368,15 @@ def _materialize_manual_input(
 
     def pseudo_adapt(val: Any) -> Any:
         """
-        For adapted content, attempt to coerce. This is a best-effort measure that allows users to 
-        input comma-separated values.
+        For adapted content, attempt to coerce. This is a best-effort measure that
+        lets users type comma-, tab-, and/or newline-separated values.
         """
         annotation = field_info.annotation
         origin = get_origin(annotation) or annotation
 
-        # 1. Simulated series slicing
-        if origin in (list, set, tuple):
-            return [v.strip() for v in str(val).split(",")]
+        # 1. Simulated series slicing: split on any run of commas/tabs/newlines
+        if is_collection_type(annotation):
+            return [v.strip() for v in re.split(r"[,\t\n]+", str(val)) if v.strip()]
 
         # 2. Simualte single primitive adaptation
         if origin is str:
@@ -344,7 +388,7 @@ def _materialize_manual_input(
             f"Expected Artifact ID list or string, got {origin}."
         )
 
-    if m in (Materialization.ADAPTED, Materialization.PREVIEW):
+    if m == Materialization.ADAPTED:
         return pseudo_adapt(value)
 
     if m == Materialization.ADAPTED_STREAM:

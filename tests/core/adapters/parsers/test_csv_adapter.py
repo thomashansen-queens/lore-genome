@@ -1,5 +1,5 @@
 """
-Tests for the CSV/TSV adapter, focused on header handling — historically a spot
+Tests for the CSV/TSV adapter, focused on header handling: historically a spot
 where two competing strategies (slice vs. iterator skip) collided and silently
 corrupted the default "has header, no explicit fieldnames" case.
 """
@@ -73,7 +73,7 @@ def test_parse_empty_returns_empty(adapter):
 
 
 def test_parse_strips_utf8_bom(adapter):
-    """A UTF-8 BOM on the first header cell must not pollute the column name."""
+    """A UTF-8 BOM from Excel on the first header cell must not pollute the column name."""
     rows = adapter.parse(b"\xef\xbb\xbfname,score\nalice,10", config={"ext": "csv"})
     assert rows == [{"name": "alice", "score": "10"}]
 

@@ -110,10 +110,14 @@ class TieredCache:
         prefix: str,
         compute_fn: Callable,
         cache_kwargs: dict,
+        persist: bool = True,
     ) -> Any:
         """
         Check L1 (RAM) > L2 (Disk) > Compute and cache. Evict if needed.
-        Usage: FUTURE: Need to write a usage example here
+
+        persist: If false, keep cached in RAM (L1) only. Avoids poisoning the
+        CAS cache with partial results from a preview.
+        Usage: TODO: Need to write a usage example here
         """
         key = self._make_key(session_id, prefix, cache_kwargs)
         if key is None:
@@ -125,9 +129,9 @@ class TieredCache:
             self._store.move_to_end(key)
             return self._store[key]
 
-        # 2. L2 (Disk) cache hit
+        # 2. L2 (Disk) cache hit — only consult disk for persistable results
         cas_file = self.cas_dir / f"{key}.pkl"
-        if cas_file.exists():
+        if persist and cas_file.exists():
             self.logger.debug("Cache HIT (Disk) for key: %s", key)
             try:
                 with open(cas_file, "rb") as f:
@@ -144,11 +148,12 @@ class TieredCache:
         result = compute_fn()
 
         # 4. Store in L2 (CAS) cache
-        try:
-            with open(cas_file, "wb") as f:
-                pickle.dump(result, f)
-        except Exception as e:
-            self.logger.warning("Failed to save L2 (CAS) for key %s: %s", key, e)
+        if persist:
+            try:
+                with open(cas_file, "wb") as f:
+                    pickle.dump(result, f)
+            except Exception as e:
+                self.logger.warning("Failed to save L2 (CAS) for key %s: %s", key, e)
 
         # 5. Save to L1 (RAM) cache
         self._promote_to_ram(key, result)
@@ -337,6 +342,7 @@ def memoize(prefix: str | None = None, ignore: str | list[str] | None = None):
                 prefix=actual_prefix,
                 compute_fn=_compute_thunk,
                 cache_kwargs=cache_kwargs,
+                persist=ctx.inputs_complete,
             )
         return wrapper
     return decorator

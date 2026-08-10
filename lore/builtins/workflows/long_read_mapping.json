@@ -1,0 +1,264 @@
+{
+  "id": "long_read_mapping",
+  "name": "Long read mapping",
+  "description": "Checks how long reads from a sequencing project map against the final assembly.",
+  "created_at": "2026-07-25T05:40:44.440591Z",
+  "tasks": [
+    {
+      "id": "10850f76-0e68-4f89-b16d-f3780c4d0ab8",
+      "registry_key": "alignment_minimap2",
+      "name": "Minimap2 Alignment",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "preset": [
+          {
+            "type": "literal",
+            "value": "map-ont"
+          }
+        ],
+        "query": [
+          {
+            "type": "reference",
+            "source_id": "f8c07dbc-b7f2-43ed-8688-8a5d3bf0c797",
+            "output_key": "fastq_bundles",
+            "artifact_id": null
+          }
+        ],
+        "target": [
+          {
+            "type": "reference",
+            "source_id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+            "output_key": "genome_fastas",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.438203Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "89ff79ab-8d54-4898-96e8-0e1897e8b52e",
+      "registry_key": "alignment.bam_pileup",
+      "name": "Draw read pileup plot",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "end_bp": [
+          {
+            "type": "literal",
+            "value": 25000
+          }
+        ],
+        "overhang_reads": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "replicon": [],
+        "sort_strategy": [
+          {
+            "type": "literal",
+            "value": "start"
+          }
+        ],
+        "start_bp": [
+          {
+            "type": "literal",
+            "value": 0
+          }
+        ],
+        "max_depth": [
+          {
+            "type": "literal",
+            "value": 1000
+          }
+        ],
+        "genome_fasta": [
+          {
+            "type": "reference",
+            "source_id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+            "output_key": "genome_fastas",
+            "artifact_id": null
+          }
+        ],
+        "min_window_coverage": [
+          {
+            "type": "literal",
+            "value": 0.0
+          }
+        ],
+        "bam_file": [
+          {
+            "type": "reference",
+            "source_id": "b51ffe62-b6a9-4fd7-917d-f985807686b7",
+            "output_key": "bam",
+            "artifact_id": null
+          }
+        ],
+        "max_reads": [
+          {
+            "type": "literal",
+            "value": 10000
+          }
+        ],
+        "include_metadata": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.438692Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "b51ffe62-b6a9-4fd7-917d-f985807686b7",
+      "registry_key": "alignment.sam_to_bam",
+      "name": "SAM to BAM Conversion",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "sam_file": [
+          {
+            "type": "reference",
+            "source_id": "10850f76-0e68-4f89-b16d-f3780c4d0ab8",
+            "output_key": "alignment_file",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.439188Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "aeca5b6d-60c2-4485-bf5d-fe7589001afa",
+      "registry_key": "ncbi.fetch_assembly_package",
+      "name": "Fetch genome FASTA",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "include_annotation_type": [
+          {
+            "type": "literal",
+            "value": "GENOME_FASTA"
+          }
+        ],
+        "extract_catalog": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "hydrated": [
+          {
+            "type": "literal",
+            "value": "FULLY_HYDRATED"
+          }
+        ],
+        "genome_accession": [],
+        "fetch_limit": [],
+        "extract_assembly_report": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "chromosomes": []
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.439661Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "f8c07dbc-b7f2-43ed-8688-8a5d3bf0c797",
+      "registry_key": "sra.fasterq_dump",
+      "name": "SRA Toolkit fasterq-dump",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "sra_files": [
+          {
+            "type": "reference",
+            "source_id": "619dc06e-ea76-42c1-b0b8-1c164bcb6676",
+            "output_key": "sra_files",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.440065Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "619dc06e-ea76-42c1-b0b8-1c164bcb6676",
+      "registry_key": "sra.fasterq_prefetch",
+      "name": "SRA Toolkit fasterq-dump prefetch",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "srr_accession": [
+          {
+            "type": "literal",
+            "value": "SRR2080130"
+          }
+        ],
+        "force": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "sra_lite": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "resume": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-07-25T05:40:44.440534Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

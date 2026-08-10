@@ -21,9 +21,10 @@ from lore.core.tasks import (
     task_registry,
 )
 from lore.core.settings import config_registry
+from lore.core.artifacts import ArtifactPathBundle as PathBundle
 
-# 2. Topology & trait matching
-from lore.core.topology.traits import ANY, TABULAR
+# 2. Topology & trait matching (replaced with plain strings!)
+# from lore.core.topology.traits import ANY, TABULAR
 
 # 3. Execution State
 from lore.core.execution.context import (
@@ -69,8 +70,7 @@ __all__ = [
     "Materialization",
     "Passthrough",
     "PreviewMode",
-    # Traits
-    "ANY", "TABULAR",
+    "PathBundle",
     # Execution
     "ExecutionContext",
     "memoize",

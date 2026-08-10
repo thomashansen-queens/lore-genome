@@ -423,8 +423,7 @@ def extract_workflow_action(
     workflows = [w["id"] for w in rt.workflows.list_workflows()]
     new_workflow_id = auto_increment(slugify(workflow_name), existing=workflows)
 
-    workflow = rt.workflows.extract_from_session(s, new_workflow_id)
-    rt.workflows.save_workflow(workflow)
+    workflow = rt.workflows.extract_from_session(s, new_workflow_id, workflow_name)
 
     ctx.add_msg(f"Session '{s.name}' saved as workflow '{workflow.name}'.", "success")
     return ctx.redirect(f"/workflows/{workflow.id}")

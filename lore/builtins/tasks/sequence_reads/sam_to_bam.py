@@ -31,16 +31,10 @@ class SamToBamInputs:
 
 class SamToBamOutputs:
     """Outputs for SAM to BAM Task"""
-    bam_file = lore.TaskOutput(
+    bam = lore.TaskOutput(
         data_type="bam",
         label="Output BAM File",
         is_primary=True,
-        yields="single",
-    )
-    bai_index = lore.TaskOutput(
-        data_type="bai",
-        label="BAM Index File",
-        is_primary=False,
         yields="single",
     )
 
@@ -50,9 +44,9 @@ class SamToBamOutputs:
     inputs=SamToBamInputs,
     outputs=SamToBamOutputs,
     name="SAM to BAM Conversion",
-    category="Alignment",
+    category="Sequence reads",
     preview_mode="dry_run",
-    icon="🔄",
+    icon="🗘",
 )
 def sam_to_bam_handler(
     ctx: lore.ExecutionContext,
@@ -75,10 +69,15 @@ def sam_to_bam_handler(
 
     # 2. Output pathing
     sam_path = Path(sam_file)
-    base_name = sam_path.stem.replace("_aligned", "")  # minimap2's suffix
+    base_name = sam_path.name
+
+    # Strip extensions
+    while base_name.endswith((".sam", ".bam", ".bai", ".gz")):
+        base_name = Path(base_name).stem
+    base_name = base_name.removesuffix("_aligned").removesuffix("_mapped").removesuffix("_bowtied")
 
     bam_out_path = ctx.get_temp_path(f"{base_name}.bam")
-    bai_out_path = ctx.get_temp_path(f"{base_name}.bam.bai")
+    bai_out_path = ctx.get_temp_path(f"{base_name}.bai")
 
     # --- Phase 1: Sort and compress ---
     cmd_sort = [
@@ -104,6 +103,7 @@ def sam_to_bam_handler(
         "index",
         "-@", threads,
         str(bam_out_path),
+        str(bai_out_path),
     ]
     ctx.logger.info(f"Running BAM indexing: {' '.join(cmd_index)}")
 
@@ -115,17 +115,16 @@ def sam_to_bam_handler(
     if not bai_out_path.exists() or bai_out_path.stat().st_size == 0:
         raise FileNotFoundError(f"Expected BAI index not found at {bai_out_path}")
 
+    # --- Phase 3: Build the artifact bundle ---
+    output_bundle = {
+        "main": bam_out_path,
+        "index": bai_out_path,
+    }
+
     # --- Phase 3: Materialize ---
     ctx.materialize_file(
-        source_path=bam_out_path,
-        output_key="bam_file",
+        source=output_bundle,
         name=bam_out_path.name,
-        move=True,
-    )
-
-    ctx.materialize_file(
-        source_path=bai_out_path,
-        output_key="bai_index",
-        name=bai_out_path.name,
+        output_key="bam",
         move=True,
     )

@@ -81,7 +81,7 @@ class Minimap2Outputs:
     inputs=Minimap2Inputs,
     outputs=Minimap2Outputs,
     name="Minimap2 Alignment",
-    category="Alignment",
+    category="Sequence reads",
     preview_mode="dry_run",
     icon="M",
 )
@@ -153,7 +153,7 @@ def minimap2_alignment_handler(
 
     # 5. Materialize output
     ctx.materialize_file(
-        source_path=sam_out_path,
+        source=sam_out_path,
         output_key="alignment_file",
         name=sam_out_path.name,
         metadata={

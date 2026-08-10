@@ -2,7 +2,7 @@
 LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum, StrEnum
 from typing import Any, Literal, Type, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,7 +11,7 @@ from pydantic_core import PydanticUndefined
 
 from lore.core.topology import traits
 from lore.core.utils import is_collection_type, is_optional_type
-from lore.core.utils.pydantic import get_base_type
+from lore.core.utils.pydantic import get_base_type, extract_choices
 
 # --- Input enums and type aliases ---
 
@@ -105,8 +105,6 @@ class Materialization(str, Enum):
     # Streamed
     RAW_STREAM = "raw_stream"
     ADAPTED_STREAM = "adapted_stream"
-    # Preview
-    PREVIEW = "preview"
 
 
 MaterializationLiteral: TypeAlias = Literal[
@@ -116,7 +114,6 @@ MaterializationLiteral: TypeAlias = Literal[
     "adapted",
     "raw_stream",
     "adapted_stream",
-    "preview",
 ]
 
 # --- Task inputs ---
@@ -180,6 +177,8 @@ class TaskInput:
             return ""
         if isinstance(self.default, datetime):
             return self.default.strftime("%Y-%m-%dT%H:%M")
+        if isinstance(self.default, date):
+            return self.default.strftime("%Y-%m-%d")
         return self.default
 
 
@@ -201,7 +200,7 @@ class ArtifactInput(TaskInput):
         - load_as (Materialization): How the data is delivered to the execution 
         handler (e.g. ADAPTED to a DataFrame, RAW_STREAM as an iterator)
         - Accepted data: The contract. Fuzzy search for LoRē data type which can be a 
-        broad trait (e.g. lore.TABULAR), a specific type (e.g. "genome_annotations") 
+        broad trait (e.g. "tabular"), a specific type (e.g. "genome_annotations") 
         or a slice of from a table (e.g. "genome_accessions"). If provided as a list, 
         any one match is sufficient.
     """
@@ -211,7 +210,7 @@ class ArtifactInput(TaskInput):
         select: CardinalityLiteral | Cardinality = Cardinality.SINGLE,
         load_as: MaterializationLiteral | Materialization = Materialization.ADAPTED,
         # Fuzzy Matching: ["json", "ncbi", "genome_accessions"]
-        accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = traits.ANY,
+        accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = "*",
         # Pydantic pass-throughs
         default: Any = PydanticUndefined,
         label: str | None = None,
@@ -226,7 +225,7 @@ class ArtifactInput(TaskInput):
             raise ValueError(f"Invalid ArtifactInput configuration: {e}")
 
         if accepted_data is None:
-            self.accepted_data = [traits.ANY]
+            self.accepted_data = ["*"]
         elif isinstance(accepted_data, list):
             self.accepted_data = accepted_data
         else:
@@ -240,8 +239,12 @@ class ArtifactInput(TaskInput):
                 "widget": self.cardinality.ui_widget().value,
                 "cardinality": self.cardinality.value,
                 "materialization": self.materialization.value,
-                # TODO: Stringify traits for serialization/UI
-                "accepted_data": self.accepted_data,
+                # Store traits as their keyword string so json_schema_extra stays JSON-serializable
+                # The matcher dynamically resolves keywords to traits.
+                "accepted_data": [
+                    d.keyword if isinstance(d, traits.DataTrait) else d
+                    for d in self.accepted_data
+                ],
             }
         )
 
@@ -314,20 +317,15 @@ class ValueInput(TaskInput):
             extra["step"] = self.pydantic_kwargs["multiple_of"]
 
         # 5. Inject None to optional Enums
-        enums = None
-        if isinstance(target_type, type) and issubclass(target_type, Enum):
-            enums = [
-                {"label": e.name.replace("_", " ").capitalize(), "value": e.value}
-                for e in target_type
-            ]
-            if is_optional and "None" not in [e["value"] for e in enums]:
-                enums.insert(0, {"label": "None (default)", "value": ""})
+        choices = extract_choices(target_type)
 
-        # 6. Assign widget types
-        if isinstance(target_type, type) and issubclass(target_type, Enum):
-            extra["options"] = enums
+        if choices is not None:
+            if is_optional and "None" not in [c["value"] for c in choices]:
+                choices.insert(0, {"label": "None (default)", "value": ""})
+            extra["options"] = choices
             extra["widget"] = Widget.CHECKBOX_GROUP if is_list else Widget.SELECT
 
+        # 6. Assign widget types
         elif target_type is bool:
             extra["widget"] = Widget.CHECKBOX
 
@@ -339,6 +337,10 @@ class ValueInput(TaskInput):
 
         elif target_type is datetime:
             extra["widget"] = Widget.DATETIME
+
+        # Must come after datetime (which is a subclass of date)
+        elif target_type is date:
+            extra["widget"] = Widget.DATE
 
         elif target_type is str:
             # Base class sets Widget.TEXT.value by default, but explicit is better than implicit
@@ -360,7 +362,7 @@ class ValueInput(TaskInput):
             except ValueError:
                 raise ValueError(
                     f"Invalid widget override: '{self.widget_override}'. "
-                    f"Must be one of: {", ".join([w.value for w in Widget])}"
+                    f"Must be one of: {', '.join([w.value for w in Widget])}"
                 )
 
 

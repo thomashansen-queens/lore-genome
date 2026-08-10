@@ -15,6 +15,8 @@ class VdbDumpInputs:
     sra_accession = lore.ArtifactInput(
         accepted_data=["sra_accession", "srr_accession"],
         label="SRA Accession",
+        select="multiple",
+        load_as="adapted",
         description="The SRA accession to dump (e.g. SRR390728).",
         examples=["SRR000123 with no suffix"],
     )
@@ -48,13 +50,17 @@ def vdb_dump_handler(
     vdb_dump_binary = get_sra_binary(sra_config.model_dump(), "vdb-dump")
 
     clean_accession = [acc.strip().split(".")[0] for acc in sra_accession if acc]
+    if not clean_accession:
+        raise ValueError("No valid SRA accessions provided.")
+
     table_data = []
+    all_seen_columns = set()
 
     # Execute within our safely isolated VDB cache env
     with isolated_vdb_env(sra_config.model_dump(), ctx) as safe_env:
         for accession in clean_accession:
             ctx.logger.info("Running vdb-dump for accession: %s", accession)
-            
+
             # Construct the CLI command
             cmd = [
                 vdb_dump_binary,
@@ -75,7 +81,10 @@ def vdb_dump_handler(
 
                 if result.stdout:
                     metadata = json.loads(result.stdout)
+                    metadata["sra_accession"] = accession
                     table_data.append(metadata)
+                    for k in metadata.keys():
+                        all_seen_columns.add(k)
                 else:
                     ctx.logger.warning(f"vdb-dump returned empty stdout for {accession}")
 
@@ -97,5 +106,5 @@ def vdb_dump_handler(
         output_key="run_metadata",
         name=f"VDB Run Metadata",
         extension="json",
-        metadata={"columns": list(table_data[0].keys())},
+        metadata={"columns": list(sorted(all_seen_columns))},
     )

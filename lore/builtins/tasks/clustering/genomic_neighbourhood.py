@@ -1,8 +1,9 @@
 """
 Analyzes syntenic neighbourhood of a given gene across a set of genome.
 """
+from collections.abc import Iterator
 import pandas as pd
-from typing import Any, Literal
+from typing import Literal
 
 import lore
 from lore import viz as v
@@ -21,7 +22,7 @@ class GenomicNeighbourhoodTaskInputs:
         label="Genome annotations",
         accepted_data=["ncbi_annotation_packages", "genome_annotations"],
         select="multiple",
-        load_as="adapted",
+        load_as="adapted_stream",
     )
     context_window_str = lore.ValueInput(
         str | None,
@@ -68,6 +69,12 @@ class GenomicNeighbourhoodTaskInputs:
         default=False,
         label="Write report",
     )
+    include_metadata = lore.ValueInput(
+        bool,
+        description="Whether to include metadata in the SVG hover tooltip. Disable to reduce SVG file size.",
+        default=True,
+        label="Tooltip data",
+    )
 
 
 class GenomicNeighbourhoodTaskOutputs:
@@ -84,6 +91,77 @@ class GenomicNeighbourhoodTaskOutputs:
         description="A report summarizing the genomic neighbourhood of the gene of interest across the input genomes.",
     )
 
+
+@lore.task(
+    "analysis.genomic_neighbourhood",
+    name="Genomic neighbourhood",
+    inputs=GenomicNeighbourhoodTaskInputs,
+    outputs=GenomicNeighbourhoodTaskOutputs,
+    category="clustering",
+    icon="☷",
+    preview_mode="live_full",
+)
+def genomic_neighbourhood_analysis(
+    ctx: lore.ExecutionContext,
+    protein_accession: list[str],
+    genome_annotation: Iterator[dict],
+    context_window_str: str | None = None,
+    context_window_type: Literal["gene_features", "base_pairs"] = "gene_features",
+    save_report: bool = False,
+    clamp_gap: int | None = None,
+    clamp_gene: int | None = None,
+    collapse_replicons: bool = False,
+    circular_wrap: bool = False,
+    include_metadata: bool = True,
+):
+    """
+    Analyze the genomic neighbourhood of gene(s) of interest across a set of genomes.
+    Allows multiple annotation files mostly to help visualize the same gene in 
+    different strains/species
+    """
+    # Defaults
+    if not context_window_str:
+        context_window_str = "5" if context_window_type == "gene_features" else "5000"
+    context_window = _set_window(context_window_str.strip())
+
+    cache_key = "_".join(a.id for a in ctx.input_artifacts.get("genome_annotation", []))
+    annotation_df = _build_master_df(ctx, annotations=genome_annotation, cache_key=cache_key)
+
+    neighbourhoods = _extract_neighbourhoods(
+        ctx=ctx,
+        annotation_df=annotation_df,
+        accessions=protein_accession,
+        window=context_window,
+        window_type=context_window_type,
+        collapse_replicons=collapse_replicons,
+        circular_wrap=circular_wrap,
+    )
+
+    if save_report:
+        out_path = ctx.get_temp_path("genomic_neighbourhood_report.csv")
+        neighbourhoods.to_csv(out_path, index=False)
+        ctx.materialize_file(
+            out_path,
+            name="neighbourhood_report",
+            output_key="neighbourhood_report",
+        )
+
+    svg_str = _render_neighbourhood_svg(
+        neighbourhoods, clamp_gap, clamp_gene, include_metadata,
+        window=context_window, window_type=context_window_type,
+    )
+    ctx.materialize_content(
+        svg_str,
+        name="neighbourhood_view",
+        output_key="neighbourhood_svg",
+        data_type="svg",
+        extension="svg",
+    )
+    ctx.logger.info("Genomic neighbourhood analysis complete.")
+
+############################################################
+# COMPUTATION HELPERS
+############################################################
 
 def _set_window(context_window: str) -> tuple[int, int]:
     """
@@ -292,7 +370,7 @@ def _normalize_neighbourhood(neighbourhood: pd.DataFrame) -> pd.DataFrame:
 
 
 @lore.memoize(prefix="master_df", ignore="annotations")
-def _build_master_df(ctx: lore.ExecutionContext, annotations: list[dict], cache_key: str):
+def _build_master_df(ctx: lore.ExecutionContext, annotations: Iterator[dict], cache_key: str):
     """
     Builds a master DataFrame from the input annotations. Memoized based on the 
     IDs of input annotation artifacts to avoid repeated processing.
@@ -300,8 +378,13 @@ def _build_master_df(ctx: lore.ExecutionContext, annotations: list[dict], cache_
     df = pd.DataFrame(annotations)
     try:
         df[["begin", "end", "protein_length"]] = df[["begin", "end", "protein_length"]].astype("Int64")
-    except:
-        raise ValueError("Could not find 'begin', 'end', or 'protein_length' column in 'Genome annotations'. Please ensure you've provided the correct Genome annotations file.")
+    except (KeyError, ValueError, TypeError) as e:
+        raise ValueError("Could not find 'begin', 'end', or 'protein_length' column in 'Genome annotations'. Please ensure you've provided the correct Genome annotations file.") from e
+
+    # Preserve untouched genomic coordinates: downstream alignment mutates begin/end
+    # in place (zero-centering + strand flips), but the tooltip must show the real ones.
+    df["begin_original"] = df["begin"]
+    df["end_original"] = df["end"]
 
     # 1. Establish replicon ID
     if "contig" in df.columns:
@@ -434,451 +517,180 @@ def _extract_neighbourhoods(
 
     return pd.concat(neighbourhood_list, ignore_index=True)
 
-
-@lore.task(
-    "analysis.genomic_neighbourhood",
-    name="Genomic neighbourhood",
-    inputs=GenomicNeighbourhoodTaskInputs,
-    outputs=GenomicNeighbourhoodTaskOutputs,
-    category="clustering",
-    icon="☷",
-    preview_mode="live",
-)
-def genomic_neighbourhood_analysis(
-    ctx: lore.ExecutionContext,
-    protein_accession: list[str],
-    genome_annotation: list[dict],
-    context_window_str: str | None = None,
-    context_window_type: Literal["gene_features", "base_pairs"] = "gene_features",
-    save_report: bool = False,
-    clamp_gap: int | None = None,
-    clamp_gene: int | None = None,
-    collapse_replicons: bool = False,
-    circular_wrap: bool = False,
-):
-    """
-    Analyze the genomic neighbourhood of gene(s) of interest across a set of genomes.
-    Allows multiple annotation files mostly to help visualize the same gene in 
-    different strains/species
-    """
-    # Defaults
-    if not context_window_str:
-        context_window_str = "5" if context_window_type == "gene_features" else "5000"
-    context_window = _set_window(context_window_str.strip())
-
-    cache_key = "_".join(a.id for a in ctx.input_artifacts.get("genome_annotations", []))
-    annotation_df = _build_master_df(ctx, annotations=genome_annotation, cache_key=cache_key)
-
-    neighbourhoods = _extract_neighbourhoods(
-        ctx=ctx,
-        annotation_df=annotation_df,
-        accessions=protein_accession,
-        window=context_window,
-        window_type=context_window_type,
-        collapse_replicons=collapse_replicons,
-        circular_wrap=circular_wrap,
-    )
-
-    if save_report:
-        out_path = ctx.get_temp_path("genomic_neighbourhood_report.csv")
-        neighbourhoods.to_csv(out_path, index=False)
-        ctx.materialize_file(
-            out_path,
-            name="neighbourhood_report",
-            output_key="neighbourhood_report",
-        )
-
-    svg_str = _render_neighbourhood_svg(neighbourhoods, clamp_gap, clamp_gene)
-    ctx.materialize_content(
-        svg_str,
-        name="neighbourhood_view",
-        output_key="neighbourhood_svg",
-        data_type="svg",
-        extension="svg",
-    )
-    ctx.logger.info("Genomic neighbourhood analysis complete.")
-
-
-ORIGIN_PADDING_BP = 600
-
-def _apply_virtual_layout(
-    df: pd.DataFrame,
-    clamp_gap: int | None,
-    clamp_gene: int | None,
-) -> tuple[pd.DataFrame, dict[str, list[float]], dict[str, list[float]], dict[str, Any]]:
-    """
-    Computes a virtual layout for all gene tracks in the DataFrame
-    Returns:
-    - modified df with 'render_begin' and 'render_end' series for visualization
-    - dict of gap break x-coordinates (gaps/replicon wraps) keyed by track_id
-    - dict of gene break x-coordinates (long genes) keyed by track_id
-    - dict of wrap origin x-coordinates (for circular DNA) keyed by track_id
-    """
-    df = df.sort_values(by=["track_id", "begin"]).copy()
-
-    # 1. Track breaks for visualization
-    track_ids = df["track_id"].unique()
-    gap_breaks = {t: [] for t in track_ids}
-    gene_breaks = {t: [] for t in track_ids}
-    wrap_breaks = {t: [] for t in track_ids}
-
-    has_wraps = "is_wrapped" in df.columns and df["is_wrapped"].any()
-
-    if not clamp_gap and not clamp_gene and not has_wraps:
-        df["render_begin"] = df["begin"].astype(float)
-        df["render_end"] = df["end"].astype(float)
-        df["gene_clamped"] = False
-        return df, gap_breaks, gene_breaks, wrap_breaks
-
-    # Visual padding size for wraps at the origin (use clamp_gap if present, else default to 100)
-    # TODO: Scale this based on track length?
-    wrap_padding = ORIGIN_PADDING_BP
-    if clamp_gap and wrap_padding > clamp_gap:
-        wrap_padding = clamp_gap
-
-    # 2. Gene clamping
-    df["gene_length"] = df["end"] - df["begin"]
-    df["gene_shrink"] = 0.0
-    df["is_clamped_gene"] = False
-
-    if clamp_gene:
-        clamp_mask = df["gene_length"] > clamp_gene
-        df.loc[clamp_mask, "gene_shrink"] = df["gene_length"] - clamp_gene
-        df.loc[clamp_mask, "is_clamped_gene"] = True
-
-    # 3. Gap clamping
-    df["gap"] = df["begin"] - df.groupby("track_id")["end"].shift(1)
-    df["gap_shrink"] = 0.0
-
-    if clamp_gap:
-        gap_mask = df["gap"] > clamp_gap
-        df.loc[gap_mask, "gap_shrink"] = df["gap"] - clamp_gap
-
-    # 4. Wrap padding: If the neighbourhood wraps at the origin, add a small gap
-    if has_wraps:
-        # Find the boundary where the wrap occurs
-        df["prev_wrapped"] = (
-            df.groupby("track_id")["is_wrapped"]
-            .shift(1)
-            .astype("boolean")  # pandas nullable boolean to avoid downcasting warnings
-            .fillna(df["is_wrapped"])
-        )
-        df["wrap_boundary"] = df["is_wrapped"] != df["prev_wrapped"]
-
-        # Use *negative* shrink to insert space (big brain moment)
-        wrap_mask = df["wrap_boundary"] == True
-        df.loc[wrap_mask, "gap_shrink"] = df.loc[wrap_mask, "gap"] - wrap_padding
-
-    # 4. Track cumulative shift of coordinates due to clamping
-    df["prev_gene_shrink"] = df.groupby("track_id")["gene_shrink"].shift(1).fillna(0.0)
-    df["prev_total_shrink"] = df["prev_gene_shrink"] + df["gap_shrink"]
-
-    df["cum_shrink_start"] = df.groupby("track_id")["prev_total_shrink"].cumsum().fillna(0.0)
-    df["cum_shrink_end"] = df["cum_shrink_start"] + df["gene_shrink"]
-
-    # 4. Apply virtual coordinates and re-zero anchors
-    df["render_begin"] = df["begin"] - df["cum_shrink_start"]
-    df["render_end"] = df["end"] - df["cum_shrink_end"]
-
-    anchor_starts = df[df["context_pos"] == 0].groupby("track_id")["render_begin"].first()
-    track_offsets = df["track_id"].map(anchor_starts).fillna(0)
-    df["render_begin"] -= track_offsets
-    df["render_end"] -= track_offsets
-
-    # 5. Record break positions for viz
-    if clamp_gap:
-        wrap_col_exists = "is_wrapped" in df.columns
-        if wrap_col_exists:
-            gap_breaks_df = df[(df["gap_shrink"] > 0) & (~df["wrap_boundary"])]
-        else:
-            gap_breaks_df = df[df["gap_shrink"] > 0]
-
-        for _, row in gap_breaks_df.iterrows():
-            gap_breaks[row["track_id"]].append(row["render_begin"] - (clamp_gap / 2))
-
-    if clamp_gene:
-        gene_breaks_df = df[df["is_clamped_gene"] == True]
-        for _, row in gene_breaks_df.iterrows():
-            gene_breaks[row["track_id"]].append(row["render_begin"] + (clamp_gene / 2))
-
-    if has_wraps:
-        wrap_breaks_df = df[df["wrap_boundary"] == True]
-        for _, row in wrap_breaks_df.iterrows():
-            left_bp = row["render_begin"] - wrap_padding
-            right_bp = row["render_begin"]
-            wrap_breaks[row["track_id"]].append((left_bp, right_bp))
-
-    df = df.drop(columns=["gap", "gene_length", "gene_shrink", "gap_shrink",
-                          "prev_gene_shrink", "prev_total_shrink", "cum_shrink_start",
-                          "cum_shrink_end", "prev_wrapped", "wrap_boundary"], errors="ignore")
-
-    return df, gap_breaks, gene_breaks, wrap_breaks
-
+############################################################
+# VISUALIZATION
+############################################################
+CANVAS_WIDTH = 1200
 
 def _render_neighbourhood_svg(
     df: pd.DataFrame,
     clamp_gap: int | None = None,
     clamp_gene: int | None = None,
-    collapse_duplicates: bool = False,
-    svg_theme: dict | None = None,
+    include_metadata: bool = True,
+    window: tuple[int, int] | None = None,
+    window_type: str = "gene_features",
 ) -> str:
     """
     Renders the genomic neighbourhood as an SVG string. If `clamp_gap` is provided,
     distances between genes that exceed this value will be visually clamped to 
     this maximum distance.
+    NOTE: In case of multiple anchor genes on the same replicon, if collapse_replicon, the extent is the minimum of both to the maximum of both... in the future, could make separate extents
     """
-    config = SVG_CONFIG.copy()
-    if svg_theme:
-        config.update(svg_theme)
-
     if df.empty:
-        return v.SvgCanvas(width=config["canvas_width"], height=200).render()    
+        return v.SvgCanvas(width=CANVAS_WIDTH, height=200).render()
 
-    # 1. Delegate layout calculations to a helper function, applying clamping as needed
-    df, gap_breaks, gene_breaks, wrap_breaks = _apply_virtual_layout(df, clamp_gap, clamp_gene)
-    tracks_data = df.groupby("track_id")
+    # 1. Slide all coordinates to anchor genes sit at 0
+    anchor_starts = df[df["context_pos"] == 0].groupby("track_id")["begin"].first()
+    offsets = df["track_id"].map(anchor_starts).fillna(0)
 
-    # 2. Global scale: Determine overall span
-    global_min = df[["render_begin", "render_end"]].min().min()
-    global_max = df[["render_begin", "render_end"]].max().max()
-    if global_min == global_max:
-        global_max = global_min + 1.0  # Divide-by-zero guard
+    df["shifted_begin"] = df["begin"] - offsets
+    df["shifted_end"] = df["end"] - offsets
 
-    plot_width = config["canvas_width"] - config["label_margin"] - config["right_margin"]
+    df = df.sort_values(by=["track_id", "shifted_begin"])
 
-    def _xscale(bp: float) -> float:
-        """Translates a base-pair coordinate to a pixel X-coordinate"""
-        percent_of_span = (bp - global_min) / (global_max - global_min)
-        return config["label_margin"] + percent_of_span * plot_width
-
-    # 3. Canvas setup
-    row_height = config["row_height"]
-
-    canvas_height = (len(tracks_data) * row_height) + config["vert_margin"] * 2
-    canvas = v.SvgCanvas(width=config["canvas_width"], height=canvas_height)
-
-    #4. Draw tracks
-    for idx, (track_id, track_df) in enumerate(tracks_data):
-        track_id = str(track_id)  # make the static type checker happy :)
-
-        # Track-level metadata and simple positioning
-        genome_acc = track_df["genome_accession"].iloc[0]  # in case of duplicates
-
+    # 2. Build track names; the stack sizes its own label gutter ("auto") and
+    #    infers the shared domain from each track's feature extents.
+    tracks_by_id = []
+    for track_id, track_df in df.groupby("track_id"):
+        genome_acc = track_df["genome_accession"].iloc[0]
         anchor_matches = track_df[track_df["context_pos"] == 0]
-        anchor_acc = (
-            anchor_matches["protein_accession"].iloc[0]
-            if not anchor_matches.empty
-            else "unknown_anchor"
-        )
+        anchor_acc = anchor_matches["protein_accession"].iloc[0] if not anchor_matches.empty else "unknown"
+        track_name = f"{genome_acc} | {anchor_acc}"
+        tracks_by_id.append((track_id, track_df, track_name))
 
-        y_top = config["vert_margin"] + idx * row_height
-        y_center = y_top + (row_height / 2)
+    stack = v.TrackStack(
+        width=CANVAS_WIDTH,
+        track_height=40.0,
+        track_spacing=2.0,
+    )
 
-        track_group = v.SvgGroup(classes=[f"track-{genome_acc}"])
+    # 4. Add each track to the stack
+    for track_id, track_df, track_name in tracks_by_id:
 
-        # A. Track label
-        label_text = f"{genome_acc} | {anchor_acc}"
-        track_group.add(v.SvgText(
-            x=config["label_margin"] - 15,
-            y=y_center + 4,  # eyeball centering
-            text=label_text,
-            style=v.SvgStyle(
-                text_anchor="end",
-                font_size=config["font_size"],
-                font_family=config["font_family"],
-            ),
-        ))
+        # 5. Map DataFrame to Feature objects
+        features = []
+        breaks = []
 
-        # B. Backbone line
-        track_min_x = _xscale(track_df[["render_begin", "render_end"]].min().min())
-        track_max_x = _xscale(track_df[["render_begin", "render_end"]].max().max())
+        prev_end = None
+        prev_wrapped = None
 
-        # i. Simple line indicating span of the track
-        track_group.add(v.SvgLine(
-            x1=track_min_x, y1=y_center, x2=track_max_x, y2=y_center,
-            style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=2.0),
-        ))
+        for _, row in track_df.iterrows():
+            curr_start = row["shifted_begin"]
+            curr_end = row["shifted_end"]
+            is_wrapped = row.get("is_wrapped", False)
 
-        # ii. Wrap around to origin: Hide backbone line
-        for left_bp, right_bp in wrap_breaks.get(track_id, []):
-            lx = _xscale(left_bp)
-            rx = _xscale(right_bp)
-            track_group.add(v.SvgLine(
-                x1=lx, y1=y_center, x2=rx, y2=y_center,
-                style=v.SvgStyle(stroke="#FFFFFF", stroke_width=3.0),
-            ))
+            # 6. Evaluate breaks
+            if prev_end is not None:
+                gap = curr_start - prev_end
+                is_wrap_boundary = (is_wrapped != prev_wrapped)
 
-        # iii. Gap breaks (a '//' symbol across the track)
-        for break_bp in gap_breaks.get(track_id, []):
-            bx = _xscale(break_bp)
-            # Draw broken axis indicator: a '//' symbol across the clamped gene
-            # White space
-            track_group.add(v.SvgPolygon(
-                points=[(bx-5, y_center-row_height*0.6), (bx+1, y_center+row_height*0.6),
-                        (bx+5, y_center+row_height*0.6), (bx-1, y_center-row_height*0.6)],
-                style=v.SvgStyle(fill="#FFFFFF", stroke="none"),
-            ))
+                if is_wrap_boundary:
+                    breaks.append(v.Break(start=prev_end, end=curr_start, kind=v.BreakKind.GAP, width="30px"))
+                elif clamp_gap and gap > clamp_gap:
+                    breaks.append(v.Break(
+                        start=prev_end + (clamp_gap / 2),
+                        end=curr_start - (clamp_gap / 2),
+                        kind=v.BreakKind.CUT,
+                        width=0,
+                    ))
 
-            # With lines
-            track_group.add(v.SvgLine(
-                x1=bx-1, y1=y_center-row_height*0.6, x2=bx+5, y2=y_center+row_height*0.6,
-                style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=1.5),
-            ))
-            track_group.add(v.SvgLine(
-                x1=bx-5, y1=y_center-row_height*0.6, x2=bx+1, y2=y_center+row_height*0.6,
-                style=v.SvgStyle(stroke=config["color_backbone"], stroke_width=1.5),
-            ))
-
-        # iv. Indicate termini of contigs (a dot indicating the terminus of the DNA fragment)
-        for _, gene in track_df.iterrows():
-            if gene.get("is_n_terminus"):
-                tx = _xscale(gene["render_begin"])
-                track_group.add(v.SvgCircle(
-                    cx=tx, cy=y_center, r=4,
-                    style=v.SvgStyle(fill=config["color_backbone"], stroke="none"),
-                ))
-            if gene.get("is_c_terminus"):
-                tx = _xscale(gene["render_end"])
-                track_group.add(v.SvgCircle(
-                    cx=tx, cy=y_center, r=4,
-                    style=v.SvgStyle(fill=config["color_backbone"], stroke="none"),
+            gene_len = curr_end - curr_start
+            if clamp_gene and gene_len > clamp_gene:
+                breaks.append(v.Break(
+                    start=curr_start + (clamp_gene / 2),
+                    end=curr_end - (clamp_gene / 2),
+                    kind=v.BreakKind.SPLICE,
+                    width=0,
                 ))
 
-        # C. Gene arrows
-        for _, gene in track_df.iterrows():
-            px_start = _xscale(gene["render_begin"])
-            px_end = _xscale(gene["render_end"])
+            if row.get("is_n_terminus"):
+                breaks.append(v.Break(start=curr_start, end=curr_start, kind=v.BreakKind.GAP, width=0))
+            if row.get("is_c_terminus"):
+                breaks.append(v.Break(start=curr_end, end=curr_end, kind=v.BreakKind.GAP, width=0))
 
-            acc = str(gene.get("protein_accession", ""))
-            symbol = str(gene["symbol"]) if pd.notna(gene.get("symbol")) else ""
-            name = str(gene["name"]) if pd.notna(gene.get("name")) else ""
-            locus = str(gene["locus_tag"]) if pd.notna(gene.get("locus_tag")) else ""
+            prev_end = curr_end
+            prev_wrapped = is_wrapped
 
-            display_label = symbol or name or locus or acc or "unknown"
-            gene_group = v.SvgGroup(classes=["gene-container"])
+            # 7. Feature geometry
+            acc = str(row.get("protein_accession", ""))
+            sym = str(row.get("symbol", "")) if pd.notna(row.get("symbol")) else ""
+            locus = str(row.get("locus_tag", "")) if pd.notna(row.get("locus_tag")) else ""
 
-            # i. Hover tooltip (using original coordinates)
-            hover_txt = (
-                f"Accession: {acc}\nSymbol: {symbol}\nName: {name}\nLocus tag: {locus}"
-                f"\nLocation: {format(gene['begin'], ',d')} – {format(gene['end'], ',d')}"
-            )
-            gene_group.add(v.SvgTitle(text=hover_txt.strip()))
+            disp = sym or row.get("name", "")
 
-            # ii. Polygon arrow
-            arrow_h = row_height * 0.5  # thickness
-            head_w = min(10.0, abs(px_end - px_start))  # arrowhead can't exceed gene length
-
-            y0 = y_center - (arrow_h / 2)
-            y1 = y_center + (arrow_h / 2)
-
-            if gene["orientation"] == "plus":
-                pts = [
-                    (px_start, y0),
-                    (px_end - head_w, y0),
-                    (px_end, y_center),
-                    (px_end - head_w, y1),
-                    (px_start, y1),
-                ]
+            if row["orientation"] == "plus":
+                shape = v.FeatureShape.ARROW_RIGHT
+            elif row["orientation"] == "minus":
+                shape = v.FeatureShape.ARROW_LEFT
             else:
-                pts = [
-                    (px_end, y0),
-                    (px_start + head_w, y0),
-                    (px_start, y_center),
-                    (px_start + head_w, y1),
-                    (px_end, y1),
-                ]
+                shape = v.FeatureShape.BOX
 
-            # Color features (anchor gene is highlighted)
-            is_anchor = (gene["context_pos"] == 0)
-            fill_color = config["color_anchor_fill"] if is_anchor else config["color_context_fill"]
-            stroke_color = config["color_anchor_stroke"] if is_anchor else config["color_context_stroke"]
+            # 8. Package data for tooltip hover text
+            feat_meta = {}
+            if include_metadata:
+                begin = row.get("begin_original")
+                end = row.get("end_original")
+                has_coords = pd.notna(begin) and pd.notna(end)
+                length = int(end) - int(begin) if has_coords else None
+                feat_meta = {
+                    "Accession": acc,
+                    "Name": row.get("name", "N/A"),
+                    "Symbol": sym if sym else "N/A",
+                    "Locus": locus if locus else "N/A",
+                    "Replicon": row.get("replicon", "N/A"),
+                    "Begin": int(begin) if has_coords else "N/A",
+                    "End": int(end) if has_coords else "N/A",
+                    "Length": f"{length:,}" if length is not None else "N/A",
+                    "Orientation": row.get("orientation", "N/A"),
+                }
 
-            arrow = v.SvgPolygon(
-                points=pts,
-                classes=["gene-arrow", "anchor-gene" if is_anchor else "context-gene"],
-                data={
-                    "accession": gene.get("protein_accession", ""),
-                    "symbol": gene.get("symbol", ""),
-                    "locus-tag": gene.get("locus_tag", ""),
-                    "start": int(gene["begin"]) if pd.notna(gene["begin"]) else "",
-                    "end": int(gene["end"]) if pd.notna(gene["end"]) else "",
-                    "title": hover_txt.strip(),
-                },
-                style=v.SvgStyle(fill=fill_color, stroke=stroke_color, stroke_width=1.0),
+            # 9. Add feature to the Track
+            features.append(v.Feature(
+                start=curr_start,
+                end=curr_end,
+                shape=shape,
+                label=disp,
+                highlight=(row["context_pos"] == 0),
+                metadata=feat_meta,
+            ))
+
+        # 10. In base-pairs mode, set backbone to window extent
+        track_extent = None
+        if window_type == "base_pairs" and window is not None:
+            anchors = track_df[track_df["context_pos"] == 0]
+            if not anchors.empty:
+                win_up, win_down = window
+                lo = anchors["shifted_begin"].min() - win_up
+                hi = anchors["shifted_end"].max() + win_down
+                track_extent = (float(lo), float(hi))
+        else:
+            track_extent = (
+                float(track_df["shifted_begin"].min()),
+                float(track_df["shifted_end"].max())
             )
-            gene_group.add(arrow)
 
-            # iii. Gene break indicator (if gene is clamped)
-            if gene.get("is_clamped_gene") and clamp_gene:
-                gx = _xscale(gene["render_begin"] + (clamp_gene / 2))
+        # 11. Build Track-level metadata and add to Stack
+        if include_metadata:
+            if not track_df[track_df["context_pos"] == 0].empty:
+                # In case of collapsed replicons, multiple anchor genes may coexist
+                prot_acc = track_df[track_df["context_pos"] == 0]["protein_accession"].to_list()
+                prot_acc = prot_acc[0] if len(prot_acc) == 1 else ", ".join(prot_acc)
+            else:
+                prot_acc = "unknown"
 
-                # Draw broken axis indicator: a '//' symbol across the clamped gene
-                # White space
-                gene_group.add(v.SvgPolygon(
-                    points=[(gx-5, y_center+arrow_h*0.6), (gx+1, y_center-arrow_h*0.6),
-                            (gx+5, y_center-arrow_h*0.6), (gx-1, y_center+arrow_h*0.6)],
-                    style=v.SvgStyle(fill="#FFFFFF", stroke="none"),
-                ))
-                # Lines
-                gene_group.add(v.SvgLine(
-                    x1=gx-1, y1=y_center+arrow_h*0.6, x2=gx+5, y2=y_center-arrow_h*0.6,
-                    style=v.SvgStyle(stroke=stroke_color, stroke_width=1.0)
-                ))
-                gene_group.add(v.SvgLine(
-                    x1=gx-5, y1=y_center+arrow_h*0.6, x2=gx+1, y2=y_center-arrow_h*0.6,
-                    style=v.SvgStyle(stroke=stroke_color, stroke_width=1.0)
-                ))
+            track_meta = {
+                "genome_accession": track_df["genome_accession"].iloc[0],
+                "protein_accession": prot_acc,
+                "replicon": track_df["replicon"].iloc[0],
+                "extent": abs(track_extent[1] - track_extent[0]) if track_extent else None,
+            }
 
-            # iv. Text label (if space allows)
-            def _trim_label(text: str, width_px: int) -> str:
-                """Trims labels to fit if possible"""
-                char_width = config["font_size"] * 0.6
-                max_chars = int(width_px / char_width)
-                if max_chars < 3:
-                    return ""
-                elif len(text) > max_chars:
-                    return text[:max_chars - 1] + "…"
-                else:
-                    return text
+        stack.add_track(v.FeatureTrack(
+            name=track_name,
+            features=features,
+            breaks=breaks,
+            extent=track_extent,
+            metadata=track_meta,
+        ))
 
-            text_label = _trim_label(display_label, abs(int(px_end - px_start)))
-            if text_label:
-                # Use white text on the dark anchor background for readability
-                text_color = config["color_anchor_text"] if is_anchor else config["color_context_text"]
-                label = v.SvgText(
-                    x=(px_start + px_end) / 2,
-                    y=y_center + (config["font_size"] * 0.35), # True vertical centering for text
-                    text=text_label,
-                    style=v.SvgStyle(
-                        text_anchor="middle",
-                        fill=text_color,
-                        font_size=config["font_size"] * 0.8,
-                        font_family=config["font_family"],
-                    ),
-                )
-                gene_group.add(label)
-
-            track_group.add(gene_group)
-
-        canvas.add(track_group)
-
-    return canvas.render()
-
-SVG_CONFIG = {
-    "canvas_width": 1200,
-    "row_height": 40,
-    "label_margin": 250,
-    "right_margin": 50,
-    "vert_margin": 10,
-    "arrow_thickness_ratio": 0.5,
-    "max_arrowhead_width": 10.0,
-    "color_backbone": "#64748B",
-    "color_anchor_fill": "#318686",
-    "color_anchor_stroke": "#2A6B6B",
-    "color_context_fill": "#ADD8E6",
-    "color_context_stroke": "#8BB4C2",
-    "color_anchor_text": "#FAFFFF",
-    "color_context_text": "#333333",
-    "font_family": "monospace",
-    "font_size": 12,
-}
+    return stack.render()

@@ -20,7 +20,7 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
     """
     Returns a list of Artifacts able to satisfy an input field's data type requirements.
     """
-    from lore.core.topology.traits import DataTrait
+    from lore.core.topology.traits import resolve_trait
 
     if not field_extra.get("is_artifact"):
         return []
@@ -31,14 +31,19 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
     if "*" in accepted_data:
         return session.list_artifacts()
 
-    trait_requirements = [d for d in accepted_data if isinstance(d, DataTrait)]
-    semantic_requirements = {d for d in accepted_data if not isinstance(d, DataTrait)}
+    # 2. Check for trait hijacks: if a keyword in accepted_data is a registered
+    # trait, assume that trait's is_satisfied_by() method should be used
+    trait_requirements: list = []
+    semantic_requirements: set = set()
+    for d in accepted_data:
+        trait = resolve_trait(d)
+        trait_requirements.append(trait) if trait else semantic_requirements.add(d)
     valid_artifacts = []
 
     for artifact in session.list_artifacts():
         art_adapters = artifact.get_adapters()
 
-        # 2. Requirement is a trait - e.g. lore.TABULAR
+        # 3. Requirement is a trait - e.g. "tabular"
         if any(
             trait.is_satisfied_by(artifact.data_type, art_adapters)
             for trait in trait_requirements
@@ -46,7 +51,7 @@ def find_artifacts_for_field(session: "Session", field_extra: dict) -> list["Art
             valid_artifacts.append(artifact)
             continue
 
-        # 3. Requirement is a literal string - e.g. "json", "uid"
+        # 4. Requirement is a literal string - e.g. "json", "uid"
         # The Artifact owns the union of its static and dynamic schemas.
         if semantic_requirements & artifact.resolvable_types():
             valid_artifacts.append(artifact)

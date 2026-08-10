@@ -104,15 +104,10 @@ def merge_handler(
     #     return
 
     # 1. Parse into records/table through the Adapter layer
-    parsed_records = []
-    for file_content in source:
-        parsed = adapter.parse(file_content, extension=ext)
+    parsed = adapter.parse(source, extension=ext)
 
-        # Distinguish between single-record (text) and multi-record (tabular)
-        if isinstance(parsed, list):
-            parsed_records.extend(parsed)
-        else:
-            parsed_records.append(parsed)
+    # Distinguish between single-record (text) and multi-record (tabular)
+    parsed_records = parsed if isinstance(parsed, list) else [parsed]
 
     if not parsed_records:
         raise ValueError("No records found in the input data.")

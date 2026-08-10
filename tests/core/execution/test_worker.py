@@ -168,7 +168,7 @@ def test_run_preview_worker_propagates_input_truncation(
         inputs=EchoInputs,
         outputs=EchoOutputs,
         name="Echo Table",
-        preview_mode="full",
+        preview_mode="live",
     )
     def handler(ctx: ExecutionContext, records):
         payload = "\n".join(json.dumps(r) for r in records)

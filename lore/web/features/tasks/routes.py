@@ -4,6 +4,7 @@ Routes for managing individual Tasks within a Session.
 import asyncio
 from collections.abc import AsyncIterable
 import html
+import traceback
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -17,6 +18,7 @@ from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
 
@@ -47,7 +49,7 @@ async def list_available_tasks(
         name="features/tasks/catalogue.html",
         context=ctx.render(
             session=s,
-            tasks=available_tasks,
+            task_definitions=available_tasks,
         )
     )
 
@@ -103,17 +105,30 @@ def view_session_task(
     ctx: PageContext = Depends(),
 ):
     """
-    Ready-only view of a Task's details, outputs, and metadata
+    Ready-only view of a Task's details, outputs, and metadata.
+    If a Task exists that is not currently registered in the task registry, it
+    will be displayed with a warning and cannot be edited or re-run.
     """
     task = s.get_task(task_id)
     if task is None:
         raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-    resolved_outputs = resolve_task_outputs(s, task_id)
-
+    # Stale task definition (e.g. deleted from registry) is still viewable
     task_def = task_registry.get(task.registry_key)
     if not task_def:
-        raise HTTPException(404, detail=f"Task definition '{task.registry_key}' not found in registry.")
+        ctx.add_msg(
+            f"The definition for '{task.registry_key}' is no longer in the registry. "
+            "Showing stored results only; this Task cannot be re-run until the definition is restored.",
+            "warning",
+        )
+
+    try:
+        resolved_outputs = resolve_task_outputs(s, task_id)
+    except Exception as e:
+        s.logger.warning(
+            "Failed to resolve outputs for task '%s' (%s): %s", task_id, task.registry_key, e
+        )
+        resolved_outputs = {}
 
     task_log = s.get_task_log(task_id)
 
@@ -261,6 +276,10 @@ def run_task_action(
 
         task.error = None
         s.mark_dirty()
+        log_path = s.get_task_log_path(task_id)
+
+    # Force a fresh log file for this run
+    log_path.write_text("")
 
     # 3. Send to Runtime to execute
     rt.execute_task(session_id=session_id, task_id=task_id)
@@ -446,17 +465,21 @@ def api_task_preview(
                 )
                 continue
     
-            config = payload.task_config.adapter.model_dump()
-            config["ext"] = ext
-    
-            # C. Adapt the raw output data for frontend preview
+            # C. Merge adapter config from source metadata, UI overrides, and call-site feedback
+            config = build_adapter_config(
+                source_metadata=output.source_metadata,
+                ui_config=payload.task_config.adapter.model_dump(),
+                ext=ext,
+            )
+
+            # D. Adapt the raw output data for frontend preview
             adapted = adapter.preview(
                 raw_data=output.data,
                 io_metadata=output.io_metadata,
                 config=config,
             )
 
-            # D. Finalize display by checking if the adapter hit its preview limit
+            # E. Finalize display by checking if the adapter hit its preview limit
             display_complete = output.display_complete and not adapted.metadata.get("ui_limit_hit", False)
             truncation_reason = output.truncation_reason
             if output.result_complete and not display_complete:
@@ -480,10 +503,17 @@ def api_task_preview(
 
     except Exception as e:
         rt.logger.error("Preview API Error: %s", str(e), exc_info=True)
+        # TODO(security): traceback exposes internal paths/source. Fine for now
+        # gate behind a debug setting before HPC deploy
+        tb = html.escape(traceback.format_exc())
         err_html = f"""
         <div class="card" style="background: var(--danger-bg); border-color: var(--danger);">
             <h4 style="color: var(--danger); margin-top: 0;">Preview Failed</h4>
             <p class="small">{str(e)}</p>
+            <details class="small" style="margin-top: var(--spacing-sm);">
+                <summary style="cursor: pointer;">Traceback</summary>
+                <pre class="small" style="white-space: pre-wrap;">{tb}</pre>
+            </details>
         </div>
         """
         return HTMLResponse(content=err_html)

@@ -64,7 +64,8 @@ class LocalSubprocessExecutor(BaseExecutor):
 
         # 2. Spawn isolated OS process
         if log_path:
-            f = open(log_path, "a", encoding="utf-8")
+            # Wipes any previous log file on each run
+            f = open(log_path, "w", encoding="utf-8")
             proc = subprocess.Popen(command, stdout=f, stderr=subprocess.STDOUT)
         else:
             f = None

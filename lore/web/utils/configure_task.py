@@ -2,7 +2,7 @@
 Helper to render the input widget to configure tasks.
 """
 
-from lore.core.artifacts.models import Artifact
+from lore.core.artifacts.artifact import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.sessions import Session, find_artifact_candidates, map_artifacts_to_task_inputs
 from lore.core.tasks import Task, TaskDefinition, Cardinality, task_registry

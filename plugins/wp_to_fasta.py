@@ -84,7 +84,7 @@ def wp_to_fasta(
         else:
             has_api_key = True
         
-    acc_list = re.split(r"[,\s]+", accessions)
+    acc_list = [acc for acc in re.split(r"[,\s]+", accessions) if acc]
     out_path = ctx.get_temp_path("wp_protein.faa")
     acc_seq_map = dict()
     
@@ -178,6 +178,7 @@ def wp_to_fasta(
                                             acc_seq_map[acc] = f"{header}\n{"".join(seq_fragments)}"
                                         header = line
                                         acc = line[1:].split(maxsplit=1)[0]
+                                        seq_fragments = []
                                         
                                 acc_seq_map[acc] = f"{header}\n{"".join(seq_fragments)}"
                     except:
@@ -199,5 +200,5 @@ def wp_to_fasta(
 
     ctx.materialize_file(
         output_key="fasta",
-        source_path=out_path,
+        source=out_path,
     )

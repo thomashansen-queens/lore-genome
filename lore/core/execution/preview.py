@@ -3,6 +3,8 @@ Preview execution logic for Tasks. Previews are meant to be fast, responsive
 checks that can be used in the UI to validate inputs and get a sense of how a
 Task will execute and should be configured.
 """
+import traceback
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +16,8 @@ from .context import ExecutionContext
 from .materializer import materialize_task_inputs
 from lore.core.readers import get_reader_for
 from lore.core.tasks import AdapterStrategy, Task
+
+import traceback
 
 if TYPE_CHECKING:
     from lore.core.runtime import Runtime
@@ -36,6 +40,8 @@ class PreviewOutput(BaseModel):
     display_complete: bool = True
     truncation_reason: Literal["sampled", "capped"] | None = None
     io_metadata: dict[str, Any] = Field(default_factory=dict)
+    # Handler-declared metadata for this output (e.g. {"header": False}). The preview analog of Artifact.metadata
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PreviewPayload(BaseModel):
@@ -53,6 +59,10 @@ class PreviewPayload(BaseModel):
 
     logs: str | None = None
     error: str | None = None
+    # TODO(security): `traceback` exposes internal file paths and source structure.
+    # Acceptable for now (local dev tool). Gate behind a debug setting before any
+    # multi-user / HPC deployment.
+    traceback: str | None = None
 
 
 @dataclass
@@ -70,15 +80,12 @@ class PreviewContext(ExecutionContext):
     Intercepts materialization to return UI-ready data payloads.
     Leaves the Manifest untouched.
 
-    `inputs_complete`: simple flag indicating whether the input to
-    the handler is delivered in full. If any input was 'peeked' (impartial load),
-    outputs derived from it are also partial previews.
+    For caching, checks if input_complete is true or not.
     """
-    inputs_complete: bool = True
 
     def materialize_file(
         self,
-        source_path: Path | str,
+        source: Path | str | Mapping[str, Path | str],
         name: str | None = None,
         output_key: str | None = None,
         data_type: str | None = None,
@@ -89,19 +96,19 @@ class PreviewContext(ExecutionContext):
         """
         Intercepts file materialization to return preview payload in RAM
         """
-        source_path = Path(source_path)
-        if not source_path.exists():
-            raise FileNotFoundError(f"Source file not found: {source_path}")
+        # 1. Normalize source to dict[str, Path] (shared with the real engine path)
+        from lore.core.artifacts import normalize_sources
+        sources = normalize_sources(source)
 
-        # 1. Resolve output keys
+        # 2. Resolve output keys
         output_key = self._resolve_output_key(output_key)
         data_type = self._resolve_data_type(output_key, data_type)
 
-        # 2. Delegate packaging
+        # 3. Delegate packaging
         adapter_config = self.task.exec_config.get("adapter", {})
         strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
         peek_limit = self.runtime.settings.preview_peek_limit
-        reader = get_reader_for(source_path)
+        reader = get_reader_for(sources["main"])
 
         if strategy in (AdapterStrategy.FULL, AdapterStrategy.EAGER):
             try:
@@ -112,16 +119,18 @@ class PreviewContext(ExecutionContext):
         else:
             raw_data, io_meta = reader.preview(peek_limit=peek_limit, config=adapter_config)
 
-        # io_meta["file_eof_hit"] now means exactly what the reader reports: did
-        # the OUTPUT read reach EOF (the display axis). The result axis — were the
-        # inputs delivered in full? — is carried separately by the worker; the two
-        # are no longer fused. When the result is a sample, the output's own row
-        # count is not the result's total, so don't present it as one.
+        # Can't know total row count of the output if the inputs were not fully loaded
         if not self.inputs_complete:
             io_meta["total_rows"] = None
 
-        io_meta["extension"] = source_path.suffix.lstrip(".")
+        io_meta["extension"] = sources["main"].suffix.lstrip(".")
         io_meta["data_type"] = data_type
+
+        # Carry the handler's declared metadata. Preview has no Artifact.metadata, so we stash it here
+        source_metadata = dict(metadata or {})
+        if kwargs:
+            source_metadata.update(kwargs)
+        io_meta["source_metadata"] = source_metadata
 
         # 4. Store in ephemeral results object
         self.results.add(output_key, (raw_data, io_meta))
@@ -169,7 +178,11 @@ def run_preview_worker(
         raise ValueError(f"Input validation failed: {str(e)}") from e
 
     adapter_config = ephemeral_task.exec_config.get("adapter", {})
-    strategy = AdapterStrategy.FULL
+    strategy = AdapterStrategy(adapter_config.get("strategy", AdapterStrategy.PEEK))
+
+    # Some tasks cannot function in PEEK mode, so escalate to FULL if the definition requires it.
+    if task_def.preview_mode.loads_full_inputs:
+        strategy = AdapterStrategy.FULL
 
     # 3. Resolve inputs
     with rt.open_session(session_id, read_only=True) as s:
@@ -177,7 +190,7 @@ def run_preview_worker(
             s=s,
             task_def=task_def,
             bindings=ephemeral_task.inputs,
-            strategy=AdapterStrategy(strategy),
+            strategy=strategy,
         )
 
     # 4. Completeness check. Was every input delivered to the handler in full? If not, was
@@ -202,7 +215,7 @@ def run_preview_worker(
     if not task_def.preview_mode.executes_handler:
         return preview
 
-    # 7. Execute handler
+    # 7. Execute handler (and set data completeness in context for caching)
     ctx = PreviewContext(
             runtime=rt,
             session_id=session_id,
@@ -226,6 +239,9 @@ def run_preview_worker(
                 data, io_meta = raw_data
             else:
                 data, io_meta = raw_data, {}
+
+            # Handler metadata was stashed in io_meta purely for transport. Pop to store in PreviewOutput
+            source_metadata = io_meta.pop("source_metadata", {})
 
             # PreviewContext should always populate data_type in io_meta, but fall back to
             # field definition just in case
@@ -253,10 +269,12 @@ def run_preview_worker(
                 display_complete=display_complete,
                 truncation_reason=truncation_reason,
                 io_metadata=io_meta,
+                source_metadata=source_metadata,
             )
 
     except Exception as e:
         preview.error = str(e)
+        preview.traceback = traceback.format_exc()
     finally:
         ctx.cleanup()
 

@@ -6,16 +6,20 @@ https://www.ncbi.nlm.nih.gov/books/NBK25497/
 """
 from contextlib import contextmanager
 from enum import StrEnum
+from typing import Literal
 import httpx
 from importlib.metadata import version
 
 NCBI_ENTREZ_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
 
-class retmode(StrEnum):
+class Retmode(StrEnum):
     """NCBI Entrez return modes."""
     JSON = "json"
     XML = "xml"
+    TEXT = "text"
+
+RetmodeLiteral = Literal["json", "xml", "text"]
 
 
 @contextmanager
@@ -23,15 +27,16 @@ def entrez_client(
     api_key: str | None = None,
     email: str | None = None,
     timeout: float = 60.0,
-    ret: retmode = retmode.JSON,
+    ret: Retmode | RetmodeLiteral = Retmode.JSON,
 ):
     """
     Create a configured httpx client for the NCBI Entrez API.
     event_hooks allows us to raise exceptions on HTTP errors, rather than checking
     {"success": false, "error": {...}} in the JSON response.
     """
+    ret_val = Retmode(ret).value
     params = {
-        "retmode": ret.value,
+        "retmode": ret_val,
         "tool": f"lore-genome/{version('lore-genome')}",
     }
 
@@ -39,7 +44,7 @@ def entrez_client(
     if email:
         params["email"] = email
     if api_key:
-        params["api-key"] = api_key
+        params["api_key"] = api_key
 
     def raise_on_4xx_5xx(response: httpx.Response):
         response.raise_for_status()
@@ -49,7 +54,6 @@ def entrez_client(
         params=params,
         timeout=httpx.Timeout(connect=5.0, read=timeout, write=timeout, pool=timeout),
         event_hooks={"response": [raise_on_4xx_5xx]},
-        verify=False,
     ) as client:
         yield client
 

@@ -11,6 +11,7 @@
     {% endif %}
     sse-close="close"
     >
+
     {# Invisible div to catch SSE messages, trigger HTMX out-of-band hot swaps #}
     <div sse-swap="task_update" style="display:none;"></div>
 
@@ -90,26 +91,42 @@
         </div>
     </div>
 
-    <div class="column gapped" style="max-height: 50vh;">
-        {# === Task Log === #}
-        <div class="card" style="flex: 1;">
-            <header>Task Log</header>
-            <div class="scroll-area" id="task-log-container" style="flex: 1; min-height: 0;">
-                <pre class="small" id="task-log" style="white-space: pre-wrap;">{{ task_log | default('No log output yet.', true) }}</pre>
+    {# === Activity (Log / Error tabs) === #}
+    <div id="task-activity" class="column" style="height: 40vh; margin-top: var(--spacing-md);">
+        
+        <header class="row gapped" style="gap: var(--spacing-sm); margin-left: var(--spacing-sm); flex-shrink: 0;">
+            <button type="button" class="btn-tab activity-tab" data-target="activity-log-panel"
+                style="border-bottom: 2px solid transparent;">
+                Log
+            </button>
+            <button type="button" id="task-error-tab" class="btn-tab activity-tab" data-target="activity-error-panel"
+                style="border-bottom: 2px solid transparent; color: var(--danger);
+                {% if not task.error %} display: none;{% endif %}">
+                Error ‽
+            </button>
+            <button type="button" class="btn badge secondary small push-right activity-copy-btn">
+                Copy
+            </button>
+        </header>
+
+        <div class="column card fill">
+            {# Log panel #}
+            <div id="activity-log-panel" class="activity-panel column fill"
+                {% if task.error %}style="display: none;"{% endif %}>
+                <div class="scroll-area" id="task-log-container">
+                    <pre class="small" id="task-log" data-copyable style="white-space: pre-wrap;">{{ task_log | default('No log output yet.', true) }}</pre>
+                </div>
+            </div>
+
+            {# Error panel #}
+            <div id="activity-error-panel" class="activity-panel column fill"
+                {% if not task.error %}style="display: none;"{% endif %}>
+                <div class="scroll-area" id="task-error-container" style="background: var(--danger-bg);">
+                    <pre class="small" data-copyable style="white-space: pre-wrap;">{{ task.error }}</pre>
+                </div>
             </div>
         </div>
 
-        {# === Error === #}
-        <div id="task-error-container">
-            {% if task.error %}
-            <div class="card" style="background: var(--danger-bg); flex: 1;">
-                <header style="color: var(--danger);">Error</header>
-                <div class="scroll-area" id="task-error" style="flex: 1; min-height: 0;">
-                    <pre class="small" style="white-space: pre-wrap;">{{ task.error }}</pre>
-                </div>
-            </div>
-            {% endif %}
-        </div>
     </div>
 
     {# === Configuration + Outputs === #}
@@ -248,5 +265,62 @@
             }
         }
     });
+
+    // --- Activity panel: Log / Error tabs ---
+    (function () {
+        const panel = document.getElementById('task-activity');
+        if (!panel) return;
+
+        function activate(targetId) {
+            panel.querySelectorAll('.activity-tab').forEach(b => {
+                const isTarget = b.getAttribute('data-target') === targetId;
+                b.classList.toggle('active', isTarget);
+                b.style.borderBottomColor = isTarget ? 'var(--primary)' : 'transparent';
+                b.style.fontWeight = isTarget ? '600' : '400';
+            });
+            panel.querySelectorAll('.activity-panel').forEach(p => {
+                p.style.display = (p.id === targetId) ? 'flex' : 'none';
+            });
+        }
+
+        // Tab clicks (delegated, so OOB-swapped buttons keep working)
+        panel.addEventListener('click', (e) => {
+            const btn = e.target.closest('.activity-tab');
+            if (!btn) return;
+            e.preventDefault();
+            activate(btn.getAttribute('data-target'));
+        });
+
+        // Copy the currently-visible panel's text
+        const copyBtn = panel.querySelector('.activity-copy-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                const visible = [...panel.querySelectorAll('.activity-panel')]
+                    .find(p => p.style.display !== 'none');
+                const region = visible?.querySelector('[data-copyable]');
+                if (!region) return;
+                try {
+                    await navigator.clipboard.writeText(region.innerText);
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+                } catch (err) {
+                    console.error('Failed to copy text: ', err);
+                }
+            });
+        }
+
+        // Live error swaps: switch focus to Error tab
+        document.body.addEventListener('htmx:oobAfterSwap', (evt) => {
+            if (evt.detail.target.id === 'task-error-tab') {
+                const hasError = evt.detail.target.style.display !== 'none';
+                activate(hasError ? 'activity-error-panel' : 'activity-log-panel');
+            }
+        });
+
+        // Default to show Error tab if there is one
+        const errTab = document.getElementById('task-error-tab');
+        const startError = errTab && errTab.style.display !== 'none';
+        activate(startError ? 'activity-error-panel' : 'activity-log-panel');
+    })();
 </script>
 {% endblock %}

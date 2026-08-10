@@ -13,7 +13,7 @@ import tempfile
 from typing import TYPE_CHECKING, Any
 
 from lore.core.cache import TieredCache
-from lore.core.execution.executors import LocalSubprocessExecutor
+from lore.core.execution import LocalSubprocessExecutor
 from lore.core.filelock import is_file_locked
 from lore.core.manifest import Manifest
 from lore.core.settings import (
@@ -519,8 +519,7 @@ def build_runtime(
     # Discover built-in plugins
     import lore.builtins
     builtins_dir = Path(lore.builtins.__file__).parent
-    discover_plugins(builtins_dir)
-    # import lore.builtins.adapters
+    discover_plugins(builtins_dir, namespace="lore.builtins")
 
     # External plugins
     user_plugins_dir = rt.settings.active_plugins_dir

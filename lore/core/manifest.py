@@ -164,14 +164,31 @@ class Manifest(BaseModel):
             raise ValueError(f"Invalid sort key '{sort_by}' for Artifact.")
         return sorted(self.artifacts.values(), key=lambda a: getattr(a, sort_by, ""), reverse=reverse)
 
-    def rename_artifact(self, artifact_id: str, new_name: str | None, new_path: str | None = None) -> str:
-        """Rename an Artifact, ensuring uniqueness. Returns the new name."""
+    def rename_artifact(
+        self,
+        artifact_id: str,
+        new_name: str | None,
+        new_paths: dict[str, str] | None = None,
+    ) -> str:
+        """
+        Rename an Artifact, ensuring uniqueness.
+        Updates physical file paths in the bundle if provided. Returns the new name.
+        """
         artifact = self.get_artifact(artifact_id)
         if not artifact:
             raise ValueError(f"Artifact ID '{artifact_id}' not found in manifest.")
+
         artifact.name = self._unique_name(new_name, artifact_id, kind="artifacts")
-        if new_path is not None:
-            artifact.path = new_path
+
+        if new_paths is not None:
+            for key, relative_path in new_paths.items():
+                if key in artifact.files:
+                    artifact.files[key].path = relative_path
+                else:
+                    raise ValueError(
+                        f"Artifact ID '{artifact_id}' does not have a file for key: '{key}'."
+                    )
+
         return artifact.name
 
     def remove_artifact(self, artifact_id: str) -> None:

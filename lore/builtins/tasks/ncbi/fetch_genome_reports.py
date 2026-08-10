@@ -1,7 +1,7 @@
 """
 Fetch genome reports from NCBI Datasets API based on taxonomic and search term criteria
 """
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 import json
 import logging
@@ -103,13 +103,13 @@ class NcbiFilterOptions:
     )
     # UI: Date picker
     filters_first_release_date = lore.ValueInput(
-        datetime | None,
+        date | None,
         default=None,
         label="Released after",
         description="Only return assemblies released after this date",
     )
     filters_last_release_date = lore.ValueInput(
-        datetime | None,
+        date | None,
         default=None,
         label="Released before",
         description="Only return assemblies released before this date",
@@ -177,8 +177,9 @@ def _fetch_genome_reports_page(api: httpx.Client, taxons: list[str], term_set: l
             val = [item.value if hasattr(item, "value") else str(item) for item in v]
         elif hasattr(v, "value"):
             val = v.value
-        elif isinstance(v, datetime):
-            # NCBI uses ISO 8601 strings for dates
+        elif isinstance(v, date):
+            # NCBI uses ISO 8601 strings for dates. `date` (and its `datetime`
+            # subclass) both format here; date-only inputs anchor to midnight.
             val = v.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         else:
             val = v

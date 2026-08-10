@@ -69,7 +69,7 @@ def discover_plugins(directory: Path | str, namespace: str | None = None) -> Non
 
         # 5. If not a package, look for standalone .py scripts
         for file in files:
-            if file.startswith("." or file.startswith("__")) or not file.endswith(".py"):
+            if file.startswith((".", "__")) or not file.endswith(".py"):
                 continue
             rel_path = (root / file).relative_to(target_dir)
             module_name = ".".join(rel_path.with_suffix("").parts)

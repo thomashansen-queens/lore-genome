@@ -5,7 +5,7 @@ Resolves inputs and outputs from Tasks
 from typing import Any, Literal, TYPE_CHECKING
 from pydantic import BaseModel
 
-from lore.core.artifacts import BaseArtifact
+from lore.core.artifacts import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.tasks import Cardinality, task_registry, TaskStatus
 
@@ -31,7 +31,7 @@ class ResolvedField(BaseModel):
 
     # UI exposed fields
     binding_type: Literal["literal", "reference", "user_input", "output"]
-    value: Any | list[BaseArtifact] | list[str]
+    value: Any | list[Artifact] | list[str]
     is_ready: bool
     ui_label: str | None = None
 
@@ -143,7 +143,7 @@ def resolve_task_outputs(session: "Session", task_id: str) -> dict[str, Resolved
     if not task.outputs:
         return {}
 
-    task_def = task_registry[task.registry_key]
+    task_def = task_registry.get(task.registry_key)
     schema_fields = task_def.output_model.model_fields if (task_def and task_def.output_model) else {}
 
     resolved = {}

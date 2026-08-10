@@ -5,9 +5,9 @@ built from Task-Artifact relationships.
 """
 from typing import TYPE_CHECKING, Any, Literal
 
+from .traits import resolve_trait
 from lore.core.adapters import BaseAdapter
 from lore.core.bindings import Binding, LiteralBinding, ReferenceBinding, UserInputBinding
-from lore.core.topology.traits import DataTrait
 
 if TYPE_CHECKING:
     from lore.core.sessions.session import Session
@@ -54,12 +54,13 @@ def is_output_compatible(
 
     # 2. True wildcard (input accepts anything)
     for requirement in accepted:
-        # A. Trait match - Broad semantic category (e.g. "tabular")
-        if isinstance(requirement, DataTrait):
-            if requirement.is_satisfied_by(provided, adapters):
+        # A. Trait match: keyword hijacks a broad semantic category (e.g. "tabular")
+        trait = resolve_trait(requirement)
+        if trait is not None:
+            if trait.is_satisfied_by(provided, adapters):
                 return True
 
-        # B. Direct match - Exact type match (e.g. "parquet")
+        # B. Direct match: Exact type match (e.g. "protein_fasta")
         elif isinstance(requirement, str):
             req_lower = requirement.lower()
             if provided == req_lower:
