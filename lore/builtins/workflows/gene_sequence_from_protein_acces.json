@@ -1,0 +1,158 @@
+{
+  "id": "gene_sequence_from_protein_acces",
+  "name": "Gene Sequence from Protein Accession Pipeline",
+  "description": "Given a list of protein accessions, creates a table containing all the found genes and their sequences which code for the given proteins.",
+  "created_at": "2026-09-09T19:05:36.409687Z",
+  "tasks": [
+    {
+      "id": "86e00afe-c8a5-4e86-8574-c875a33b367b",
+      "registry_key": "data.join_tables",
+      "name": "Join Tables",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "right_on": [
+          {
+            "type": "literal",
+            "value": "nucleotide_accession"
+          }
+        ],
+        "how": [
+          {
+            "type": "literal",
+            "value": "inner"
+          }
+        ],
+        "right_table": [
+          {
+            "type": "reference",
+            "source_id": "68255843-f575-4a39-8108-d390c2efe1bb",
+            "output_key": "nucleotide_fasta",
+            "artifact_id": null
+          }
+        ],
+        "left_on": [
+          {
+            "type": "literal",
+            "value": "Nucleotide Accession"
+          }
+        ],
+        "conflict_strategy": [
+          {
+            "type": "literal",
+            "value": "suffix"
+          }
+        ],
+        "key_regex_clean": [],
+        "left_table": [
+          {
+            "type": "reference",
+            "source_id": "acc756b6-21e9-4886-b09a-d25874c13962",
+            "output_key": "ipg_records",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-09T19:05:36.399750Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "4624c86a-a55e-438c-a7f7-8ea792329eb2",
+      "registry_key": "extract_column",
+      "name": "Extract Column",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "new_name": [],
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "acc756b6-21e9-4886-b09a-d25874c13962",
+            "output_key": "ipg_records",
+            "artifact_id": null
+          }
+        ],
+        "column_name": [
+          {
+            "type": "literal",
+            "value": "Nucleotide Accession"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-09T19:05:36.405265Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "68255843-f575-4a39-8108-d390c2efe1bb",
+      "registry_key": "ncbi.entrez.efetch_gene",
+      "name": "NCBI Entrez EFetch Gene",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "reference",
+            "source_id": "4624c86a-a55e-438c-a7f7-8ea792329eb2",
+            "output_key": "column",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-09T19:05:36.407916Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "acc756b6-21e9-4886-b09a-d25874c13962",
+      "registry_key": "ncbi.entrez.efetch_protein",
+      "name": "NCBI Entrez EFetch Protein",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "fetch_format": [
+          {
+            "type": "literal",
+            "value": "IPG Table"
+          }
+        ],
+        "uid": [
+          {
+            "type": "literal",
+            "value": "WP_346725957.1"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-09T19:05:36.409437Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}
