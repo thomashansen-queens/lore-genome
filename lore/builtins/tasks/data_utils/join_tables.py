@@ -175,6 +175,10 @@ def join_tables(
         ctx.logger.error(f"Error during join operation: {e}")
         raise RuntimeError(f"Error during join operation: {e}") from e
 
+    if how == JoinHow.INNER and left_on != right_on:
+        ctx.logger.info(f"Performing INNER join - dropping right column, {right_on} from output.")
+        df_joined = df_joined.drop(columns=[right_on])
+
     if "_join_key" in df_joined.columns:
         df_joined = df_joined.drop(columns=["_join_key"])
 
