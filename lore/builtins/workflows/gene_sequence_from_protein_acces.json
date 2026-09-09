@@ -142,8 +142,9 @@
         ],
         "uid": [
           {
-            "type": "literal",
-            "value": "WP_346725957.1"
+            "type": "user_input",
+            "input_key": "uid",
+            "value": null
           }
         ]
       },
