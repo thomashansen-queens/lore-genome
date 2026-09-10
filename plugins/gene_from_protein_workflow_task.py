@@ -59,6 +59,9 @@ def join_tables(
     # 2. Drop duplicates in the ipg_mapping_table if requested
     if drop_duplicates:
         df_ipg = df_ipg.drop_duplicates(subset=["Nucleotide Accession"], keep="first")
+        df_ipg["Assembly"] = df_ipg["Assembly"].str.replace("GCA_|GCF_", "", regex=True)
+        # Drop rows with identical assembly numbers
+        df_ipg = df_ipg.drop_duplicates(subset=["Assembly"], keep="first")
 
     # 3. Perform the join operation
     try:
@@ -78,7 +81,9 @@ def join_tables(
 
     with open(out_path, "w") as f:
         for _, row in df_joined.iterrows():
-            f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({row['Start']}-{row['Stop']})\n{row['nucleotide_sequence']}\n")
+            start = row['Start']
+            stop = row['Stop']
+            f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({start}-{stop})\n{row['nucleotide_sequence'][int(start)-1:int(stop)]}\n")
 
     ctx.materialize_file(
         source=out_path,
