@@ -64,11 +64,13 @@
                     </a>
                 {% endif %}
                 
-                {% if task.status.is_runnable %}
-                    <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST">
-                        <button type="submit" class="btn primary">
+                {% if task.status.is_runnable or task.status.value == 'running' %}
+                    <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST" class="task-run-form">
+                        <button type="submit" class="btn primary" {% if task.status.value == 'running' %}disabled{% endif %}>
                             ▶
-                            {% if task.status.value == 'ready' %}
+                            {% if task.status.value == 'running' %}
+                                Running...
+                            {% elif task.status.value == 'ready' %}
                                 Run
                             {% elif task.integrity.value in ['degraded', 'stale'] %}
                                 Fix Data (Re-Run)
@@ -239,6 +241,25 @@
 
 {% block scripts %}
 <script>
+    document.addEventListener('submit', function (event) {
+        const form = event.target.closest('form.task-run-form');
+        if (!form) return;
+
+        const button = form.querySelector('button[type="submit"]');
+        if (!button) return;
+
+        const label = button.querySelector('.task-run-label');
+        const nextText = 'Starting...';
+
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        if (label) {
+            label.textContent = nextText;
+        } else {
+            button.innerHTML = '⏳ ' + nextText;
+        }
+    });
+
     // Clear placeholder log text on first update
     let firstLogUpdate = true;
     document.body.addEventListener('htmx:oobBeforeSwap', function(evt) {

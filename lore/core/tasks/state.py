@@ -33,6 +33,7 @@ class TaskStatus(StrEnum):
             TaskStatus.READY,
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
+            TaskStatus.COMPLETED
         )
 
 

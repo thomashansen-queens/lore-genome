@@ -265,8 +265,8 @@ def run_task_action(
         if task is None:
             raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-        if task.status in {TaskStatus.RUNNING, TaskStatus.COMPLETED}:
-            # prevent double runs, concurrent writes, etc.
+        if task.status == TaskStatus.RUNNING:
+            # prevent double runs
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
 
         # 2. Re-check that Task is runnable

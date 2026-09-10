@@ -138,7 +138,6 @@ class SequentialOrchestrator:
             task = None
 
             with self.rt.open_session(session_id, read_only=False) as s:
-                # TODO: Use a TaskSignature to check if Task needs to be re-run (idempotent)
                 task = s.get_task(task_id)
                 if not task:
                     logger.error("Task %s vanished from Session %s", task_id, session_id)
@@ -149,8 +148,11 @@ class SequentialOrchestrator:
                 s.mark_dirty()
 
                 if task.status == TaskStatus.COMPLETED:
-                    logger.info("Skipping Task %s (status: COMPLETED)", task_id)
-                    continue
+                    if task.integrity == "intact":
+                        logger.info("Skipping Task %s (status: COMPLETED)", task_id)
+                        continue
+                    logger.info("Re-running previously completed Task %s (integrity: %s)", task_id, task.integrity)
+                    pass
                 elif task.status == TaskStatus.FAILED:
                     logger.error("Re-running Task %s (status: FAILED)", task_id)
                     pass

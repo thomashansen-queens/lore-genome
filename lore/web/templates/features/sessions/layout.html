@@ -12,7 +12,7 @@
         <hr />
         
         <label class="strong">Execute</label>
-        {% set ready_tasks = session.manifest.tasks.values() | selectattr('status', 'equalto', 'ready') | list %}
+        {% set ready_tasks = session.manifest.tasks.values() | selectattr('status', 'in', ['ready', 'failed', 'completed']) | list %}
         <form action ="/sessions/{{ session.id }}/execute" method="POST"
             style="display: flex; flex-direction: column; min-height: 0;">
             <button type="submit" class="btn primary fullwidth center"
