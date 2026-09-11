@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from lore.core.sessions import Session
     from lore.core.execution import PreviewPayload
 
+from lore.core.tasks import TaskStatus
+
 
 @dataclass
 class SessionSummary:
@@ -389,6 +391,13 @@ class Runtime:
         import subprocess
         import sys
 
+        with self.open_session(session_id, read_only=False) as session:
+            # Mark all tasks as queued
+            session.mark_dirty()
+            for task in session.manifest.tasks.values():
+                if task.status.is_user_runnable:
+                    task.status = TaskStatus.QUEUED
+
         command = [
             sys.executable, "-m", "lore", "run-session",
             "--session", session_id,
@@ -410,7 +419,7 @@ class Runtime:
         from lore.core.tasks import TaskStatus
 
         # 1. Guards (mutate session only if 'force' is True)
-        with self.open_session(session_id, read_only=not force) as session:
+        with self.open_session(session_id, read_only=False) as session:
             task = session.get_task(task_id)
             if not task:
                 raise ValueError(f"Task '{task_id}' not found in session '{session_id}'.")
@@ -420,11 +429,11 @@ class Runtime:
                         "Force-running task '%s' in session '%s' with status '%s'.",
                         task_id, session_id, task.status,
                     )
-                    task.status = TaskStatus.READY
                     task.error = None
-                    session.mark_dirty()
                 else:
                     raise ValueError(f"Task '{task_id}' in session '{session_id}' is not runnable.")
+            task.status = TaskStatus.INITIALIZING
+            session.mark_dirty()
 
         # 2. Route through CLI to spawn a new process
         command = [

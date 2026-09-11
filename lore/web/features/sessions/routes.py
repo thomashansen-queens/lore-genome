@@ -111,6 +111,7 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
             push_task_targets=push_task_targets,
             diagram_lr=diagram_lr,
         ),
+        headers = {"Cache-Control": "no-store"},
     )
 
 
@@ -405,6 +406,25 @@ async def stream_session(
             last_artifact_ids = current_artifact_ids
 
         # Wait 1 second before checking again
+        await asyncio.sleep(1)
+
+@router.get("/{session_id}/execute-status")
+async def execute_status(
+    session_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    active_statuses = {"running", "initializing", "queued"}
+
+    while True:
+        with rt.open_session(session_id, read_only=True) as s:
+            tasks = s.list_tasks()
+        busy = any(t.status in active_statuses for t in tasks)
+
+        if not busy:
+            response = HTMLResponse('''<button type="submit" class="btn primary fullwidth center">➡ Run all Tasks in order</button>''')
+            response.headers["HX-StopPolling"] = "true"
+            return response
         await asyncio.sleep(1)
 
 # --- Session-Workflow endpoints ---

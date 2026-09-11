@@ -42,11 +42,13 @@
             </a>
         {% endif %}
         
-        {% if task.status.is_runnable %}
-            <form action="/sessions/{{ session_id }}/tasks/{{ task.id }}/run" method="POST">
-                <button type="submit" class="btn primary">
+        {% if task.status.is_user_runnable or task.status.value == 'running' %}
+            <form action="/sessions/{{ session_id }}/tasks/{{ task.id }}/run" method="POST" class="task-run-form">
+                <button type="submit" class="btn primary" {% if task.status.value == 'running' %}disabled{% endif %}>
                     ▶
-                    {% if task.status.value == 'ready' %}
+                    {% if task.status.value == 'running' %}
+                        Running...
+                    {% elif task.status.value == 'ready' %}
                         Run
                     {% elif task.integrity.value in ['degraded', 'stale'] %}
                         Fix Data (Re-Run)

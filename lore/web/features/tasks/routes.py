@@ -142,7 +142,8 @@ def view_session_task(
             task=task,
             outputs=resolved_outputs,
             task_log=task_log,
-        )
+        ),
+        headers = {"Cache-Control": "no-store"}
     )
 
 
@@ -265,12 +266,12 @@ def run_task_action(
         if task is None:
             raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
 
-        if task.status in {TaskStatus.RUNNING, TaskStatus.COMPLETED}:
-            # prevent double runs, concurrent writes, etc.
+        if task.status == TaskStatus.RUNNING:
+            # prevent double runs
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
 
         # 2. Re-check that Task is runnable
-        if not task.status.is_runnable:
+        if not task.status.is_user_runnable:
             msg = f"Task '{task.name}' is in status '{task.status}' and cannot be run."
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}", message=msg, message_type="warning")
 
@@ -593,7 +594,7 @@ async def stream_task_updates(
 
         # 4. Diff the Task state (status change, new outputs, log updates, error)
         status_changed = task_now.status != task_prev.status
-        outputs_changed = task_now.outputs != task_prev.outputs
+        outputs_changed = task_now.outputs != task_prev.outputs or terminal  # Force a final output update on terminal state
         error_changed = task_now.error != task_prev.error
         new_logs, log_cursor = _drain_log(log_path, log_cursor, flush=terminal)
 
