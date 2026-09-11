@@ -45,4 +45,5 @@ def list_runtime_contents(rt: RT, ctx: PageContext = Depends()):
         request=ctx.request,
         name="/home/dashboard.html",
         context=ctx.render(runtime=rt, sessions=sessions, workflows=workflows),
+        headers = {"Cache-Control": "no-store"}
     )

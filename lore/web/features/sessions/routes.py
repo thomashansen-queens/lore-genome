@@ -111,6 +111,7 @@ def show_session(s: ReadOnlySession, ctx: PageContext = Depends()):
             push_task_targets=push_task_targets,
             diagram_lr=diagram_lr,
         ),
+        headers = {"Cache-Control": "no-store"},
     )
 
 

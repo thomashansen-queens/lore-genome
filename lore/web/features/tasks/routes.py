@@ -142,7 +142,8 @@ def view_session_task(
             task=task,
             outputs=resolved_outputs,
             task_log=task_log,
-        )
+        ),
+        headers = {"Cache-Control": "no-store"}
     )
 
 
