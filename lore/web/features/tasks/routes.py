@@ -593,7 +593,7 @@ async def stream_task_updates(
 
         # 4. Diff the Task state (status change, new outputs, log updates, error)
         status_changed = task_now.status != task_prev.status
-        outputs_changed = task_now.outputs != task_prev.outputs
+        outputs_changed = task_now.outputs != task_prev.outputs or terminal  # Force a final output update on terminal state
         error_changed = task_now.error != task_prev.error
         new_logs, log_cursor = _drain_log(log_path, log_cursor, flush=terminal)
 
