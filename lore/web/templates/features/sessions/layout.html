@@ -12,12 +12,14 @@
         <hr />
         
         <label class="strong">Execute</label>
-        {% set ready_tasks = session.manifest.tasks.values() | selectattr('status', 'in', ['ready', 'failed', 'completed']) | list %}
+        {% set running_tasks = session.manifest.tasks.values() | selectattr('status', 'in', ['running', 'initializing', 'queued']) | list %}
         <form action ="/sessions/{{ session.id }}/execute" method="POST"
             style="display: flex; flex-direction: column; min-height: 0;">
-            <button type="submit" class="btn primary fullwidth center"
-                {% if not ready_tasks %}disabled{% endif %}>
-                ➡ Run all Tasks in order
+            <button type="submit" id="execute-btn" class="btn primary fullwidth center"
+                {% if running_tasks %}disabled 
+                hx-get="/sessions/{{ session.id }}/execute-status"
+                hx-trigger="load"
+                hx-swap="outerHTML">➡ Running Tasks...{% else %}>➡ Run all Tasks in order{% endif %}
             </button>
         </form>
 

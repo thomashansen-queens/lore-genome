@@ -64,7 +64,7 @@
                     </a>
                 {% endif %}
                 
-                {% if task.status.is_runnable or task.status.value == 'running' %}
+                {% if task.status.is_user_runnable or task.status.value == 'running' %}
                     <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST" class="task-run-form">
                         <button type="submit" class="btn primary" {% if task.status.value == 'running' or task.status.value == 'initializing' %}disabled{% endif %}>
                             ▶

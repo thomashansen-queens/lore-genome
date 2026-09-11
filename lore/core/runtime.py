@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from lore.core.sessions import Session
     from lore.core.execution import PreviewPayload
 
+from lore.core.tasks import TaskStatus
+
 
 @dataclass
 class SessionSummary:
@@ -388,6 +390,13 @@ class Runtime:
         """
         import subprocess
         import sys
+
+        with self.open_session(session_id, read_only=False) as session:
+            # Mark all tasks as queued
+            session.mark_dirty()
+            for task in session.manifest.tasks.values():
+                if task.status.is_user_runnable:
+                    task.status = TaskStatus.QUEUED
 
         command = [
             sys.executable, "-m", "lore", "run-session",

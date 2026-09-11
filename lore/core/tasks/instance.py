@@ -218,7 +218,7 @@ class Task(BaseModel):
             clean_config = self.validate_config(self.exec_config)
 
             self.exec_config = clean_config
-            if self.status != TaskStatus.COMPLETED:
+            if self.status not in (TaskStatus.COMPLETED, TaskStatus.QUEUED):
                 self.status = TaskStatus.READY
                 self.error = None
 

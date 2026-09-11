@@ -167,6 +167,8 @@ class SequentialOrchestrator:
                     logger.error("Task %s is not runnable (status: %s)", task_id, task.status)
                     continue
 
+                task.status = TaskStatus.INITIALIZING
+
             # 3. Execution phase (short lock on Session to update Task status)
             logger.info("Submitting Task %s (%s)", task.id, task.registry_key)
             log_path = self._get_task_log_path(session_id, task_id)

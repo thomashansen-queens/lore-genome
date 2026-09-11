@@ -271,7 +271,7 @@ def run_task_action(
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}")
 
         # 2. Re-check that Task is runnable
-        if not task.status.is_runnable:
+        if not task.status.is_user_runnable:
             msg = f"Task '{task.name}' is in status '{task.status}' and cannot be run."
             return ctx.redirect_back(fallback_url=f"/sessions/{session_id}", message=msg, message_type="warning")
 

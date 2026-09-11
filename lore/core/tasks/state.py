@@ -29,13 +29,24 @@ class TaskStatus(StrEnum):
 
     @property
     def is_runnable(self) -> bool:
-        """User can try to run this task."""
+        """This task can be run by the backend."""
         return self in (
             TaskStatus.READY,
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
             TaskStatus.COMPLETED,
-            TaskStatus.INITIALIZING
+            TaskStatus.INITIALIZING,
+            TaskStatus.QUEUED
+        )
+
+    @property
+    def is_user_runnable(self) -> bool:
+        """User can try to run this task."""
+        return self in (
+            TaskStatus.READY,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.COMPLETED
         )
 
 
