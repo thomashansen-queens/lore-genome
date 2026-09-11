@@ -9,6 +9,7 @@ class TaskStatus(StrEnum):
     DRAFT = "draft"  # Missing config or fails validation
     READY = "ready"  # Validated and ready for the user to click 'Run'
     QUEUED = "queued"  # Waiting for engine resources OR upstream FutureArtifacts
+    INITIALIZING = "initializing"  # Engine is preparing to run the task
     RUNNING = "running"  # Currently executing
     COMPLETED = "completed"  # Success!
     FAILED = "failed"  # Errored out (check task.error)
@@ -19,7 +20,7 @@ class TaskStatus(StrEnum):
     @property
     def is_active(self) -> bool:
         """Currently doing something or about to."""
-        return self in (TaskStatus.READY, TaskStatus.QUEUED, TaskStatus.RUNNING)
+        return self in (TaskStatus.READY, TaskStatus.QUEUED, TaskStatus.INITIALIZING, TaskStatus.RUNNING)
 
     @property
     def is_terminal(self) -> bool:
@@ -33,7 +34,8 @@ class TaskStatus(StrEnum):
             TaskStatus.READY,
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
-            TaskStatus.COMPLETED
+            TaskStatus.COMPLETED,
+            TaskStatus.INITIALIZING
         )
 
 

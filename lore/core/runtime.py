@@ -410,7 +410,7 @@ class Runtime:
         from lore.core.tasks import TaskStatus
 
         # 1. Guards (mutate session only if 'force' is True)
-        with self.open_session(session_id, read_only=not force) as session:
+        with self.open_session(session_id, read_only=False) as session:
             task = session.get_task(task_id)
             if not task:
                 raise ValueError(f"Task '{task_id}' not found in session '{session_id}'.")
@@ -420,11 +420,11 @@ class Runtime:
                         "Force-running task '%s' in session '%s' with status '%s'.",
                         task_id, session_id, task.status,
                     )
-                    task.status = TaskStatus.READY
                     task.error = None
-                    session.mark_dirty()
                 else:
                     raise ValueError(f"Task '{task_id}' in session '{session_id}' is not runnable.")
+            task.status = TaskStatus.INITIALIZING
+            session.mark_dirty()
 
         # 2. Route through CLI to spawn a new process
         command = [

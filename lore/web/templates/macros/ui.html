@@ -6,6 +6,8 @@
         <span class="badge info">○ Ready</span>
     {% elif status == 'queued' %}
         <span class="badge">○ Queued</span>
+    {% elif status == 'initializing' %}
+        <span class="badge info pulsing">⌛ Initializing</span>
     {% elif status == 'running' %}
         <span class="badge info pulsing">◐ Running</span>
     {% elif status == 'completed' %}

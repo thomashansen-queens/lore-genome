@@ -159,6 +159,9 @@ class SequentialOrchestrator:
                 elif task.status == TaskStatus.RUNNING:
                     logger.warning("Re-running Task %s (status: RUNNING, likely orphaned)", task_id)
                     pass
+                elif task.status == TaskStatus.INITIALIZING:
+                    logger.info("Re-running Task %s (status: INITIALIZING)", task_id)
+                    pass
 
                 if not task.status.is_runnable:
                     logger.error("Task %s is not runnable (status: %s)", task_id, task.status)
