@@ -9,14 +9,19 @@ LoRē is an extensible workflow orchestrator for bioinformatics. It is designed 
 ## Installation
 
 ### Prerequisites
-* Python 3.11 or higher
+* [Python](https://www.python.org/downloads/) 3.11 or higher
+* [Git](https://git-scm.com)
 * The installer automatically handles all necessary Python packages (found in requirements.txt)
 * Because data is stored locally on your machine, we recommend having a few gigabytes of free storage space.
 
 ### Quick start
-1. Download the project by going to Code -> Download ZIP at the top of the page.
-2. Extract the project into a directory of your choice
-3. In the project folder, run `./run.sh` (Mac/Linux) or `.\run.bat` (Windows) to launch LoRē.
+1. Open a terminal (Mac: ⌘ + Spacebar -> Terminal, Windows: Start menu -> PowerShell)
+2. Clone the repo:
+```bash
+git clone https://github.com/thomashansen-queens/lore-genome.git
+```
+3. The project will be downloaded to the current directory (your home directory by default in Windows). You can move this folder wherever you find most convenient.
+4. In the project folder, run `./run.sh` (Mac/Linux) or `.\run.bat` (Windows) to launch LoRē.
 
 ### What is the 'Bootstrap helper'?
 The bootstrap helper automates the setup process (useful for non-experts) and is the recommended way to install LoRē. It checks your version of Python, creates an isolated `.venv` virtual environment, installs LoRē and its dependencies, creates a launcher script (`run.bat` or `run.sh`) and starts the web UI.

@@ -56,14 +56,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
         import git
         # Set repo path as the path of this script's parent directory
         repo_path = Path(__file__).parent.parent
-
-        if not (repo_path / ".git").exists():
-            print("No Git repository found. Trying to initialize a new Git repository...")
-            repo = git.Repo.init(repo_path)
-            repo.create_remote('origin', 'https://github.com/thomashansen-queens/lore-genome.git') 
-            print("Set https://github.com/thomashansen-queens/lore-genome.git as the remote.")
-        else:
-            repo = git.Repo(repo_path)
+        repo = git.Repo(repo_path)
 
         # Fetch remote tracking data
         repo.remotes.origin.fetch()
@@ -86,7 +79,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
 
                 print("Pulling latest changes...")
                 repo.remotes.origin.pull()
-                input("Update applied. Please restart LoRē Genome to use the latest version. Press Enter to exit.")
+                print("Update applied. Please restart LoRē Genome to use the latest version.")
                 exit(0)
             else:
                 print("Skipping update.")
