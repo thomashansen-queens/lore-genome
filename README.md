@@ -16,10 +16,7 @@ LoRē is an extensible workflow orchestrator for bioinformatics. It is designed 
 
 ### Quick start
 1. Open a terminal (Mac: ⌘ + Spacebar -> Terminal, Windows: Start menu -> PowerShell)
-2. Clone the repo:
-```bash
-git clone https://github.com/thomashansen-queens/lore-genome.git
-```
+2. Clone the repo with this command: `git clone https://github.com/thomashansen-queens/lore-genome.git`
 3. The project will be downloaded to the current directory (your home directory by default in Windows). You can move this folder wherever you find most convenient.
 4. In the project folder, run `./run.sh` (Mac/Linux) or `.\run.bat` (Windows) to launch LoRē.
 
