@@ -78,7 +78,9 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
                     delete_file_path.unlink()
 
                 print("Pulling latest changes...")
-                repo.remotes.origin.pull()
+                for fetch_info in repo.remotes.origin.pull(verbose=True):
+                    if fetch_info.name == remote_branch:
+                        print(f"Updated {fetch_info.ref}: {fetch_info.note}")
                 print("Update applied. Please restart LoRē Genome to use the latest version.")
                 exit(0)
             else:
