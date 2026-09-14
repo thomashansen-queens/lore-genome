@@ -10,6 +10,7 @@ import logging
 import logging.handlers
 import shutil
 import tempfile
+import traceback
 from typing import TYPE_CHECKING, Any
 
 from lore.core.cache import TieredCache
@@ -363,7 +364,7 @@ class Runtime:
                     )
                 )
             except Exception as e:
-                self.logger.warning("Could not load session %s: %s", item.name, e)
+                self.logger.warning("Could not load session %s: %s\n%s", item.name, e, traceback.format_exc())
 
         sentinel = datetime.min.replace(tzinfo=timezone.utc)
         results.sort(key=lambda x: getattr(x, sort_by or "updated_at") or sentinel, reverse=True)
