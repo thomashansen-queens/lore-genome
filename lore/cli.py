@@ -51,7 +51,46 @@ def main(ctx, data_root, verbose):
               help="Enable auto-reload for development; code changes are live-reloaded.")
 def ui(rt: Runtime, host: str, port: int | None, reload: bool):
     """Launch the LoRē Genome web user interface."""
+    # Check for updates before starting the UI
+    try:
+        import git
+        # Set repo path as the path of this script's parent directory
+        repo_path = Path(__file__).parent.parent
+        
+        repo = git.Repo(repo_path)
+
+        # Fetch remote tracking data
+        repo.remotes.origin.fetch()
+
+        local_branch = repo.active_branch.name
+        remote_branch = f"origin/{local_branch}"  # Assuming 'origin' is your remote name
+
+        # Calculate commits ahead and behind
+        # This uses git rev-list --left-right --count local...remote
+        commit_counts = repo.git.rev_list("--left-right", "--count", f"{local_branch}...{remote_branch}")
+        ahead, behind = map(int, commit_counts.split())
+        
+        if behind > 0:
+            update_choice = input("!!!\nA new version of LoRē Genome is available. Do you want to update? (y/n): ")
+            if update_choice.lower() in {'y', 'yes'}:
+                # Delete delete_this_when_updating.txt if it exists
+                delete_file_path = repo_path / "delete_this_when_updating.txt"
+                if delete_file_path.exists():
+                    delete_file_path.unlink()
+
+                print("Pulling latest changes...")
+                repo.remotes.origin.pull()
+                input("Update applied. Please restart LoRē Genome to use the latest version. Press Enter to exit.")
+            else:
+                print("Skipping update.")
+        elif ahead > 0:
+            print(f"You are ahead of the remote by {ahead} commits.")
+    except Exception as e:
+        import traceback
+        print(f"Failed to check for updates: {e}\n{traceback.format_exc()}")
+
     from lore.web.app import run_ui, pick_free_port, make_url
+
     # make LoRē runtime available to the FastAPI app
     click.echo("LoRē Genome web UI is starting...")
     if port is None:
