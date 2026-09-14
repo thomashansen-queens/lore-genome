@@ -14,17 +14,9 @@ LoRē is an extensible workflow orchestrator for bioinformatics. It is designed 
 * Because data is stored locally on your machine, we recommend having a few gigabytes of free storage space.
 
 ### Quick start
-1. Open a terminal (Mac: ⌘ + Spacebar -> Terminal, Windows: Start menu -> PowerShell)
-2. To use the "bootstrap helper", run the following lines one at a time, pressing Enter after each.
-
-```bash
-git clone https://github.com/thomashansen-queens/lore-genome.git
-cd lore-genome
-python run.py
-```
-
-3. This will generate a `run.bat` (Windows) or `run.sh` (Mac/Linux).
-4. Run `./run.sh` (Mac/Linux) or `.\run.bat` (Windows) in your terminal to launch LoRē.
+1. Download the project by going to Code -> Download ZIP at the top of the page.
+2. Extract the project into a directory of your choice
+3. In the project folder, run `./run.sh` (Mac/Linux) or `.\run.bat` (Windows) to launch LoRē.
 
 ### What is the 'Bootstrap helper'?
 The bootstrap helper automates the setup process (useful for non-experts) and is the recommended way to install LoRē. It checks your version of Python, creates an isolated `.venv` virtual environment, installs LoRē and its dependencies, creates a launcher script (`run.bat` or `run.sh`) and starts the web UI.
@@ -49,19 +41,7 @@ lore ui
 ```
 
 ### Updating
-If you have already cloned the repository, simply pull the latest changes. The launcher `run` script will automatically upgrade:
-```bash
-cd lore-genome
-git pull
-./run.sh  # or (.\run.bat on Windows)
-```
-For manual setups, activate your virtual environment first, then pull and re-install:
-```bash
-cd lore-genome
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-git pull
-pip install .
-```
+LoRē should automatically prompt you with the option to update when launching the web app. Simply press enter to skip, or type 'y' to accept the update. LoRē will automatically pull the latest commit from this repo for the current branch and the next time you execute `run.sh` or `run.bat` will automatically update all the necessary packages for you.
 
 ## Using the program
 
