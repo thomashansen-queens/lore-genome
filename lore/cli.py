@@ -81,6 +81,7 @@ def ui(rt: Runtime, host: str, port: int | None, reload: bool):
                 print("Pulling latest changes...")
                 repo.remotes.origin.pull()
                 input("Update applied. Please restart LoRē Genome to use the latest version. Press Enter to exit.")
+                exit(0)
             else:
                 print("Skipping update.")
         elif ahead > 0:
