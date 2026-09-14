@@ -73,6 +73,8 @@ def clean(
 
 def fmt_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
+    if n is None:
+        return "? B"
     for unit in ("B", "kB", "MB", "GB"):
         if n < 1024:
             return f"{n:.1f} {unit}"
