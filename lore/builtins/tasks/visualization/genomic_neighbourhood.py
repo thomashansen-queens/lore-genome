@@ -97,7 +97,7 @@ class GenomicNeighbourhoodTaskOutputs:
     name="Genomic neighbourhood",
     inputs=GenomicNeighbourhoodTaskInputs,
     outputs=GenomicNeighbourhoodTaskOutputs,
-    category="clustering",
+    category="visualization",
     icon="☷",
     preview_mode="live_full",
 )

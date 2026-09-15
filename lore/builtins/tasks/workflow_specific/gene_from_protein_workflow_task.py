@@ -42,7 +42,7 @@ class Outputs:
     inputs=Inputs,
     outputs=Outputs,
     name="Join IPG Mapping and Nucleotide FASTA Tables",
-    category="Data Utilities",
+    category="Workflow-Specific",
     preview_mode="full",
     icon="⏵⏴",
 )
