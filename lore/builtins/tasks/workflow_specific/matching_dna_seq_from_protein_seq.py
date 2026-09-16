@@ -17,13 +17,13 @@ class Inputs:
 
     compare_seq = lore.ValueInput(
         str,
-        label="Protein Sequence",
-        description="The amino acid sequence of the protein to match the nucleotide sequences to.",
+        label="Sequence to Match",
+        description="The DNA sequence to match the nucleotide sequences to.",
     )
 
     condense_header = lore.ValueInput(
         bool,
-        default=True,
+        default=False,
         label="Condense Headers",
         description="Condenses the headers of the final fasta.",
     )
@@ -39,7 +39,7 @@ class Outputs:
     "aleyssu.gene_from_protein_workflow.match_dna_protein",
     inputs=Inputs,
     outputs=Outputs,
-    name="Match DNA Sequences to Protein Subsequence",
+    name="Match DNA Sequences to Nucleotide Subsequence",
     category="Workflow-Specific",
     preview_mode="full",
     icon="⏵⏴",
@@ -47,21 +47,49 @@ class Outputs:
 def task(
     ctx: lore.ExecutionContext,
     nucleotide_fasta: Iterator[dict],
+    compare_seq: str,
     condense_header: bool = True,
 ):
-    headers = []
-    sequences = []
+    """Given a fasta containing nucleotide sequences, will match and trim all the sequences to a provided representative subsequence."""
+    sequences = dict()
+
+    compare_seq = "".join(compare_seq.strip().split())
+
+    aligner = Align.PairwiseAligner(scoring="blastn")
+    aligner.mode = "global"
     
     for entry in nucleotide_fasta:
-        entry['nucleotide_accession']
+        seq = entry["nucleotide_sequence"]
+        duplicate = False
+        for subseq in sequences.keys():
+            idx = seq.find(subseq)
+            if idx != -1:
+                duplicate = True
+                break
+        if not duplicate:
+            alignment = aligner.align(compare_seq, seq)
 
-    # with open(out_path, "w") as f:
-    #     for _, row in df_joined.iterrows():
-    #         start = row['Start']
-    #         stop = row['Stop']
-    #         f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({start}-{stop})\n{row['nucleotide_sequence'][int(start)-1:int(stop)]}\n")
+            # Coordinates are [start, end] for each sequence
+            t_start, t_end = alignment[0].aligned[1][0]
 
-    # ctx.materialize_file(
-    #     source=out_path,
-    #     output_key="fasta",
-    # )
+            subseq = seq[t_start:t_end]
+            sequences[subseq] = []
+        else:
+            t_start, t_end = idx, idx + len(subseq)
+
+        header = f"{entry['nucleotide_accession']} {entry['nucleotide_description'].replace(" ", "_")}_{t_start}-{t_end}"
+        sequences[subseq].append(header)
+
+    out_path = ctx.get_temp_path("nucleotide_fasta.faa")
+
+    with open(out_path, "w") as f:
+        for seq, headers in sequences.items():
+            if condense_header:
+                f.write(f">{headers[0]} (+{len(headers)-1})\n{seq}\n")
+            else: 
+                f.write(f">{", ".join(headers)} ({len(headers)} total)\n{seq}\n")
+
+    ctx.materialize_file(
+        source=out_path,
+        output_key="fasta",
+    )
