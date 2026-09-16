@@ -61,6 +61,7 @@ class Outputs:
     name="WP Accession to FASTA",
     inputs=Inputs,
     outputs=Outputs,
+    category="ncbi",
     icon="🗏",
     preview_mode="live",
 )

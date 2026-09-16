@@ -59,6 +59,7 @@ OUT_HEADERS = (
 @lore.task(
     "aleyssu.hhpred_to_tsv",
     name="HHPred to TSV",
+    category="Data Utilities",
     inputs=Inputs,
     outputs=Outputs,
     icon="🗏",

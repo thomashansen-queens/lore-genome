@@ -8,3 +8,4 @@ pydantic>=2.12.5
 platformdirs
 python-multipart>=0.0.9
 GitPython
+biopython

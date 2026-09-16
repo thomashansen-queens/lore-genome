@@ -1,10 +1,10 @@
 """
-Helper task for gene sequene from protein workflow pipeline
+Helper task for gene sequence from protein workflow pipeline
 """
 from collections.abc import Iterator
-from enum import StrEnum
 import lore
 import pandas as pd
+from Bio.Seq import Seq
 
 class Inputs:
     ipg_mapping_table = lore.ArtifactInput(
@@ -42,7 +42,7 @@ class Outputs:
     inputs=Inputs,
     outputs=Outputs,
     name="Join IPG Mapping and Nucleotide FASTA Tables",
-    category="Data Utilities",
+    category="Workflow-Specific",
     preview_mode="full",
     icon="⏵⏴",
 )
@@ -66,7 +66,7 @@ def join_tables(
     # 3. Perform the join operation
     try:
         df_joined = pd.merge(
-            df_ipg[["Nucleotide Accession", "Protein", "Start", "Stop"]],
+            df_ipg[["Nucleotide Accession", "Protein", "Start", "Stop", 'Strand']],
             df_fasta[["nucleotide_accession", "nucleotide_sequence"]],
             how="inner",
             left_on="Nucleotide Accession",
@@ -83,7 +83,10 @@ def join_tables(
         for _, row in df_joined.iterrows():
             start = row['Start']
             stop = row['Stop']
-            f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({start}-{stop})\n{row['nucleotide_sequence'][int(start)-1:int(stop)]}\n")
+            seq = row['nucleotide_sequence'][int(start)-1:int(stop)]
+            if row['Strand'] == '-':
+                seq = Seq(seq).reverse_complement()
+            f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({start}-{stop})\n{seq}\n")
 
     ctx.materialize_file(
         source=out_path,
