@@ -5,6 +5,43 @@
   "created_at": "2026-09-09T20:25:06.172439Z",
   "tasks": [
     {
+      "id": "f8b12cec-f36f-42c2-9233-d83aa7b7e21f",
+      "registry_key": "aleyssu.gene_from_protein_workflow.match_dna_protein",
+      "name": "Match DNA Sequences to Nucleotide Subsequence",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "condense_header": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "nucleotide_fasta": [
+          {
+            "type": "reference",
+            "source_id": "55bd2bef-61f6-4b37-82dc-e1480ca3e8a5",
+            "output_key": "joined_fasta",
+            "artifact_id": null
+          }
+        ],
+        "compare_seq": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-16T20:15:15.465414Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
       "id": "55bd2bef-61f6-4b37-82dc-e1480ca3e8a5",
       "registry_key": "aleyssu.gene_from_protein_workflow.join_tables",
       "name": "Join IPG Mapping and Nucleotide FASTA Tables",
@@ -58,6 +95,18 @@
             "source_id": "76fc8ad0-38ea-4c33-ba42-01a13ac45d79",
             "output_key": "column",
             "artifact_id": null
+          }
+        ],
+        "database": [
+          {
+            "type": "literal",
+            "value": "nuccore"
+          }
+        ],
+        "rettype": [
+          {
+            "type": "literal",
+            "value": "fasta"
           }
         ]
       },

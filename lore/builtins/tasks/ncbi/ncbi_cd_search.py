@@ -138,6 +138,7 @@ def cd_search(
 @lore.task(
     "aleyssu.ncbi_cd_search",
     name="NCBI CD-Search",
+    category="ncbi",
     inputs=Inputs,
     outputs=Outputs,
     icon="🗏",

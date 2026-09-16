@@ -23,7 +23,6 @@ __pycache__/
 .Python
 cache/
 debug_output/
-run.*
 sessions/
 build/
 develop-eggs/
