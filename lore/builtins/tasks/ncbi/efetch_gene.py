@@ -1,10 +1,6 @@
 """
 EFetch task for querying NCBI's Gene database
 https://www.ncbi.nlm.nih.gov/books/NBK25499/#chapter4.EFetch
-
-Defaults to Identical Protein Groups (IPG) database records, which contain
-various linked metadata for a given protein accession (assembly, nucleotide,
-taxonomy, etc.).)
 """
 from enum import StrEnum
 import lore
@@ -34,6 +30,20 @@ class EfetchGeneInputs:
         description="Gene accessions to query the NCBI Gene database.",
     )
 
+    database = lore.ValueInput(
+        str,
+        default='nuccore',
+        options=['nuccore', 'protein'],
+        label="Database"
+    )
+
+    rettype = lore.ValueInput(
+        str,
+        default='fasta',
+        options=['fasta', 'fasta_cds_na'],
+        label="rettype"
+    )
+
 class EfetchGeneOutputs:
     """Outputs for EFetch Gene task"""
     nucleotide_fasta = lore.TaskOutput(
@@ -54,6 +64,8 @@ class EfetchGeneOutputs:
 def efetch_gene(
     ctx: lore.ExecutionContext,
     uid: list[str],
+    rettype,
+    database,
 ):
     """
     Query NCBI's Gene database for given gene accessions.
@@ -76,10 +88,10 @@ def efetch_gene(
     def _execute_efetch(chunk):
         with entrez_client(api_key=api_key, email=email, ret="text") as client:
             data_payload = {
-                "db": "nuccore",
+                "db": database,
                 "id": ",".join(chunk),
                 "retmode": "text",  # xml by default, but this returns TSV
-                "rettype": "fasta",
+                "rettype": rettype,
             }
 
             response = client.post(
