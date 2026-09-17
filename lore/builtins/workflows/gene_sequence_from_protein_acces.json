@@ -16,7 +16,8 @@
         "species names to keep": [
           {
             "type": "user_input",
-            "input_key": "whitelist"
+            "input_key": "whitelist",
+            "value": ""
           }
         ],
         "column": [

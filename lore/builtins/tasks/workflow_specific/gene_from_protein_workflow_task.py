@@ -59,9 +59,14 @@ def join_tables(
     # 2. Drop duplicates in the ipg_mapping_table if requested
     if drop_duplicates:
         df_ipg = df_ipg.drop_duplicates(subset=["Nucleotide Accession"], keep="first")
+        # Prefer RefSeq assemblies (GCF) over GenBank assemblies (GCA) when
+        # both prefixes resolve to the same assembly number.
+        df_ipg["_assembly_priority"] = (~df_ipg["Assembly"].str.startswith("GCF_")).astype(int)
         df_ipg["Assembly"] = df_ipg["Assembly"].str.replace("GCA_|GCF_", "", regex=True)
+        df_ipg = df_ipg.sort_values("_assembly_priority", kind="stable")
         # Drop rows with identical assembly numbers
         df_ipg = df_ipg.drop_duplicates(subset=["Assembly"], keep="first")
+        df_ipg = df_ipg.drop(columns=["_assembly_priority"])
 
     # 3. Perform the join operation
     try:
