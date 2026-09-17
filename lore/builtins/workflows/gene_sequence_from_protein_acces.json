@@ -1,11 +1,48 @@
 {
-  "id": "gene_sequence_from_protein_acces (2)",
+  "id": "gene_sequence_from_protein_acces",
   "name": "Gene Sequence from Protein Accession",
-  "description": "Given a list of protein accessions, creates a table containing all the found genes and their sequences which code for the given proteins.",
-  "created_at": "2026-09-09T20:25:06.172439Z",
+  "description": "Given a list of protein accessions, creates a table containing all the found genes and their sequences which code for the given proteins. Can then optionally align and trim the sequences to a provided subsequence for further analysis.",
+  "created_at": "2026-09-17T15:18:19.835040Z",
   "tasks": [
     {
-      "id": "f8b12cec-f36f-42c2-9233-d83aa7b7e21f",
+      "id": "96873873-0dfb-4783-be43-0f2791013c7b",
+      "registry_key": "filter.simple",
+      "name": "Simple Filter",
+      "description": "",
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "species names to keep": [
+          {
+            "type": "user_input",
+            "input_key": "whitelist"
+          }
+        ],
+        "column": [
+          {
+            "type": "literal",
+            "value": "organism"
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "14b6e672-ccd0-45f6-a6bb-0af31f73952c",
+            "output_key": "ipg_records",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "created_at": "2026-09-17T15:18:19.821687Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "3b6575d0-9270-4162-a18e-027c1d07e8c3",
       "registry_key": "aleyssu.gene_from_protein_workflow.match_dna_protein",
       "name": "Match DNA Sequences to Nucleotide Subsequence",
       "description": "",
@@ -13,36 +50,43 @@
       "integrity": "unknown",
       "exec_config": {},
       "inputs": {
-        "condense_header": [
+        "preserve_length": [
           {
             "type": "literal",
-            "value": false
+            "value": true
           }
         ],
         "nucleotide_fasta": [
           {
             "type": "reference",
-            "source_id": "55bd2bef-61f6-4b37-82dc-e1480ca3e8a5",
+            "source_id": "22200546-b886-4858-b64e-73b9d14ad53a",
             "output_key": "joined_fasta",
             "artifact_id": null
           }
         ],
         "compare_seq": [
           {
-            "type": "literal",
+            "type": "user_input",
+            "input_key": "compare_seq",
             "value": ""
+          }
+        ],
+        "condense_header": [
+          {
+            "type": "literal",
+            "value": true
           }
         ]
       },
       "outputs": {},
       "parent_artifact_ids": [],
       "error": null,
-      "created_at": "2026-09-16T20:15:15.465414Z",
+      "created_at": "2026-09-17T15:18:19.823551Z",
       "started_at": null,
       "completed_at": null
     },
     {
-      "id": "55bd2bef-61f6-4b37-82dc-e1480ca3e8a5",
+      "id": "22200546-b886-4858-b64e-73b9d14ad53a",
       "registry_key": "aleyssu.gene_from_protein_workflow.join_tables",
       "name": "Join IPG Mapping and Nucleotide FASTA Tables",
       "description": "",
@@ -50,6 +94,14 @@
       "integrity": "unknown",
       "exec_config": {},
       "inputs": {
+        "nucleotide_fasta_table": [
+          {
+            "type": "reference",
+            "source_id": "2b1ef55e-449d-49c0-9a2b-f4f6462b02d9",
+            "output_key": "nucleotide_fasta",
+            "artifact_id": null
+          }
+        ],
         "drop_duplicates": [
           {
             "type": "literal",
@@ -59,16 +111,8 @@
         "ipg_mapping_table": [
           {
             "type": "reference",
-            "source_id": "dc192f74-b98b-4ba0-805e-42dc1c8ade17",
+            "source_id": "14b6e672-ccd0-45f6-a6bb-0af31f73952c",
             "output_key": "ipg_records",
-            "artifact_id": null
-          }
-        ],
-        "nucleotide_fasta_table": [
-          {
-            "type": "reference",
-            "source_id": "5ac501fe-d939-4626-839e-f53d2d57f671",
-            "output_key": "nucleotide_fasta",
             "artifact_id": null
           }
         ]
@@ -76,12 +120,12 @@
       "outputs": {},
       "parent_artifact_ids": [],
       "error": null,
-      "created_at": "2026-09-09T20:25:06.169092Z",
+      "created_at": "2026-09-17T15:18:19.825139Z",
       "started_at": null,
       "completed_at": null
     },
     {
-      "id": "5ac501fe-d939-4626-839e-f53d2d57f671",
+      "id": "2b1ef55e-449d-49c0-9a2b-f4f6462b02d9",
       "registry_key": "ncbi.entrez.efetch_gene",
       "name": "NCBI Entrez EFetch Gene",
       "description": "",
@@ -92,15 +136,9 @@
         "uid": [
           {
             "type": "reference",
-            "source_id": "76fc8ad0-38ea-4c33-ba42-01a13ac45d79",
+            "source_id": "79d2fb83-9e9a-465a-b0b0-51fe9229313a",
             "output_key": "column",
             "artifact_id": null
-          }
-        ],
-        "database": [
-          {
-            "type": "literal",
-            "value": "nuccore"
           }
         ],
         "rettype": [
@@ -108,17 +146,23 @@
             "type": "literal",
             "value": "fasta"
           }
+        ],
+        "database": [
+          {
+            "type": "literal",
+            "value": "nuccore"
+          }
         ]
       },
       "outputs": {},
       "parent_artifact_ids": [],
       "error": null,
-      "created_at": "2026-09-09T20:25:06.169732Z",
+      "created_at": "2026-09-17T15:18:19.829213Z",
       "started_at": null,
       "completed_at": null
     },
     {
-      "id": "76fc8ad0-38ea-4c33-ba42-01a13ac45d79",
+      "id": "79d2fb83-9e9a-465a-b0b0-51fe9229313a",
       "registry_key": "extract_column",
       "name": "Extract Column",
       "description": "",
@@ -126,37 +170,37 @@
       "integrity": "unknown",
       "exec_config": {},
       "inputs": {
-        "new_name": [],
         "column_name": [
           {
             "type": "literal",
             "value": "Nucleotide Accession"
           }
         ],
-        "table": [
-          {
-            "type": "reference",
-            "source_id": "dc192f74-b98b-4ba0-805e-42dc1c8ade17",
-            "output_key": "ipg_records",
-            "artifact_id": null
-          }
-        ],
+        "new_name": [],
         "deduplicate": [
           {
             "type": "literal",
             "value": true
+          }
+        ],
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "96873873-0dfb-4783-be43-0f2791013c7b",
+            "output_key": "filtered_data",
+            "artifact_id": null
           }
         ]
       },
       "outputs": {},
       "parent_artifact_ids": [],
       "error": null,
-      "created_at": "2026-09-09T20:25:06.171299Z",
+      "created_at": "2026-09-17T15:18:19.831363Z",
       "started_at": null,
       "completed_at": null
     },
     {
-      "id": "dc192f74-b98b-4ba0-805e-42dc1c8ade17",
+      "id": "14b6e672-ccd0-45f6-a6bb-0af31f73952c",
       "registry_key": "ncbi.entrez.efetch_protein",
       "name": "NCBI Entrez EFetch Protein",
       "description": "",
@@ -164,24 +208,23 @@
       "integrity": "unknown",
       "exec_config": {},
       "inputs": {
+        "uid": [
+          {
+            "type": "user_input",
+            "input_key": "uid"
+          }
+        ],
         "fetch_format": [
           {
             "type": "literal",
             "value": "IPG Table"
-          }
-        ],
-        "uid": [
-          {
-            "type": "user_input",
-            "input_key": "uid",
-            "value": null
           }
         ]
       },
       "outputs": {},
       "parent_artifact_ids": [],
       "error": null,
-      "created_at": "2026-09-09T20:25:06.172389Z",
+      "created_at": "2026-09-17T15:18:19.834941Z",
       "started_at": null,
       "completed_at": null
     }

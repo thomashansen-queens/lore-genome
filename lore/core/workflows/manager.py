@@ -337,6 +337,7 @@ class WorkflowManager:
                     elif isinstance(binding, UserInputBinding):
                         # Magic UI assignment format
                         lookup_key = f"{template_task.id}__{input_key}__{idx}"
+                        input_key = binding.input_key  # TODO: see about getting a more formal system to allow changing the names of inputs between workflows
                         if lookup_key in runtime_inputs:
                             # Inject user value; Task.update() will coerce to correct Binding type
                             translated_bindings.append(runtime_inputs[lookup_key])

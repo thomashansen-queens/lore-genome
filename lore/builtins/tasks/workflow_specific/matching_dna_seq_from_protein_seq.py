@@ -28,6 +28,13 @@ class Inputs:
         description="Condenses the headers of the final fasta.",
     )
 
+    preserve_length = lore.ValueInput(
+        bool,
+        default=True,
+        label="Preserve Length for Alignment",
+        description="If true, tries to extend the length of the aligned subsequence to match the length of the query sequence if the alignment algorithm runs short.",
+    )
+
 class Outputs:
     fasta = lore.TaskOutput(
         data_type="nucleotide_fasta",
@@ -42,26 +49,30 @@ class Outputs:
     name="Match DNA Sequences to Nucleotide Subsequence",
     category="Workflow-Specific",
     preview_mode="full",
-    icon="⏵⏴",
+    icon="",
 )
 def task(
     ctx: lore.ExecutionContext,
     nucleotide_fasta: Iterator[dict],
     compare_seq: str,
     condense_header: bool = True,
+    preserve_length: bool = True,
 ):
-    """Given a fasta containing nucleotide sequences, will match and trim all the sequences to a provided representative subsequence."""
+    """Given a fasta containing nucleotide sequences, will match and trim all the sequences to a provided representative subsequence. Uses BioPython's Pairwise alignment tool with blastn scoring and local alignment mode."""
     sequences = dict()
+    full_span_seqs = set()
 
     compare_seq = "".join(compare_seq.strip().split())
+    compare_seq_len = len(compare_seq)
 
     aligner = Align.PairwiseAligner(scoring="blastn")
-    aligner.mode = "global"
+    aligner.mode = "local"
     
     for entry in nucleotide_fasta:
         seq = entry["nucleotide_sequence"]
+        # Check to see if a previous full-length match is an exact match within the current sequence 
         duplicate = False
-        for subseq in sequences.keys():
+        for subseq in full_span_seqs:
             idx = seq.find(subseq)
             if idx != -1:
                 duplicate = True
@@ -71,13 +82,23 @@ def task(
 
             # Coordinates are [start, end] for each sequence
             t_start, t_end = alignment[0].aligned[1][0]
+            m_start, m_end = alignment[0].aligned[0][0]
 
-            subseq = seq[t_start:t_end]
-            sequences[subseq] = []
+            # Extend the match to try to match the length of the query sequence
+            if preserve_length:
+                subseq = seq[max(0, t_start - m_start): t_start - m_start + compare_seq_len]
+            else:
+                subseq = seq[t_start:t_end]
+            if subseq not in sequences.keys():
+                sequences[subseq] = []
+
+            # Full length matches can be added to a set to scan future sequences for exact matches and skip expensive alignment computations
+            if compare_seq_len == t_end - t_start:
+                full_span_seqs.add(subseq)
         else:
             t_start, t_end = idx, idx + len(subseq)
 
-        header = f"{entry['nucleotide_accession']} {entry['nucleotide_description'].replace(" ", "_")}_{t_start}-{t_end}"
+        header = f"{entry['nucleotide_accession']} {entry['nucleotide_description'].replace(" ", "_")}({m_start}-{m_end})"
         sequences[subseq].append(header)
 
     out_path = ctx.get_temp_path("nucleotide_fasta.faa")
