@@ -51,7 +51,7 @@ class LocalSubprocessExecutor(BaseExecutor):
         # Maps task_id -> (active subprocess.Popen object, open file descriptor for logs)
         self._active_processes: dict[str, tuple[subprocess.Popen, IO[Any] | None]] = {}
 
-    def submit(self, session_id: str, task_id: str, log_path: Path | None = None) -> None:
+    def submit(self, session_id: str, task_id: str, log_path: Path | None = None) -> int:
         # 1. Run command (sys.executable for consistent Python environment)
         command = [
             sys.executable, "-m", "lore",
@@ -73,6 +73,8 @@ class LocalSubprocessExecutor(BaseExecutor):
 
         # 3. Track PID and log file handle for cleanup on shutdown
         self._active_processes[task_id] = (proc, f)
+
+        return proc.pid
 
     def wait(self, task_id: str) -> int | None:
         if task_id not in self._active_processes:

@@ -54,7 +54,7 @@
         "preserve_length": [
           {
             "type": "literal",
-            "value": true
+            "value": false
           }
         ],
         "nucleotide_fasta": [
@@ -69,7 +69,7 @@
           {
             "type": "user_input",
             "input_key": "compare_seq",
-            "value": ""
+            "value": null
           }
         ],
         "condense_header": [

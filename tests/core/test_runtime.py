@@ -165,6 +165,7 @@ def test_execution_facade_validation_errors(
 
     # Don't actually spawn the subprocess in this test
     with patch("subprocess.Popen") as mock_popen:
+        mock_popen.return_value.pid = 12345
         temp_runtime.execute_task(
             session_id=closed_session.id,
             task_id=ephemeral_task.id,
@@ -177,3 +178,4 @@ def test_execution_facade_validation_errors(
         assert updated_task is not None
         assert updated_task.status == TaskStatus.READY
         assert updated_task.error is None
+        assert updated_task.process_pid == 12345

@@ -4,6 +4,7 @@ This code runs as a separate process entirely decoupled from the main process.
 """
 from datetime import datetime, timezone
 import json
+import os
 import traceback
 from typing import TYPE_CHECKING
 import logging
@@ -35,11 +36,14 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                 sys.exit(1)
             if not task.status.is_runnable:
                 rt.logger.warning("Task ID: '%s' is %s: skipping execution.)", task_id, task.status)
+                task.process_pid = None
+                s.mark_dirty()
                 sys.exit(1)
 
             task.validate_and_serialize()  # sanity check
             task_def = task_registry[task.registry_key]
             task.status = TaskStatus.RUNNING
+            task.process_pid = os.getpid()
             task.started_at = datetime.now(tz=timezone.utc)
 
             s.mark_dirty()
@@ -71,6 +75,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                 sys.exit(1)
             task.status = TaskStatus.FAILED
             task.error = f"Input resolution or materialization failed: {str(e)}"
+            task.process_pid = None
             s.mark_dirty()
         sys.exit(1)
 
@@ -128,6 +133,12 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
     finally:
         if ctx:
             ctx.cleanup()  # Always clean up, even on failure
+
+        with rt.open_session(session_id, read_only=False) as s:
+            task = s.get_task(task_id)
+            if task and task.process_pid == os.getpid():
+                task.process_pid = None
+                s.mark_dirty()
 
         # rt.logger.removeHandler(task_handler)
         # task_handler.close()

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 import os
+import signal
 from pathlib import Path
 import logging
 import logging.handlers
@@ -404,7 +405,42 @@ class Runtime:
             "--session", session_id,
         ]
         self.logger.info("Spawning background Orchestrator for Session: %s", session_id)
-        subprocess.Popen(
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        pid = proc.pid
+
+        with self.open_session(session_id, read_only=False) as s:
+            s.manifest.last_pid = pid
+            s.mark_dirty()
+
+    def execute_task_cascade(self, session_id: str, task_id: str) -> None:
+        """
+        Uses a background process to trigger the Execution Cascade starting from a given task
+        in a Session. Returns immediately (non-blocking).
+        """
+        import subprocess
+        import sys
+
+        # Mark the current and downstream tasks as queued for the orchestrator
+        with self.open_session(session_id, read_only=False) as session:
+            session.mark_dirty()
+            task = session.get_task(task_id)
+            task.status = TaskStatus.QUEUED
+            tasks = session.get_downstream_tasks(task_id)
+            for downstream_task_id in tasks:
+                task = session.get_task(downstream_task_id)
+                if task.status.is_runnable:
+                    task.status = TaskStatus.QUEUED
+
+        command = [
+            sys.executable, "-m", "lore", "run-session",
+            "--session", session_id
+        ]
+        self.logger.info("Spawning background Orchestrator for Session: %s and starting Task: %s", session_id, task_id)
+        proc = subprocess.Popen(
             command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -443,11 +479,18 @@ class Runtime:
             "--task", task_id,
         ]
         self.logger.info("Spawning background Orchestrator for single Task %s", task_id)
-        subprocess.Popen(
+        proc = subprocess.Popen(
             command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        pid = proc.pid
+
+        with self.open_session(session_id, read_only=False) as session:
+            task = session.get_task(task_id)
+            if task:
+                task.process_pid = pid
+                session.mark_dirty()
 
     def preview_task(
         self, session_id: str, task_key: str, raw_inputs: dict, exec_config: dict | None = None,
@@ -467,7 +510,35 @@ class Runtime:
 
         return run_preview_worker(self, session_id, task_key, raw_inputs, exec_config)
 
-
+    def kill_task(self, session_id: str, task_id: str) -> bool:
+        """
+        Kills the background process that's executing a given task under a given session.
+        """
+        with self.open_session(session_id, read_only=True) as s:
+            task = s.get_task(task_id)
+            if task:
+                pid = task.process_pid
+            else:
+                raise ValueError(f"Task {task_id} could not be found for process termination.")
+        try:
+            os.kill(pid, signal.SIGTERM)
+            self.logger.info(f"Terminated execution for Task {task_id} with PID {pid}.")
+        except PermissionError:
+            self.logger.error(f"Permission denied to kill PID {pid}.")
+        except:
+            self.logger.warning(f"Could not terminate execution for Task {task_id} with PID {pid}.")
+        finally:
+            with self.open_session(session_id, read_only=False) as s:
+                task = s.get_task(task_id)
+                task.status = TaskStatus.CANCELLED
+                for downstream_task_id in s.get_downstream_tasks(task_id):
+                    downstream_task = s.get_task(downstream_task_id)
+                    if downstream_task.status == TaskStatus.QUEUED:
+                        downstream_task.status = TaskStatus.CANCELLED
+                    else:
+                        break
+                s.mark_dirty()
+        
 # --- Runtime management ---
 
 

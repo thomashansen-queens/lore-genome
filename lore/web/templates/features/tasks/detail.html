@@ -64,7 +64,7 @@
                     </a>
                 {% endif %}
                 
-                {% if task.status.is_user_runnable or task.status.value == 'running' %}
+                {% if task.status.is_user_runnable %}
                     <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run" method="POST" class="task-run-form">
                         <button type="submit" class="btn primary" {% if task.status.value == 'running' or task.status.value == 'initializing' %}disabled{% endif %}>
                             ▶
@@ -83,8 +83,21 @@
                             {% endif %}
                         </button>
                     </form>
+                {% elif task.status.value in ['running', 'initializing', 'queued'] %}
+                    <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run_cancel" method="POST" class="task-run-cancel-form">
+                        <button type="submit" class="btn primary danger">
+                            🗙 Cancel Run
+                        </button>
+                    </form>
                 {% endif %}
-
+                {% set running_tasks = session.manifest.tasks.values() | selectattr('status', 'in', ['running', 'initializing', 'queued']) | list %}
+                {% if task.status.is_user_runnable and not running_tasks %}
+                    <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/run_cascade" method="POST" class="task-run-form">
+                        <button type="submit" class="btn primary">
+                            ▶▶ Run All Tasks from Here
+                        </button>
+                    </form>
+                {% endif %}
                 <form action="/sessions/{{ session.id }}/tasks/{{ task.id }}/clone" method="POST">
                     <button type="submit" class="btn primary">
                         ⟳ Clone
