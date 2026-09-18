@@ -340,7 +340,13 @@ class WorkflowManager:
                         input_key = binding.input_key  # TODO: see about getting a more formal system to allow changing the names of inputs between workflows
                         if lookup_key in runtime_inputs:
                             # Inject user value; Task.update() will coerce to correct Binding type
-                            translated_bindings.append(runtime_inputs[lookup_key])
+                            input = runtime_inputs[lookup_key]
+                            if input is None:
+                                try:
+                                    input = LiteralBinding(value=binding.value)
+                                except:
+                                    raise ValueError(f"Value must be provied for {input_key}")
+                            translated_bindings.append(input)
                         else:
                             # No input; leave as UserInputBinding to be filled in later
                             translated_bindings.append(binding)

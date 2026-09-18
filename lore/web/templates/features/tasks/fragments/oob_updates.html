@@ -41,8 +41,7 @@
                 ✎ Edit
             </a>
         {% endif %}
-        
-        {% if task.status.is_user_runnable or task.status.value == 'running' %}
+        {% if task.status.is_user_runnable %}
             <form action="/sessions/{{ session_id }}/tasks/{{ task.id }}/run" method="POST" class="task-run-form">
                 <button type="submit" class="btn primary" {% if task.status.value == 'running' %}disabled{% endif %}>
                     ▶
@@ -57,6 +56,12 @@
                     {% elif task.status.value in ['failed', 'cancelled'] %}
                         Retry
                     {% endif %}
+                </button>
+            </form>
+        {% elif task.status.value in ['running', 'initializing', 'queued'] %}
+            <form action="/sessions/{{ session_id }}/tasks/{{ task.id }}/run_cancel" method="POST" class="task-run-cancel-form">
+                <button type="submit" class="btn primary danger">
+                    🗙 Cancel Run
                 </button>
             </form>
         {% endif %}

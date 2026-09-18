@@ -62,6 +62,7 @@ def test_run_task_worker_success(temp_runtime, closed_session, dummy_task_plugin
         # 1. State machine assertions
         assert finished_task.status == TaskStatus.COMPLETED
         assert finished_task.error is None
+        assert finished_task.process_pid is None
         assert finished_task.started_at is not None
         assert finished_task.completed_at is not None
 
@@ -96,6 +97,7 @@ def test_run_task_worker_graceful_failure(temp_runtime, closed_session, failing_
 
         assert failed_task.status == TaskStatus.FAILED
         assert failed_task.completed_at is not None
+        assert failed_task.process_pid is None
         assert "Simulated catastrophic crash!" in failed_task.error
 
 # --- Preview tests ---

@@ -420,9 +420,10 @@ async def execute_status(
         with rt.open_session(session_id, read_only=True) as s:
             tasks = s.list_tasks()
         busy = any(t.status in active_statuses for t in tasks)
+        any_complete = any(t.status == "completed" for t in tasks)
 
         if not busy:
-            response = HTMLResponse('''<button type="submit" class="btn primary fullwidth center">➡ Run all Tasks in order</button>''')
+            response = HTMLResponse(f'''<button type="submit" {"disabled " if any_complete else ""}class="btn primary fullwidth center">➡ Run all Tasks in order</button>''')
             response.headers["HX-StopPolling"] = "true"
             return response
         await asyncio.sleep(1)

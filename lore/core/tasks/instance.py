@@ -98,6 +98,7 @@ class Task(BaseModel):
     # Lineage
     parent_artifact_ids: list[str] = Field(default_factory=list)
     error: str | None = None
+    process_pid: int | None = None
 
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

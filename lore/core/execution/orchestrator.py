@@ -143,10 +143,18 @@ class SequentialOrchestrator:
                     logger.error("Task %s vanished from Session %s", task_id, session_id)
                     break
 
+                if task.status == TaskStatus.CANCELLED:
+                    logger.info(f"SKipping cancelled Task {task_id}.")
+                    continue
+                elif task.status != TaskStatus.QUEUED:
+                    logger.info(f"Skipping non-queued Task {task_id}.")
+                    continue
+
                 # Task will determine its readiness
                 task.update()
                 s.mark_dirty()
 
+                # TODO: This may be unnecessary now with the new logic where tasks are queued in runtime.py and that decides whether a task will be run by the orchestrator
                 if task.status == TaskStatus.COMPLETED:
                     if task.integrity == "intact":
                         logger.info("Skipping Task %s (status: COMPLETED)", task_id)
@@ -167,12 +175,17 @@ class SequentialOrchestrator:
                     logger.error("Task %s is not runnable (status: %s)", task_id, task.status)
                     continue
 
-                task.status = TaskStatus.INITIALIZING
-
             # 3. Execution phase (short lock on Session to update Task status)
             logger.info("Submitting Task %s (%s)", task.id, task.registry_key)
             log_path = self._get_task_log_path(session_id, task_id)
-            self.executor.submit(session_id, task.id, log_path)
+            pid = self.executor.submit(session_id, task.id, log_path)
+
+            with self.rt.open_session(session_id, read_only=False) as s:
+                task = s.get_task(task.id)
+                task.status = TaskStatus.INITIALIZING
+                task.process_pid = pid
+                s.mark_dirty()
+                
             exit_code = self.executor.wait(task.id)
 
             # 4. Post-execution verification
@@ -181,7 +194,7 @@ class SequentialOrchestrator:
                 break
             else:
                 logger.info("Task %s completed successfully", task_id)
-                self._propagate_completion(session_id, task_id)
+                # self._propagate_completion(session_id, task_id)
 
         logger.info("Cascade finished for Session %s", session_id)
         self.executor.shutdown()

@@ -14,6 +14,10 @@ from lore.core.manifest import Manifest
 from lore.core.tasks import TaskIntegrity
 from lore.core.utils import fmt_bytes
 
+from lore.core.topology.traversal import sort_dag_dfs
+from lore.core.bindings import ReferenceBinding
+
+
 if TYPE_CHECKING:
     from lore.core.bindings import Binding
     from lore.core.runtime import Runtime
@@ -349,6 +353,25 @@ class Session(AbstractContextManager):
         self.mark_dirty()
         self.logger.info("Cloned task: '%s' to '%s' (ID: %s)", original_task.name, new_task.name, new_task.id)
         return new_task
+
+    def get_downstream_tasks(self, task_id: str) -> list[str]:
+        """Returns a list of downstream task ids from the given one."""
+        tasks = self.list_tasks()
+
+        dependency_map = {}
+        for task in tasks:
+            upstream_ids = set()
+
+            for bindings in task.inputs.values():
+                for b in bindings:
+                    if isinstance(b, ReferenceBinding):
+                        upstream_ids.add(b.source_id)
+
+            dependency_map[task.id] = list(upstream_ids)
+
+        sorted_tasks = sort_dag_dfs(dependency_map)
+        
+        return sorted_tasks[sorted_tasks.index(task_id)+1:]
 
     def get_task_log_path(self, task_id: str) -> Path:
         """Returns the expected path to a Task's log file"""

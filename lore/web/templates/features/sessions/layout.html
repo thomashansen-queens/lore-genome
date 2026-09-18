@@ -13,10 +13,12 @@
         
         <label class="strong">Execute</label>
         {% set running_tasks = session.manifest.tasks.values() | selectattr('status', 'in', ['running', 'initializing', 'queued']) | list %}
+        {% set any_complete = session.manifest.tasks.values() | selectattr('status', 'in', ['completed']) | list %}
         <form action ="/sessions/{{ session.id }}/execute" method="POST"
             style="display: flex; flex-direction: column; min-height: 0;">
             <button type="submit" id="execute-btn" class="btn primary fullwidth center"
-                {% if running_tasks %}disabled 
+                {% if running_tasks or any_complete %}disabled
+                {% endif %}{% if running_tasks %}
                 hx-get="/sessions/{{ session.id }}/execute-status"
                 hx-trigger="load"
                 hx-swap="outerHTML">➡ Running Tasks...{% else %}>➡ Run all Tasks in order{% endif %}

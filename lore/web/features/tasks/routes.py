@@ -251,6 +251,33 @@ async def rename_task_action(
         s.rename_task(task_id, new_name)
     return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/tasks/{task_id}")
 
+@router.post("/{task_id}/run_cancel", response_class=RedirectResponse)
+def run_task_cancel(
+    session_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Cancel a RUNNING or INITIALIZING Task"""
+    with rt.open_session(session_id, read_only=True) as s:
+        task = s.get_task(task_id)
+        if task is None:
+            raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
+
+        # 2. Re-check that Task is runnable
+        if not task.status in {TaskStatus.RUNNING, TaskStatus.INITIALIZING, TaskStatus.QUEUED}:
+            msg = f"Task '{task.name}' status is not running."
+            return ctx.redirect_back(fallback_url=f"/sessions/{session_id}", message=msg, message_type="warning")
+
+        log_path = s.get_task_log_path(task_id)
+
+    rt.kill_task(session_id=session_id, task_id=task_id)
+
+    return ctx.redirect_back(
+        fallback_url=f"/sessions/{session_id}",
+        message=f"Killed task {task_id}.",
+        message_type="info",
+    )
 
 @router.post("/{task_id}/run", response_class=RedirectResponse)
 def run_task_action(
@@ -291,6 +318,40 @@ def run_task_action(
         message_type="info",
     )
 
+@router.post("/{task_id}/run_cascade", response_class=RedirectResponse)
+def run_task_cascade(
+    session_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Execute a task and all downstream tasks."""
+    # 1. Use Runtime to get fresh session lock
+    with rt.open_session(session_id) as s:
+        task = s.get_task(task_id)
+        if task is None:
+            raise HTTPException(404, detail=f"Task with ID '{task_id}' not found in Session '{s.id}'.")
+
+        # 2. Re-check that Task is runnable
+        if not task.status.is_user_runnable:
+            msg = f"Task '{task.name}' is in status '{task.status}' and cannot be run."
+            return ctx.redirect_back(fallback_url=f"/sessions/{session_id}", message=msg, message_type="warning")
+
+        task.error = None
+        s.mark_dirty()
+        log_path = s.get_task_log_path(task_id)
+
+    # Force a fresh log file for this run
+    log_path.write_text("")
+
+    # 3. Send to Runtime to execute
+    rt.execute_task_cascade(session_id=session_id, task_id=task_id)
+
+    return ctx.redirect_back(
+        fallback_url=f"/sessions/{session_id}",
+        message="Task execution started.",
+        message_type="info",
+    )
 
 @router.post("/{task_id}/clone", response_class=RedirectResponse)
 def clone_task_action(task_id: str, s: ActiveSession, ctx: PageContext = Depends()):
