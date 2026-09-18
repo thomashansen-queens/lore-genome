@@ -70,8 +70,8 @@ def wrap_in_bindings(inputs: dict[str, Any] | None) -> dict[str, list[Binding]]:
             # 1. An already instantiated Binding object
             if isinstance(item, (LiteralBinding, ReferenceBinding, UserInputBinding)):
                 # Intercept empty LiteralBindings
-                if isinstance(item, LiteralBinding) and item.value in (None, ""):
-                    continue
+                # if isinstance(item, LiteralBinding) and item.value in (None, ""):
+                #     continue
                 parsed_list.append(item)
 
             # 2. A dict that can be parsed as a binding (e.g. from a manifest or front end)
