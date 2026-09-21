@@ -24,6 +24,10 @@ class SequentialOrchestrator:
         self.rt = rt
         self.executor = LocalSubprocessExecutor()
 
+    @staticmethod
+    def _task_label(task) -> str:
+        return f"{task.name} (ID: {task.id})"
+
     def _get_task_log_path(self, session_id: str, task_id: str) -> Path:
         """
         Helper to resolve the Session directory and construct a log file path.
@@ -70,7 +74,10 @@ class SequentialOrchestrator:
             for d_id in child_ids:
                 d_task = s.get_task(d_id)
                 if not d_task:
-                    logger.warning("Downstream Task %s vanished. This shouldn't happen.", d_id)
+                    logger.warning(
+                        "Downstream Task (ID: %s) vanished. This shouldn't happen.",
+                        d_id,
+                    )
                     continue
                 # Task will recheck its state
                 d_task.update()
@@ -90,7 +97,11 @@ class SequentialOrchestrator:
                 logger.error("Task %s not found in Session %s", task_id, session_id)
                 return
             if not task.status.is_runnable:
-                logger.warning("Task %s cannot be run (Status: %s)", task.id, task.status)
+                logger.warning(
+                    "Task %s cannot be run (Status: %s)",
+                    self._task_label(task),
+                    task.status,
+                )
                 return
 
         # 2. Run the Task using the Executor
@@ -101,23 +112,34 @@ class SequentialOrchestrator:
 
         # 3. Ripple state outward
         if exit_code != 0:
-            logger.error("Task %s failed with exit code %s", task_id, exit_code)
+            logger.error(
+                "Task %s failed with exit code %s",
+                self._task_label(task),
+                exit_code,
+            )
 
             with self.rt.open_session(session_id, read_only=False) as s:
                 failed_task = s.get_task(task_id)
                 if not failed_task:
                     logger.warning(
-                        "Task %s vanished from Session %s after failure. This shouldn't happen.",
+                        "Task (ID: %s) vanished from Session %s after failure. "
+                        "This shouldn't happen.",
                         task_id, session_id
                     )
                 elif failed_task.status == TaskStatus.RUNNING:
-                    logger.warning("Force-failing stranded Zombie Task: %s", task_id)
+                    logger.warning(
+                        "Force-failing stranded Zombie Task %s",
+                        self._task_label(failed_task),
+                    )
                     failed_task.status = TaskStatus.FAILED
                     failed_task.error = "Worker process exited unexpectedly with a non-zero exit code."
                     s.mark_dirty()
 
         else:
-            logger.info("Task %s completed successfully", task_id)
+            logger.info(
+                "Task %s completed successfully",
+                self._task_label(task),
+            )
             self._propagate_completion(session_id, task_id)
 
     def run_cascade(self, session_id: str) -> None:
@@ -133,6 +155,7 @@ class SequentialOrchestrator:
             logger.error("Failed to determine execution order: %s", e)
             return
 
+        cancel_tasks = set()
         # 2. Check state
         for task_id in sorted_task_ids:
             task = None
@@ -143,11 +166,16 @@ class SequentialOrchestrator:
                     logger.error("Task %s vanished from Session %s", task_id, session_id)
                     break
 
-                if task.status == TaskStatus.CANCELLED:
-                    logger.info(f"SKipping cancelled Task {task_id}.")
+                if task.id in cancel_tasks and task.status == TaskStatus.QUEUED:
+                    logger.info("Skipping Task %s", self._task_label(task))
+                    task.status = TaskStatus.CANCELLED
+                    s.mark_dirty()
+                    continue
+                elif task.status == TaskStatus.CANCELLED:
+                    logger.info("Skipping cancelled Task %s", self._task_label(task))
                     continue
                 elif task.status != TaskStatus.QUEUED:
-                    logger.info(f"Skipping non-queued Task {task_id}.")
+                    logger.info("Skipping non-queued Task %s", self._task_label(task))
                     continue
 
                 # Task will determine its readiness
@@ -157,26 +185,50 @@ class SequentialOrchestrator:
                 # TODO: This may be unnecessary now with the new logic where tasks are queued in runtime.py and that decides whether a task will be run by the orchestrator
                 if task.status == TaskStatus.COMPLETED:
                     if task.integrity == "intact":
-                        logger.info("Skipping Task %s (status: COMPLETED)", task_id)
+                        logger.info(
+                            "Skipping Task %s (status: COMPLETED)",
+                            self._task_label(task),
+                        )
                         continue
-                    logger.info("Re-running previously completed Task %s (integrity: %s)", task_id, task.integrity)
+                    logger.info(
+                        "Re-running previously completed Task %s (integrity: %s)",
+                        self._task_label(task),
+                        task.integrity,
+                    )
                     pass
                 elif task.status == TaskStatus.FAILED:
-                    logger.error("Re-running Task %s (status: FAILED)", task_id)
+                    logger.error(
+                        "Re-running Task %s (status: FAILED)",
+                        self._task_label(task),
+                    )
                     pass
                 elif task.status == TaskStatus.RUNNING:
-                    logger.warning("Re-running Task %s (status: RUNNING, likely orphaned)", task_id)
+                    logger.warning(
+                        "Re-running Task %s (status: RUNNING, likely orphaned)",
+                        self._task_label(task),
+                    )
                     pass
                 elif task.status == TaskStatus.INITIALIZING:
-                    logger.info("Re-running Task %s (status: INITIALIZING)", task_id)
+                    logger.info(
+                        "Re-running Task %s (status: INITIALIZING)",
+                        self._task_label(task),
+                    )
                     pass
 
                 if not task.status.is_runnable:
-                    logger.error("Task %s is not runnable (status: %s)", task_id, task.status)
+                    logger.error(
+                        "Task %s is not runnable (status: %s)",
+                        self._task_label(task),
+                        task.status,
+                    )
                     continue
 
             # 3. Execution phase (short lock on Session to update Task status)
-            logger.info("Submitting Task %s (%s)", task.id, task.registry_key)
+            logger.info(
+                "Submitting Task %s (%s)",
+                self._task_label(task),
+                task.registry_key,
+            )
             log_path = self._get_task_log_path(session_id, task_id)
             pid = self.executor.submit(session_id, task.id, log_path)
 
@@ -188,12 +240,25 @@ class SequentialOrchestrator:
                 
             exit_code = self.executor.wait(task.id)
 
+            with self.rt.open_session(session_id, read_only=True) as s:
+                task = s.get_task(task.id)
+
             # 4. Post-execution verification
-            if exit_code != 0:
-                logger.error("Task %s failed with exit code %s", task_id, exit_code)
-                break
+            if exit_code != 0 or task.status != TaskStatus.COMPLETED:
+                logger.error(
+                    "Task %s failed to complete (%s) with exit code %s",
+                    self._task_label(task),
+                    task.status,
+                    exit_code,
+                )
+                with self.rt.open_session(session_id, read_only=True) as s:
+                    for child_id in get_task_descendants(s.list_tasks(), task.id):
+                        cancel_tasks.add(child_id)
             else:
-                logger.info("Task %s completed successfully", task_id)
+                logger.info(
+                    "Task %s completed successfully",
+                    self._task_label(task),
+                )
                 # self._propagate_completion(session_id, task_id)
 
         logger.info("Cascade finished for Session %s", session_id)
