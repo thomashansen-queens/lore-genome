@@ -412,10 +412,6 @@ class Runtime:
         )
         pid = proc.pid
 
-        with self.open_session(session_id, read_only=False) as s:
-            s.manifest.last_pid = pid
-            s.mark_dirty()
-
     def execute_task_cascade(self, session_id: str, task_id: str) -> None:
         """
         Uses a background process to trigger the Execution Cascade starting from a given task
