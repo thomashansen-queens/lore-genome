@@ -14,7 +14,7 @@ from lore.core.manifest import Manifest
 from lore.core.tasks import TaskIntegrity
 from lore.core.utils import fmt_bytes
 
-from lore.core.topology.traversal import sort_dag_dfs
+from lore.core.topology.traversal import get_task_descendants, sort_tasks_topologically
 from lore.core.bindings import ReferenceBinding
 
 
@@ -358,20 +358,14 @@ class Session(AbstractContextManager):
         """Returns a list of downstream task ids from the given one."""
         tasks = self.list_tasks()
 
-        dependency_map = {}
-        for task in tasks:
-            upstream_ids = set()
+        descendant_ids = get_task_descendants(tasks, task_id)
+        topological_tasks = sort_tasks_topologically(tasks)
 
-            for bindings in task.inputs.values():
-                for b in bindings:
-                    if isinstance(b, ReferenceBinding):
-                        upstream_ids.add(b.source_id)
-
-            dependency_map[task.id] = list(upstream_ids)
-
-        sorted_tasks = sort_dag_dfs(dependency_map)
-        
-        return sorted_tasks[sorted_tasks.index(task_id)+1:]
+        return [
+            task.id
+            for task in topological_tasks
+            if task.id in descendant_ids
+        ]
 
     def get_task_log_path(self, task_id: str) -> Path:
         """Returns the expected path to a Task's log file"""
