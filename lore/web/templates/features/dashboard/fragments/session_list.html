@@ -39,7 +39,7 @@
                             🗁 Open
                         </a>
                     
-                        {{ ui.rename_item("/sessions/" ~ s.id ~ "/update", "name", s.name) }}
+                        {{ ui.rename_item("/sessions/" ~ s.id ~ "/rename", "name", s.name) }}
 
                         <form action="/sessions/{{ s.id }}/clone" method="POST">
                             <button type="submit">⟳ Clone</button>
