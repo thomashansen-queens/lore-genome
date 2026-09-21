@@ -12,7 +12,7 @@ from lore.core.bindings import ReferenceBinding
 from lore.core.tasks import TaskStatus
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("lore")
 
 
 class SequentialOrchestrator:
