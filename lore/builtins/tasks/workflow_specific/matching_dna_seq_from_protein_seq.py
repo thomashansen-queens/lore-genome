@@ -8,7 +8,7 @@ from Bio import Align
 
 class Inputs:
     nucleotide_fasta = lore.ArtifactInput(
-        accepted_data=["nucleotide_fasta"],
+        accepted_data=["nucleotide_fasta", "gene_fasta"],
         select="single",
         load_as="adapted_stream",
         label="Nucleotide Sequence Fasta",
@@ -21,16 +21,9 @@ class Inputs:
         description="The DNA sequence to match the nucleotide sequences to.",
     )
 
-    condense_header = lore.ValueInput(
-        bool,
-        default=False,
-        label="Condense Headers",
-        description="Condenses the headers of the final fasta.",
-    )
-
     preserve_length = lore.ValueInput(
         bool,
-        default=True,
+        default=False,
         label="Preserve Length for Alignment",
         description="If true, tries to extend the length of the aligned subsequence to match the length of the query sequence if the alignment algorithm runs short.",
     )
@@ -62,9 +55,15 @@ class Inputs:
 
 class Outputs:
     fasta = lore.TaskOutput(
-        data_type="nucleotide_fasta",
+        data_type="nucleotide_match_fasta",
         label="Nucleotide FASTA",
         is_primary=True,
+    )
+
+    cluster_table = lore.TaskOutput(
+        data_type="csv",
+        label="Match Cluster Table",
+        is_primary=False,
     )
 
 @lore.task(
@@ -80,7 +79,6 @@ def task(
     ctx: lore.ExecutionContext,
     nucleotide_fasta: Iterator[dict],
     compare_seq: str,
-    condense_header: bool = True,
     preserve_length: bool = True,
     extend_gap_score: float = -2.0,
     open_gap_score: float = -7.0,
@@ -100,8 +98,17 @@ def task(
     aligner.open_gap_score = open_gap_score
     aligner.mismatch_score = mismatch_score
     aligner.match_score = match_score
+
+    known_fasta_type = False
     
     for entry in nucleotide_fasta:
+        if not known_fasta_type:
+            if "gene_locus" in entry.keys():
+                fasta_type = "gene_fasta"
+            else:
+                fasta_type = "nucleotide_fasta"
+            known_fasta_type = True
+
         seq = entry["nucleotide_sequence"]
         # Check to see if a previous full-length match is an exact match within the current sequence 
         duplicate = False
@@ -134,17 +141,36 @@ def task(
         else:
             t_start, t_end = idx, idx + len(subseq)
 
-        header = f"{entry['nucleotide_accession']} {entry['nucleotide_description'].replace(" ", "_")}({m_start}-{m_end})"
+        if fasta_type == "gene_fasta":
+            header = [entry['nucleotide_accession'], entry['protein_accession'], entry["gene_locus"], entry["nucleotide_sequence"], f"{m_start}-{m_end}", ]
+        else:
+            header = [entry['nucleotide_accession'], entry['nucleotide_description'], entry["nucleotide_sequence"], f"{m_start}-{m_end}"]
         sequences[subseq].append(header)
 
     out_path = ctx.get_temp_path("nucleotide_fasta.faa")
+    out_path_csv = ctx.get_temp_path("match_table.csv")
 
-    with open(out_path, "w") as f:
-        for seq, headers in sequences.items():
-            if condense_header:
-                f.write(f">{headers[0]} (+{len(headers)-1})\n{seq}\n")
-            else: 
-                f.write(f">{", ".join(headers)} ({len(headers)} total)\n{seq}\n")
+    with open(out_path_csv, "w") as f_csv:
+        if fasta_type == "gene_fasta":
+            f_csv.write("representative_nucleotide_accession,nucleotide_accession,protein_accession,gene_locus,selected_region_in_gene\n")
+        else:
+            f_csv.write("representative_nucleotide_accession,nucleotide_accession,description,selected_region_in_sequence\n")
+
+        with open(out_path, "w") as f:
+            for seq, headers in sequences.items():
+                rep_header = headers[0]
+                f.write(f">{rep_header[0]} {rep_header[1]} ({len(headers)} total)\n{seq}\n")
+
+                for header in headers:
+                    if fasta_type == "gene_fasta":
+                        f_csv.write(f"{rep_header[0]},{header[0]},{header[1]},{header[2]},{header[4]}\n")
+                    else:
+                        f_csv.write(f"{rep_header[0]},{header[0]},{header[1]},{header[3]}\n")
+
+    ctx.materialize_file(
+        source=out_path_csv,
+        output_key="cluster_table",
+    )
 
     ctx.materialize_file(
         source=out_path,
