@@ -29,6 +29,17 @@ class BaseFastaAdapter(lore.TabularAdapter):
             "sequence": "sequence",
         }
 
+    def parse_header_to_schema(self, header: str) -> dict:
+        """
+        Parses the fasta header to the format of the schema above. Override this function 
+        and the above schema to change how fasta headers are tabularized.
+        """
+        parts = header.split(maxsplit=1)
+        return {
+            "accession": parts[0] if parts else "unknown_entry",
+            "description": parts[1] if len(parts) > 1 else None,
+        }
+
     def parse(self, raw_data: Any, config: dict | None = None, **kwargs) -> list[dict]:
         """
         Parses raw FASTA data into a list of records with 'accession', 'description',
@@ -71,10 +82,8 @@ class BaseFastaAdapter(lore.TabularAdapter):
         kwconfig = self._prepare_config(config, **kwargs)
 
         # 1. Initialize state for schema
-        # TODO: Accept other schemas and dynamically adapt?
-        current_accession = None
-        current_desc = None
         seq_buffer = []
+        header_schema = None
 
         # 2. Stream through lines, concatenating sequence until next header or EOF
         for line in raw_stream:
@@ -84,28 +93,19 @@ class BaseFastaAdapter(lore.TabularAdapter):
 
             if line.startswith(">"):
                 # write then clear buffer
-                if current_accession is not None:
-                    yield {
-                        "accession": current_accession,
-                        "description": current_desc,
-                        "sequence": "".join(seq_buffer),
-                    }
-
+                if header_schema is not None:
+                    header_schema["sequence"] = "".join(seq_buffer)
+                    yield header_schema
                 # Parse new header
-                parts = line[1:].split(None, 1)
-                current_accession = parts[0] if parts else "unknown_entry"
-                current_desc = parts[1] if len(parts) > 1 else None
+                header_schema = self.parse_header_to_schema(line[1:])
                 seq_buffer = []
             else:
                 seq_buffer.append(line)
 
         # Yield the final buffer on EOF
-        if current_accession is not None:
-            yield {
-                "accession": current_accession,
-                "description": current_desc,
-                "sequence": "".join(seq_buffer),
-            }
+        if header_schema is not None:
+            header_schema["sequence"] = "".join(seq_buffer)
+            yield header_schema
 
     # --- Lossless serialization ---
 
@@ -201,6 +201,49 @@ class NucleotideFastaAdapter(BaseFastaAdapter):
             "nucleotide_sequence": "sequence",
         }
 
+@lore.adapter()
+class NucleotideMatchFastaAdapter(BaseFastaAdapter):
+    """Semantic wrapper for clustered nucleotide sequences"""
+    accepted_types: ClassVar[set[str]] = {"nucleotide_match_fasta"}
+
+    @property
+    def schema(self):
+        return {
+            "representative_nucleotide_accession": "accession",
+            "description": "description",
+            "cluster_size": "cluster_size",
+            "nucleotide_sequence": "sequence",
+        }
+
+    def parse_header_to_schema(self, header):
+        parts = header.split()
+        return {
+            "accession": parts[0] if parts else "unknown_entry",
+            "description": parts[1] if len(parts) > 1 else None,
+            "cluster_size": int(parts[2][1:]) if len(parts) > 2 else 1,
+        }
+
+@lore.adapter()
+class GeneFastaAdapter(BaseFastaAdapter):
+    """Semantic wrapper for genes with associated nucleotide and protein accessions."""
+    accepted_types: ClassVar[set[str]] = {"gene_fasta"}
+
+    @property
+    def schema(self):
+        return {
+            "nucleotide_accession": "nucleotide_accession",
+            "protein_accession": "protein_accession",
+            "gene_locus": "locus",
+            "nucleotide_sequence": "sequence",
+        }
+
+    def parse_header_to_schema(self, header):
+        parts = header.split()
+        return {
+            "nucleotide_accession": parts[0] if parts else "unknown_entry",
+            "protein_accession": parts[1] if len(parts) > 1 else None,
+            "locus": parts[2].replace(")", "").replace("(", "") if len(parts) > 2 else None,
+        }
 
 # --- Specialized FASTA adapter for computations ---
 # This essentially applies ExPASy's ProtParam calculations on the fly to a 
