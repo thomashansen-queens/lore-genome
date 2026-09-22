@@ -32,7 +32,7 @@ class Inputs:
 
 class Outputs:
     joined_fasta = lore.TaskOutput(
-        data_type="nucleotide_fasta",  # inherits the data type of the left table
+        data_type="gene_fasta",  # inherits the data type of the left table
         label="Joined FASTA Table",
         is_primary=True,
     )

@@ -138,6 +138,29 @@ class Session(AbstractContextManager):
         if not self.read_only and exc_type is None:
             self.runtime.sync_session_dir(self.id)
 
+    def save(self):
+        """Writes the session manifest to disk without exiting."""
+        if self._logger:
+            self._logger.debug("Session ID: '%s' saving to disk...", self.id)
+
+        if self._manifest and not self.read_only and self._dirty:
+            try:
+                self._manifest.size_bytes = sum(
+                    f.stat().st_size for f in self._root.rglob("*") if f.is_file()
+                )
+            except (FileNotFoundError, PermissionError, OSError):
+                pass
+            # 2. Re-assess Task integrity
+            for task in self.list_tasks():
+                self.verify_task_integrity(task.id)
+
+            # 3. Save Manifest to persist in-memory state
+            self._manifest.save(self._root / "manifest.json")
+
+        # Sync directory name to manifest name (handles deferred renames from open sessions)
+        if not self.read_only:
+            self.runtime.sync_session_dir(self.id)
+
     # --- Session properties ---
 
     @property
@@ -332,6 +355,7 @@ class Session(AbstractContextManager):
 
         self.manifest.remove_task(task_id)
         self.mark_dirty()
+        self.save()
         self.logger.info("Deleted task: '%s' (ID: %s)", task.name, task_id)
         return True
 
@@ -351,6 +375,7 @@ class Session(AbstractContextManager):
             exec_config=original_task.exec_config,
         )
         self.mark_dirty()
+        self.save()
         self.logger.info("Cloned task: '%s' to '%s' (ID: %s)", original_task.name, new_task.name, new_task.id)
         return new_task
 
