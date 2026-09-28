@@ -86,9 +86,13 @@ def join_tables(
 
     with open(out_path, "w") as f:
         for _, row in df_joined.iterrows():
-            start = row['Start']
-            stop = row['Stop']
-            seq = row['nucleotide_sequence'][int(start)-1:int(stop)]
+            start = int(row['Start'])
+            stop = int(row['Stop'])
+            if start > stop:
+                # In case the sequence wraps around at the end
+                seq = row['nucleotide_sequence'][start-1:] + row["nucleotide_sequence"][:stop]
+            else:
+                seq = row['nucleotide_sequence'][start-1:stop]
             if row['Strand'] == '-':
                 seq = Seq(seq).reverse_complement()
             f.write(f">{row['Nucleotide Accession']} {row['Protein']} ({start}-{stop})\n{seq}\n")
