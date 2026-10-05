@@ -38,6 +38,13 @@
                     Save as .png
                 </button>
                 {% endif %}
+                {% for a in available_adapters %}
+                    {% if a.view_mode == "raw" %}
+                        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download_adapted/{{ a.name }}">
+                            Download {{ a.download_name }}
+                        </a>
+                    {% endif %}
+                {% endfor %}
             </div>
             {% if available_adapters | length > 1 %}
                 <button popovertarget="explore-menu-{{ artifact.id }}" class="btn primary">

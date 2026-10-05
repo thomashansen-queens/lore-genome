@@ -8,7 +8,8 @@ import pandas as pd
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Depends, Response, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, StreamingResponse
+from io import BytesIO
 
 from lore.core.tasks import AdapterConfig
 from lore.core.readers import get_reader_for
@@ -598,6 +599,46 @@ def download_artifact(artifact_id: str, s: ReadOnlySession):
     try:
         path = s.get_artifact_path(artifact_id)
         return FileResponse(path=path, filename=path.name)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.get("/{artifact_id}/download_adapted/{adapter_name}")
+def download_artifact_adapted(artifact_id: str, adapter_name: str, s: ReadOnlySession):
+    """Triggers a browser download for the artifact through the specified adapter."""
+    try:
+        a = s.get_artifact(artifact_id)
+        adapters = a.get_adapters()
+        chosen_adapter = None
+        for adapter in adapters:
+            if adapter.name == adapter_name:
+                chosen_adapter = adapter
+                break
+        if chosen_adapter:
+            path = s.get_artifact_path(artifact_id)
+            reader = get_reader_for(path)
+
+            # Streaming if possible for memory-safe download
+            if chosen_adapter.can_stream: 
+                raw_data_stream = reader.stream()
+                content_stream = chosen_adapter.adapt_stream(raw_data_stream)
+                binary_stream = BytesIO()
+
+                for text_chunk in content_stream:
+                    binary_stream.write(text_chunk.encode("utf-8"))
+                binary_stream.seek(0)
+            # Full load as fallback
+            else:
+                raw_data = reader.read_full()
+                content = chosen_adapter.adapt(raw_data)
+                binary_stream = BytesIO(content.encode("utf-8"))
+        else:
+            raise ValueError(f"Adapter \"{adapter_name}\" could not be found.")
+        return StreamingResponse(
+            binary_stream,
+            media_type=f"text/plain",
+            headers={"Content-Disposition": f"attachment; filename={a.name}.{chosen_adapter.download_format}"}
+        )
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
 

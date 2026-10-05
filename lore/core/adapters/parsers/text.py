@@ -17,6 +17,12 @@ class TextAdapter(BaseAdapter):
     view_mode: ClassVar[str] = "raw"
     version: ClassVar[str] = "1.0.0"
 
+    download_format = "txt" # Default file extension when downloading through this adapter
+    download_name = ".txt"  # Display name in the export dropdown
+    # Whether this adapter can stream the download for less memory usage 
+    # You should override adapt_record() to ensure congruency with adapt() if implementing a custom adapter
+    can_stream = True       
+
     @property
     def provided_types(self) -> set[str]:
         return {"raw", "text"}

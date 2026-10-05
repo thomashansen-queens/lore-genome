@@ -223,6 +223,50 @@ class NucleotideMatchFastaAdapter(BaseFastaAdapter):
             "cluster_size": int(parts[2][1:]) if len(parts) > 2 else 1,
         }
 
+
+@lore.adapter()
+class SequenceMatchSimplifiedAdapter(lore.TextAdapter):
+    accepted_types: ClassVar[set[str]] = {"nucleotide_match_fasta", "protein_match_fasta"}
+
+    download_format = "faa"
+    download_name = "Simple Header .faa"
+    can_stream = False
+
+    def adapt(self, raw_data: Any, config: dict | None = None, **kwargs) -> str:
+        lines = super().adapt(raw_data, config, **kwargs).splitlines()
+        index = 1
+        for i, line in enumerate(lines):
+            if line[0] == ">":
+                header_components = line.split()
+                cluster_size = header_components[2][1:]
+                lines[i] = f">{index}.{cluster_size}"
+                index += 1
+        return "\n".join(lines)
+
+
+@lore.adapter()
+class ProteinMatchFastaAdapter(BaseFastaAdapter):
+    """Semantic wrapper for clustered nucleotide sequences"""
+    accepted_types: ClassVar[set[str]] = {"protein_match_fasta"}
+
+    @property
+    def schema(self):
+        return {
+            "representative_nucleotide_accession": "accession",
+            "description": "description",
+            "cluster_size": "cluster_size",
+            "protein_sequence": "sequence",
+        }
+
+    def parse_header_to_schema(self, header):
+        parts = header.split()
+        return {
+            "accession": parts[0] if parts else "unknown_entry",
+            "description": parts[1] if len(parts) > 1 else None,
+            "cluster_size": int(parts[2][1:]) if len(parts) > 2 else 1,
+        }
+
+
 @lore.adapter()
 class GeneFastaAdapter(BaseFastaAdapter):
     """Semantic wrapper for genes with associated nucleotide and protein accessions."""

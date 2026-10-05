@@ -16,8 +16,8 @@ class Inputs:
 
 class Outputs:
     fasta = lore.TaskOutput(
-        data_type="protein_fasta",
-        label="Protein FASTA",
+        data_type="protein_match_fasta",
+        label="Protein Match FASTA",
         is_primary=True,
     )
 
