@@ -3,6 +3,33 @@
 
 {% block workspace %}
 <style>
+    /* ========================================
+    Search
+    ======================================== */
+
+    .catalogue-search {
+        flex: 0.5 1 24rem;
+        margin: 0;
+    }
+
+    .catalogue-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        flex-wrap: wrap;
+    }
+
+    .catalogue-task.catalogue-highlighted {
+        filter: brightness(0.85);
+    }
+
+    .catalogue-task[hidden],
+    .catalogue-category[hidden],
+    .catalogue-tasks[hidden] {
+        display: none;
+    }
+
     /* View selector */
     
     .catalogue-view-selector {
@@ -113,10 +140,25 @@
     }
 </style>
 
-<div class="column fill stretch"> <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md);"> <div> <h4> 🛠 Task Catalogue </h4> <p class="muted">Select a Task to configure.</p> </div>
-
-    <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
-        <div class="catalogue-view-selector", id="catalogue-view-selector">
+<div class="column fill stretch">
+<div class="catalogue-toolbar">
+    <div>
+        <h4> 🛠 Task Catalogue </h4>
+        <p class="muted">Select a Task to configure.</p>
+    </div>
+    <!-- Search -->
+    <div class="catalogue-search">
+        <input
+            type="search"
+            id="catalogue-search"
+            placeholder="Search tasks..."
+            autocomplete="off"
+            spellcheck="false"
+            autofocus
+        />
+    </div>
+    <div class="catalogue-view-controls">
+        <div class="catalogue-view-selector" id="catalogue-view-selector">
             <span class="muted ui-label">View as</span>
             <button type="button" data-view="cards">Cards</button>
             <span class="muted">|</span>
@@ -127,12 +169,14 @@
     </div>
 </div>
 
+
 <div class="column">
     <div
         id="task-catalogue"
         class="scroll-area catalogue-view-cards"
         style="padding-right: var(--spacing-md);"
     >
+        <div id="catalogue-search-results" class="catalogue-tasks" hidden></div>
         {% for category, tasks in task_definitions | groupby('category') | sort %}
             <details
                 open
@@ -192,17 +236,235 @@
             }
 
             category.addEventListener('toggle', function() {
-                localStorage.setItem(
-                    key,
-                    category.open ? 'true' : 'false'
-                );
+                if (!searchInput.value.trim()) {
+                    localStorage.setItem(key, category.open ? 'true' : 'false');
+                }
             });
         });
 
+        const searchInput = document.getElementById('catalogue-search');
+        const searchResults = document.getElementById('catalogue-search-results');
+        const catalogue = document.getElementById('task-catalogue');
+        let taskIndex = 0;
+        const taskGroups = Array.from(categories).map(function(category) {
+            const cards = Array.from(category.querySelectorAll('.catalogue-task'));
+
+            return {
+                element: category,
+                cards: cards.map(function(card) {
+                    return {
+                        element: card,
+                        cardIndex: taskIndex++,
+                        name: card.querySelector('h3').textContent
+                            .replace(card.querySelector('.task-icon').textContent, '')
+                            .trim(),
+                        description: card.querySelector('.task-description').textContent.trim(),
+                        category: category.dataset.category
+                    };
+                })
+            };
+        });
+        const allTasks = taskGroups.flatMap(function(group) {
+            return group.cards;
+        });
+        let selectedTask = null;
+
+        function getNavigableTasks() {
+            return searchInput.value.trim()
+                ? Array.from(searchResults.querySelectorAll('.catalogue-task'))
+                : allTasks.map(function(task) { return task.element; });
+        }
+
+        function selectTask(card, scrollIntoView) {
+            if (selectedTask) {
+                selectedTask.classList.remove('catalogue-highlighted');
+            }
+
+            selectedTask = card;
+            if (!selectedTask) {
+                return;
+            }
+
+            selectedTask.classList.add('catalogue-highlighted');
+            if (scrollIntoView) {
+                const category = selectedTask.closest('.catalogue-category');
+                if (category) {
+                    category.open = true;
+                }
+                selectedTask.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function normalize(value) {
+            return value
+                .toLocaleLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim();
+        }
+
+        function fieldScore(field, term, exactWeight, prefixWeight, containsWeight) {
+            if (!field) {
+                return 0;
+            }
+
+            if (field.split(/\s+/).includes(term)) {
+                return exactWeight;
+            }
+            if (field.split(/\s+/).some(function(word) { return word.startsWith(term); })) {
+                return prefixWeight;
+            }
+            return field.includes(term) ? containsWeight : 0;
+        }
+
+        function scoreTask(task, query) {
+            const name = normalize(task.name);
+            const description = normalize(task.description);
+            const category = normalize(task.category);
+            const terms = query.split(/\s+/);
+
+            let score = 0;
+            terms.forEach(function(term) {
+                score += fieldScore(name, term, 100, 70, 40);
+                score += fieldScore(description, term, 25, 15, 8);
+                score += fieldScore(category, term, 20, 12, 6);
+            });
+
+            if (name === query) {
+                score += 500;
+            } else if (name.startsWith(query)) {
+                score += 250;
+            } else if (name.includes(query)) {
+                score += 150;
+            } else if (query) {
+                // String similarity matching fallback for task names
+                function distance(a, b) {
+                    let dp = Array.from(
+                        { length: a.length + 1 },
+                        () => Array(b.length + 1).fill(0)
+                    );
+
+                    for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+                    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+
+                    for (let i = 1; i <= a.length; i++) {
+                        for (let j = 1; j <= b.length; j++) {
+                            dp[i][j] = Math.min(
+                                dp[i - 1][j] + 1,     // deletion
+                                dp[i][j - 1] + 1,     // insertion
+                                dp[i - 1][j - 1] + (a[i - 1] !== b[j - 1])
+                            );
+                        }
+                    }
+
+                    return dp[a.length][b.length];
+                }
+
+                let best = 0;
+
+                // Compare query against every similarly-sized section of name
+                for (let i = 0; i <= name.length - query.length; i++) {
+                    let chunk = name.substring(i, i + query.length);
+                    let d = distance(query, chunk);
+
+                    best = Math.max(best, 1 - d / query.length);
+                }
+                
+                if (best > 0.5) {
+                    score += best;
+                }
+            }
+
+            return score;
+        }
+
+        function filterTasks() {
+            const query = normalize(searchInput.value);
+            const searching = query.length > 0;
+            const rankedTasks = taskGroups.flatMap(function(group) {
+                return group.cards.map(function(task) {
+                    return {
+                        task: task,
+                        score: searching ? scoreTask(task, query) : 0
+                    };
+                });
+            });
+
+            rankedTasks.sort(function(left, right) {
+                return right.score - left.score || left.task.cardIndex - right.task.cardIndex;
+            });
+
+            searchResults.replaceChildren();
+            searchResults.hidden = !searching;
+            taskGroups.forEach(function(group) {
+                group.element.hidden = searching;
+                group.cards.forEach(function(task) {
+                    task.element.hidden = false;
+                    if (!searching) {
+                        group.element.querySelector('.catalogue-tasks').appendChild(task.element);
+                    }
+                });
+            });
+
+            if (searching) {
+                rankedTasks.forEach(function(result) {
+                    if (result.score > 0) {
+                        searchResults.appendChild(result.task.element);
+                    }
+                });
+            }
+
+            selectTask(getNavigableTasks()[0] || null, !searching);
+        }
+
+        const dirMap = {
+            'ArrowDown': 1,
+            'ArrowUp': -1,
+            // 'ArrowRight': 1,
+            // 'ArrowLeft': -1
+        }
+
+        searchInput.addEventListener('input', filterTasks);
+        document.addEventListener('keydown', function(event) {
+            const tasks = getNavigableTasks();
+
+            if (event.key in dirMap) {
+                event.preventDefault();
+                if (tasks.length === 0) {
+                    selectTask(null, false);
+                    return;
+                }
+
+                const currentIndex = tasks.indexOf(selectedTask);
+                const direction = dirMap[event.key];
+                const nextIndex = currentIndex === -1
+                    ? (direction === 1 ? 0 : tasks.length - 1)
+                    : (currentIndex + direction + tasks.length) % tasks.length;
+                selectTask(tasks[nextIndex], true);
+            } else if (event.key === 'Enter' && selectedTask) {
+                event.preventDefault();
+                selectedTask.click();
+            }
+        });
+        document.addEventListener('keydown', function(event) {
+            if (
+                event.ctrlKey &&
+                !event.shiftKey &&
+                !event.altKey &&
+                event.key.toLowerCase() === 's'
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                searchInput.focus();
+                searchInput.select();
+            }
+        }, true);
+        filterTasks();
+        searchInput.focus();
+        searchInput.select();
 
         // View mode selector (with persistence)
         let lastSelectedButton;
-        const catalogue = document.getElementById('task-catalogue');
         const viewSelector = document.getElementById('catalogue-view-selector');
 
         const VIEW_STORAGE_KEY = 'lore-catalogue-view';
