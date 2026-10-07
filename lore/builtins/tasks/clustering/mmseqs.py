@@ -163,7 +163,10 @@ def _sliced_fasta(
                 seq = record["sequence"]
             else:
                 seq = record["protein_sequence"]
-            sliced = seq[start:end]
+            if start or end:
+                sliced = seq[start:end]
+            else:
+                sliced = seq  # Fallback to full sequence if no slice window is provided
             if not sliced:
                 dropped_count += 1
                 continue
@@ -232,11 +235,7 @@ def mmseqs2_handler(
     tmp_dir.mkdir(exist_ok=True)
 
     # 3. Parse cluster_window and make new FASTA in tmp dir if needed
-    if cluster_window and cluster_window.strip():
-        target_fasta = _sliced_fasta(ctx, source_path, cluster_window, strict_window, sandbox)
-    else:
-        target_fasta = sandbox / "input.fasta"
-        shutil.copy(source_path, target_fasta)
+    target_fasta = _sliced_fasta(ctx, source_path, cluster_window, strict_window, sandbox)
 
     # 4. Build CLI command
     cmd = [
