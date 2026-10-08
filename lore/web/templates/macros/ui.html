@@ -88,6 +88,21 @@
 </form>
 {% endmacro %}
 
+{# === Change Type Action (The Prompt Logic) === #}
+{% macro change_data_type(action_url, input_data_type, current_value) %}
+<form action="{{ action_url }}" method="POST" style="display: block;">
+    <input type="hidden" name="{{ input_data_type }}" value="{{ current_value }}">
+    <button type="submit" class="menu-action-btn" onclick="
+        const newDataType = prompt('Change Data Type to:', this.form.{{ input_data_type }}.value);
+        if (newDataType && newDataType.trim() !== '') {
+            this.form.{{ input_data_type }}.value = newDataType;
+            return true;
+        }
+        return false;
+    ">✎ Change Type</button>
+</form>
+{% endmacro %}
+
 {# === Task Link Card === #}
 {# Usage: {{ ui.task_card(task, session_id=session.id) }} #}
 {# task may be None (manual upload / ingestion) #}

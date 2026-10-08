@@ -127,6 +127,7 @@ async def api_ingest_artifacts(
                 if tmp_path.exists():
                     tmp_path.unlink()
 
+    s.save()
     return JSONResponse({"status": "success", "message": "Artifacts ingested successfully"})
 
 
@@ -616,6 +617,30 @@ async def rename_artifact_action(
 
     if new_name:
         s.rename_artifact(artifact_id, new_name)
+        s.save()
+    return ctx.redirect_back(
+        fallback_url=artifact_page_url(
+            s.id,
+            artifact_id,
+            "details",
+            origin_task=origin_task,
+        )
+    )
+
+
+@router.post("/{artifact_id}/retype", response_class=RedirectResponse)
+async def retype_artifact_action(
+    artifact_id: str,
+    s: ActiveSession,
+    origin_task: str | None = None,
+    ctx: PageContext = Depends()
+):
+    """Dedicated endpoint for in-place renaming of Artifacts."""
+    form_data = await ctx.request.form()
+    new_type = get_form_str(form_data, "name")
+
+    if new_type:
+        s.retype_artifact(artifact_id, new_type)
         s.save()
     return ctx.redirect_back(
         fallback_url=artifact_page_url(

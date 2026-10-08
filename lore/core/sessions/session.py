@@ -624,6 +624,18 @@ class Session(AbstractContextManager):
         self.mark_dirty()
         return new_name
 
+    def retype_artifact(self, artifact_id: str, new_type: str) -> str:
+        """Changes the data type of an Artifact in the Manifest. Returns the new type.
+        """
+        artifact = self.manifest.get_artifact(artifact_id)
+        if not artifact:
+            raise ValueError(f"Cannot retype non-existent artifact ID: {artifact_id}")
+
+        a = self.get_artifact(artifact_id)
+        a.data_type = new_type
+        self.mark_dirty()
+        return new_type
+
     def delete_artifact(self, artifact_id: str):
         """
         Pass-through to Artifacts manager deleter.
