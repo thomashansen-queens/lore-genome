@@ -15,15 +15,15 @@
         </div>
 
         {# === Action bar === #}
-        {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
-            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/details" class="btn secondary">
+        {% call ui.action_bar(delete_url=artifact_page_url(session.id, artifact.id, 'delete')) %}
+            <a href="{{ artifact_page_url(session.id, artifact.id, 'details', origin_task=origin_task) }}" class="btn secondary">
                 🛈 View details
             </a>
             <button popovertarget="export-menu" class="btn primary">
                 ⬇ Export ▾
             </button>
             <div id="export-menu" class="dropdown-menu left" popover>
-                <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download">
+                <a href="{{ artifact_page_url(session.id, artifact.id, 'download') }}">
                     Download Original
                 </a>
                 {% if view_mode == 'table' %}
@@ -40,7 +40,7 @@
                 {% endif %}
                 {% for a in available_adapters %}
                     {% if a.view_mode == "raw" %}
-                        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download_adapted/{{ a.name }}">
+                        <a href="{{ artifact_page_url(session.id, artifact.id, 'download_adapted/' ~ a.name) }}">
                             Download {{ a.download_name }}
                         </a>
                     {% endif %}
@@ -53,7 +53,7 @@
                 <div id="explore-menu-{{ artifact.id }}" class="dropdown-menu left" popover>
                     <span class="ui-label">Adapters</span>
                     {% for a in available_adapters %}
-                        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/explore?adapter_key={{ a.name }}">
+                        <a href="{{ artifact_page_url(session.id, artifact.id, 'explore', origin_task=origin_task, adapter_key=a.name) }}">
                             {{ a.name }}
                         </a>
                     {% endfor %}
@@ -65,8 +65,8 @@
     {# === Viewer Card === #}
     <div class="card column" id="explore-card"
          style="margin-top: var(--spacing-sm); overflow: auto; position: relative;"
-         data-session-id="{{ session.id }}"
-         data-artifact-id="{{ artifact.id }}">
+         data-explore-data-url="{{ artifact_page_url(session.id, artifact.id, 'explore/data') }}"
+         data-explore-export-url="{{ artifact_page_url(session.id, artifact.id, 'explore/export') }}">
 
         <style>
             /* Loading indicator. Shown by JS inline style or HTMX hx-indicator (.htmx-request) class */
@@ -110,17 +110,14 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const card         = document.getElementById('explore-card');
-    const sessionId    = card.dataset.sessionId;
-    const artifactId   = card.dataset.artifactId;
-
     const viewerTarget = document.getElementById('viewer-target');
     const queryInput   = document.getElementById('query-input');
     const regexToggle  = document.getElementById('regex-toggle');
     const rowCounter   = document.getElementById('row-counter');
     const loader       = document.getElementById('preview-loader');
 
-    const apiUrl = `/sessions/${sessionId}/artifacts/${artifactId}/explore/data`;
-    const exportUrl = `/sessions/${sessionId}/artifacts/${artifactId}/explore/export`;
+    const apiUrl = card.dataset.exploreDataUrl;
+    const exportUrl = card.dataset.exploreExportUrl;
     
     const currentAdapter = "{{ adapter.name }}";
     let viewState = { sort_asc: true };

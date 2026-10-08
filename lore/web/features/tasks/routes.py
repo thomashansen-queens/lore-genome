@@ -18,6 +18,7 @@ from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.features.artifacts.urls import artifact_page_url
 from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
@@ -142,6 +143,7 @@ def view_session_task(
             task=task,
             outputs=resolved_outputs,
             task_log=task_log,
+            artifact_page_url=artifact_page_url,
         ),
         headers = {"Cache-Control": "no-store"}
     )
@@ -678,6 +680,7 @@ async def stream_task_updates(
                 outputs_changed=outputs_changed,
                 task_log=new_logs,
                 error_changed=error_changed,
+                artifact_page_url=artifact_page_url,
             )
         if html_data.strip():
             yield ServerSentEvent(raw_data=html_data, event="task_update")

@@ -9,7 +9,7 @@
     <span class="ui-label">Artifact</span>
     {{ ui.editable_header(
         artifact.name,
-        '/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/rename',
+        artifact_page_url(session.id, artifact.id, 'rename', origin_task=origin_task),
         input_name='name')
     }}
 
@@ -22,12 +22,12 @@
     </div>
 
     {# === Action bar === #}
-    {% call ui.action_bar(delete_url='/sessions/' ~ session.id ~ '/artifacts/' ~ artifact.id ~ '/delete') %}
+    {% call ui.action_bar(delete_url=artifact_page_url(session.id, artifact.id, 'delete')) %}
 
         {# Only show "Explore" if we have at least one adapter #}
         {% if adapters %}
             {% if adapters | length == 1 %}
-                <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/explore" class="btn primary">
+                <a href="{{ artifact_page_url(session.id, artifact.id, 'explore', origin_task=origin_task) }}" class="btn primary">
                     🔍︎ Explore
                 </a>
             {% else %}
@@ -37,7 +37,7 @@
                 <div id="explore-menu-{{ artifact.id }}" class="dropdown-menu left" popover>
                     <span class="ui-label">Adapters</span>
                     {% for a in adapters %}
-                        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/explore?adapter_key={{ a.name }}">
+                        <a href="{{ artifact_page_url(session.id, artifact.id, 'explore', origin_task=origin_task, adapter_key=a.name) }}">
                             {{ a.name }}
                         </a>
                     {% endfor %}
@@ -62,7 +62,7 @@
             </div>
         </div>
 
-        <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/download" class="btn secondary">
+        <a href="{{ artifact_page_url(session.id, artifact.id, 'download') }}" class="btn secondary">
             ⬇ Download
         </a>
     {% endcall %}
@@ -73,7 +73,7 @@
         {# === Quick Preview (full width, naturally capped) === #}
         <div class="card" style="flex: 1;">
             <header>Quick preview</header>
-            <a href="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/view" class="small">
+            <a href="{{ artifact_page_url(session.id, artifact.id, 'view', origin_task=origin_task) }}" class="small">
                 View full text
             </a>
             <div style="overflow: hidden; max-height: 300px; position: relative; border-radius: 4px; padding: 1rem; background: var(--bg-body);">
@@ -95,7 +95,10 @@
                 {% if parent_artifacts %}
                     <span class="ui-label">Derived From</span>
                     {% for p_art in parent_artifacts %}
-                        {{ ui.artifact_card(p_art, session_id=session.id) }}
+                        {{ ui.artifact_card(
+                            p_art,
+                            href=artifact_page_url(session.id, p_art.id, origin_task=origin_task),
+                        ) }}
                     {% endfor %}
                 {% endif %}
             </div>
@@ -149,7 +152,7 @@
                                     name="has_header"
                                     value="true"
                                     {% if metadata.get('header', metadata.get('has_header', True)) %}checked{% endif %}
-                                    hx-post="/sessions/{{ session.id }}/artifacts/{{ artifact.id }}/toggle-header"
+                                    hx-post="{{ artifact_page_url(session.id, artifact.id, 'toggle-header') }}"
                                     hx-trigger="change"
                                     hx-swap="none">
                             </label>

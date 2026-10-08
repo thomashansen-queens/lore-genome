@@ -115,13 +115,16 @@ class PageContext:
         # Start with a blank trail of crumbs
         self.breadcrumbs = [("Home", "/")]
 
-    def generate_breadcrumbs(self, label_map: dict[str, str | None] | None = None) -> list[Crumb]:
+    def generate_breadcrumbs(self, label_map: dict[str, str | None] | None = None, custom_path: str | None = None) -> list[Crumb]:
         """
         Dynamically builds breadcrumbs from the current URL path.
         Example: /sessions/uuid-123/artifacts -> Home > Sessions > uuid-12... > Artifacts
         """
         crumbs: list[Crumb] = [("Home", "/")]
-        path_segments = [seg for seg in self.request.url.path.split("/") if seg]
+        if custom_path:
+            path_segments = [seg for seg in custom_path.split("/") if seg]
+        else:
+            path_segments = [seg for seg in self.request.url.path.split("/") if seg]
 
         if not path_segments:
             return crumbs  # Homepage

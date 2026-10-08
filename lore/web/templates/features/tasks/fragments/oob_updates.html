@@ -117,7 +117,7 @@
                         {% if out.value[0] == "MISSING" %}
                             <div class="card warning small">⚠ Artifact file missing from disk!</div>
                         {% else %}
-                            {{ ui.artifact_card(out.value[0], session_id=session_id) }}
+                            {{ ui.artifact_card(out.value[0], href=artifact_page_url(session_id, out.value[0].id, origin_task=task.id)) }}
                         {% endif %}
                     {% else %}
                         <button class="card clickable"
@@ -133,7 +133,7 @@
                                 {% if item == "MISSING" %}
                                     <div class="card warning small" style="margin: var(--spacing-xs) var(--spacing-sm);">⚠ Missing</div>
                                 {% else %}
-                                    <a href="/sessions/{{ session_id }}/artifacts/{{ item.id }}">
+                                    <a href="{{ artifact_page_url(session_id, item.id, origin_task=task.id) }}">
                                         {{ item.name or item.id[:8] }}
                                         <span class="badge muted small">{{ item.data_type }}</span>
                                     </a>

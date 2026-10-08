@@ -17,6 +17,7 @@ from lore.core.utils import filter_and_sort
 from lore.web.deps import ActiveSession, PageContext, ReadOnlySession, templates
 from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.forms import get_form_str
+from lore.web.features.artifacts.urls import artifact_page_url
 
 if TYPE_CHECKING:
     from lore.core.artifacts.artifact import Artifact
@@ -129,10 +130,36 @@ async def api_ingest_artifacts(
     return JSONResponse({"status": "success", "message": "Artifacts ingested successfully"})
 
 
+def _generate_artifact_breadcrumbs(
+    ctx: PageContext,
+    session: ReadOnlySession,
+    artifact: "Artifact",
+    origin_task: str | None,
+) -> None:
+    task = session.get_task(origin_task) if origin_task else None
+    if task:
+        ctx.generate_breadcrumbs(
+            {
+                session.id: session.name,
+                task.id: task.name or "Task",
+                artifact.id: f"{artifact.ui_name}.{artifact.extension}",
+            },
+            custom_path=f"/sessions/{session.id}/tasks/{task.id}/{artifact.id}",
+        )
+    else:
+        ctx.generate_breadcrumbs(
+            {
+                session.id: session.name,
+                artifact.id: f"{artifact.ui_name}.{artifact.extension}",
+            }
+        )
+
+
 @router.get("/{artifact_id}", response_class=RedirectResponse)
 def explore_artifact_default(
     artifact_id: str,
     s: ReadOnlySession,
+    origin_task: str | None = None,
     ctx: PageContext = Depends(),
 ):
     """Redirects to the default view for an Artifact."""
@@ -144,18 +171,23 @@ def explore_artifact_default(
             message_type="error",
         )
     adapters = artifact.get_adapters()
-    if adapters:
-        adapter = adapters[0]
-        return ctx.redirect(
-            f"/sessions/{s.id}/artifacts/{artifact_id}/explore?adapter_key={adapter.name}"
+    adapter_key = adapters[0].name if adapters else None
+    return ctx.redirect(
+        artifact_page_url(
+            s.id,
+            artifact_id,
+            "explore",
+            origin_task=origin_task,
+            adapter_key=adapter_key,
         )
-    return ctx.redirect(f"/sessions/{s.id}/artifacts/{artifact_id}/explore")
+    )
 
 
 @router.get("/{artifact_id}/details", response_class=HTMLResponse)
 def view_artifact_details(
     artifact_id: str,
     s: ReadOnlySession,
+    origin_task: str | None = None,
     ctx: PageContext = Depends(),
 ):
     """
@@ -182,7 +214,8 @@ def view_artifact_details(
         preview = "(Preview not available for this file type.)"
         file_size = path.stat().st_size if path.exists() else 0
 
-    ctx.generate_breadcrumbs({s.id: s.name, artifact_id: artifact.ui_name})
+    _generate_artifact_breadcrumbs(ctx, s, artifact, origin_task)
+
     return templates.TemplateResponse(
         request=ctx.request,
         name="features/artifacts/detail.html",
@@ -195,6 +228,8 @@ def view_artifact_details(
             push_tasks=push_tasks,
             text_preview=preview,
             is_truncated=is_truncated,
+            origin_task=origin_task,
+            artifact_page_url=artifact_page_url,
         )
     )
 
@@ -204,6 +239,7 @@ async def view_artifact_explore(
     artifact_id: str,
     s: ReadOnlySession,
     adapter_key: str | None = None,
+    origin_task: str | None = None,
     ctx: PageContext = Depends(),
 ):
     """
@@ -232,10 +268,14 @@ async def view_artifact_explore(
 
     if not adapter:
         return ctx.redirect_back(
-            f"/sessions/{s.id}/artifacts/{artifact_id}",
+            artifact_page_url(
+                s.id,
+                artifact_id,
+                origin_task=origin_task,
+            ),
             message="No adapter available for this Artifact",
             message_type="warning",
-    )
+        )
 
     # 2. Data loading (initial peek)
     path = s.get_artifact_path(artifact_id)
@@ -253,10 +293,8 @@ async def view_artifact_explore(
     md.update(_viewer_completeness(md, shown=len(preview_result.data)))
     load_full_url = _explore_load_full_url(s.id, artifact_id, adapter)
 
-    ctx.generate_breadcrumbs({
-        s.id: s.name,
-        artifact_id: artifact.ui_name
-    })
+    _generate_artifact_breadcrumbs(ctx, s, artifact, origin_task)
+
     return templates.TemplateResponse(
         request=ctx.request,
         name="features/artifacts/explore.html",
@@ -270,6 +308,8 @@ async def view_artifact_explore(
             keys=md.get("columns", []),
             metadata=md,
             load_full_url=load_full_url,
+            origin_task=origin_task,
+            artifact_page_url=artifact_page_url,
         )
     )
 
@@ -291,9 +331,12 @@ def _explore_load_full_url(session_id: str, artifact_id: str, adapter: "BaseAdap
     """
     if adapter.view_mode == "table":
         return None
-    return (
-        f"/sessions/{session_id}/artifacts/{artifact_id}/explore/view"
-        f"?adapter_key={adapter.name}&strategy=full"
+    return artifact_page_url(
+        session_id,
+        artifact_id,
+        "explore/view",
+        adapter_key=adapter.name,
+        strategy="full",
     )
 
 
@@ -564,6 +607,7 @@ def api_explore_export(
 async def rename_artifact_action(
     artifact_id: str,
     s: ActiveSession,
+    origin_task: str | None = None,
     ctx: PageContext = Depends()
 ):
     """Dedicated endpoint for in-place renaming of Artifacts."""
@@ -572,7 +616,14 @@ async def rename_artifact_action(
 
     if new_name:
         s.rename_artifact(artifact_id, new_name)
-    return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/artifacts/{artifact_id}")
+    return ctx.redirect_back(
+        fallback_url=artifact_page_url(
+            s.id,
+            artifact_id,
+            "details",
+            origin_task=origin_task,
+        )
+    )
 
 
 @router.post("/{artifact_id}/update", response_class=RedirectResponse)

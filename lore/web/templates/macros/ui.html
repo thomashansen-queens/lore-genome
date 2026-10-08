@@ -109,9 +109,9 @@
 
 
 {# === Artifact Link Card === #}
-{# Usage: {{ ui.artifact_card(artifact, session_id=session.id) }} #}
-{% macro artifact_card(artifact, session_id) %}
-<a href="/sessions/{{ session_id }}/artifacts/{{ artifact.id }}"
+{# Usage: {{ ui.artifact_card(artifact, href=url) }} #}
+{% macro artifact_card(artifact, href) %}
+<a href="{{ href }}"
    class="card clickable"
    style="padding: var(--spacing-sm);">
     <div class="row" style="justify-content: space-between; align-items: flex-start;">
