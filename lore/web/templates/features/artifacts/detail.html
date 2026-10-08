@@ -95,10 +95,20 @@
                 {% if parent_artifacts %}
                     <span class="ui-label">Derived From</span>
                     {% for p_art in parent_artifacts %}
-                        {{ ui.artifact_card(
-                            p_art,
-                            href=artifact_page_url(session.id, p_art.id, origin_task=origin_task),
-                        ) }}
+                        {% if p_art %}
+                            {{ ui.artifact_card(
+                                p_art,
+                                href=artifact_page_url(session.id, p_art.id),
+                            ) }}
+                        {% else %}
+                            <div class="card" style="padding: var(--spacing-sm);">
+                                <div class="row" style="justify-content: space-between; align-items: flex-start;">
+                                    <span class="badge warning">MISSING ARTIFACT</span>
+                                    <span class="badge muted">unknown</span>
+                                </div>
+                                <div class="muted small">???</div>
+                            </div>
+                        {% endif %}
                     {% endfor %}
                 {% endif %}
             </div>
