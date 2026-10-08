@@ -10,7 +10,8 @@
         {{ ui.editable_header(
             artifact.name,
             artifact_page_url(session.id, artifact.id, 'rename', origin_task=origin_task),
-            input_name='name')
+            input_name='name',
+            suffix=artifact.extension)
         }}
         <div class="row gapped muted small mono" style="margin-bottom: var(--spacing-sm); align-items: center;">
             <span>Adapter: {{ adapter.name }}</span>

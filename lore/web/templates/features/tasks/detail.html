@@ -226,7 +226,7 @@
                                             <div class="card warning small" style="margin: var(--spacing-xs) var(--spacing-sm);">⚠ Missing</div>
                                         {% else %}
                                             <a href="{{ artifact_page_url(session.id) }}">
-                                                {{ item.name or item.id[:8] }}
+                                                {{ ui.artifact_display_name(item) }}
                                                 <span class="badge muted small">{{ item.data_type }}</span>
                                             </a>
                                         {% endif %}
