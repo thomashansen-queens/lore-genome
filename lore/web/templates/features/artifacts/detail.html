@@ -15,9 +15,15 @@
 
     {# === Artifact metadata === #}
     <div class="row">
-        <span class="badge muted">{{ artifact.data_type }}</span>
-        <div class="muted mono small">
-            ID: {{ artifact.id }} &bull; Size: {{ artifact.display_size }}
+        <div class="muted mono small row">
+            ID: {{ artifact.id }} &bull; Type: {{ ui.editable_header(
+                artifact.data_type,
+                artifact_page_url(session.id, artifact.id, 'retype', origin_task=origin_task),
+                input_name='name',
+                class='muted'
+            ) }}
+            &bull;
+            Size: {{ artifact.display_size }}
         </div>
     </div>
 

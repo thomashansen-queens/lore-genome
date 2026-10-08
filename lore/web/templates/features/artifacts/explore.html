@@ -7,11 +7,20 @@
     {# === Header === #}
     <span class="ui-label">Explore</span>
     <div>
-        <h4>
-            {{ artifact.name or artifact.path.split('/')[-1] }} (Explore)
-        </h4>
-        <div class="muted small mono" style="margin-bottom: var(--spacing-sm);">
-            Adapter: {{ adapter.name }} &bull; Type: {{ artifact.data_type }} &bull; Size: {{ artifact.display_size }}
+        {{ ui.editable_header(
+            artifact.name,
+            artifact_page_url(session.id, artifact.id, 'rename', origin_task=origin_task),
+            input_name='name')
+        }}
+        <div class="row gapped muted small mono" style="margin-bottom: var(--spacing-sm); align-items: center;">
+            <span>Adapter: {{ adapter.name }}</span>
+            <span>Type:</span>
+            {{ ui.editable_header(
+                artifact.data_type,
+                artifact_page_url(session.id, artifact.id, 'retype', origin_task=origin_task),
+                input_name='name')
+            }}
+            <span>Size: {{ artifact.display_size }}</span>
         </div>
 
         {# === Action bar === #}

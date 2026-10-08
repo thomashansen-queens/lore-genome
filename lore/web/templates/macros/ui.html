@@ -22,7 +22,7 @@
 {% endmacro %}
 
 {# === Universal object renamer === #}
-{% macro editable_header(value, update_url, subtitle=None, input_name='name') %}
+{% macro editable_header(value, update_url, subtitle=None, input_name='name', class="") %}
 <div>
     <form action="{{ update_url }}" method="POST" style="margin: 0;">
         <input type="hidden" name="action" value="RENAME">
@@ -34,7 +34,8 @@
                 onfocus="this.dataset.original = this.value"
                 onblur="if(this.dataset.original !== this.value) this.form.submit()"
                 onkeypress="if(event.key === 'Enter') this.blur()"
-                title="Click to rename">
+                title="Click to rename"
+                class="{{ class }}">
     </form>
     {% if subtitle %}
         <div class="muted">
