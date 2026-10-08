@@ -275,6 +275,7 @@
                 : allTasks.map(function(task) { return task.element; });
         }
 
+        // Highlights a task to be selected if you press enter
         function selectTask(card, scrollIntoView) {
             if (selectedTask) {
                 selectedTask.classList.remove('catalogue-highlighted');
@@ -317,6 +318,7 @@
             return field.includes(term) ? containsWeight : 0;
         }
 
+        // Scores the similarity of a task to the search bar query
         function scoreTask(task, query) {
             const name = normalize(task.name);
             const description = normalize(task.description);
@@ -378,9 +380,12 @@
             return score;
         }
 
+        // Updates the shown tasks based on what's in the search bar
         function filterTasks() {
             const query = normalize(searchInput.value);
             const searching = query.length > 0;
+
+            // Sort the shown tasks by their similarity to the search
             const rankedTasks = taskGroups.flatMap(function(group) {
                 return group.cards.map(function(task) {
                     return {
@@ -424,7 +429,19 @@
             // 'ArrowLeft': -1
         }
 
-        searchInput.addEventListener('input', filterTasks);
+        // Update search results every 200ms while typing
+        let filterTimeout = null;
+        searchInput.addEventListener('input', function() {
+            if (filterTimeout !== null) {
+                return;
+            }
+            filterTimeout = setTimeout(function() {
+                filterTasks();
+                filterTimeout = null;
+            }, 200);
+        });
+
+        // Task select with arrow keys and enter
         document.addEventListener('keydown', function(event) {
             const tasks = getNavigableTasks();
 
@@ -446,6 +463,8 @@
                 selectedTask.click();
             }
         });
+
+        // Select search bar with ctrl+s
         document.addEventListener('keydown', function(event) {
             if (
                 event.ctrlKey &&
@@ -459,6 +478,8 @@
                 searchInput.select();
             }
         }, true);
+
+        // Select search bar on page load
         filterTasks();
         searchInput.focus();
         searchInput.select();
