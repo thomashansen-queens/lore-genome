@@ -43,7 +43,7 @@
 
                     {# Section 2: Standard actions #}
                     <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
-                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.filename) }}
+                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/rename",  "name", a.name or a.filename) }}
                     <hr />
                     {{ ui.delete_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/delete") }}
                 </div>

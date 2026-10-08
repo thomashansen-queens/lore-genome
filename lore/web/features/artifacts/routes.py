@@ -616,6 +616,7 @@ async def rename_artifact_action(
 
     if new_name:
         s.rename_artifact(artifact_id, new_name)
+        s.save()
     return ctx.redirect_back(
         fallback_url=artifact_page_url(
             s.id,
@@ -702,6 +703,7 @@ def delete_artifact_action(
 ):
     """Delete and Artifact from the Manifest and Disk"""
     s.delete_artifact(artifact_id)
+    s.save()
     return ctx.redirect(
         f"/sessions/{s.id}",
         message="Artifact deleted",
