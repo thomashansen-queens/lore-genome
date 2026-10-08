@@ -251,6 +251,7 @@ async def rename_task_action(
 
     if new_name:
         s.rename_task(task_id, new_name)
+        s.save()
     return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/tasks/{task_id}")
 
 @router.post("/{task_id}/run_cancel", response_class=RedirectResponse)
