@@ -225,7 +225,7 @@
                                         {% if item == "MISSING" %}
                                             <div class="card warning small" style="margin: var(--spacing-xs) var(--spacing-sm);">⚠ Missing</div>
                                         {% else %}
-                                            <a href="{{ artifact_page_url(session.id) }}">
+                                            <a href="{{ artifact_page_url(session.id, item.id, origin_task=task.id) }}">
                                                 {{ ui.artifact_display_name(item) }}
                                                 <span class="badge muted small">{{ item.data_type }}</span>
                                             </a>
