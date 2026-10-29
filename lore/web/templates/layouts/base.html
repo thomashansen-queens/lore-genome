@@ -30,7 +30,7 @@
 <body>
     {# === App header (global) === #}
     <header class="app-header">
-        <a href="/" class="logo">
+        <a id="home-link" href="/" class="logo">
             {# FUTURE: A logo #}
             <h3 style="margin:0;">
                 LoRē Genome
@@ -38,11 +38,11 @@
         </a>
         <div class="gapped push-right" style="display: flex;">
             {# Global control (settings, user) go here #}
-            <a href="/settings" class="btn secondary">
-                💻︎ Settings
+            <a id="settings-link" href="/settings" class="btn secondary">
+                💻︎ Settings [Ctrl+O]
             </a>
-            <a href="/help" class="btn secondary">
-                ❓︎ Help
+            <a id="help-link" href="/help" class="btn secondary">
+                ❓︎ Help [Ctrl+H]
             </a>
         </div>
     </header>
@@ -212,6 +212,24 @@
             });
         });
     })();
+    </script>
+
+    {# === Global Navigation Shortcuts === #}
+    <script>
+    document.addEventListener('keydown', function(event) {
+        if (!event.ctrlKey || event.altKey || event.shiftKey) return;
+
+        const key = event.key.toLowerCase();
+        let link;
+        if (key === 'q') link = document.getElementById('home-link');
+        else if (key === 'o') link = document.getElementById('settings-link');
+        else if (key === 'h') link = document.getElementById('help-link');
+        else return;
+
+        if (!link) return;
+        event.preventDefault();
+        link.click();
+    });
     </script>
 
     {# === Feature Scripts === #}
