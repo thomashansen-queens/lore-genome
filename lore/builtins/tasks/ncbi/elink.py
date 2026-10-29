@@ -78,7 +78,10 @@ def elink(
                 },
             )
             response.raise_for_status()
-            return response.json()
+            try:
+                return response.json()
+            except json.decoder.JSONDecodeError:
+                raise ValueError("Invalid accession in input.")
 
     # 2. Execute the ELink request
     data = _execute_link()
