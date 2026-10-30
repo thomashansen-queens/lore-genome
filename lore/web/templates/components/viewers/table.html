@@ -20,6 +20,15 @@
         outline: 2px solid rgb(33, 115, 70);
         outline-offset: -2px;
     }
+    td.single-selected,
+    td.single-selected:hover {
+        cursor: text;
+    }
+    table.text-selecting td.text-selecting,
+    td.text-selecting {
+        user-select: text;
+        cursor: text;
+    }
 </style>
 
 <div class="column">
@@ -114,9 +123,29 @@
 
         let isDragging = false;
         let startCell = null;
-        let sel_rows = 0
-        let sel_cols = 0
+        let activeCell = null;
+        let sel_rows = 0;
+        let sel_cols = 0;
         let tableActive = false;  // user has clicked into this table (gates Ctrl+A)
+        let lastClickedCell = null;
+
+        function updateSingleCellCursor() {
+            const selected = table.querySelectorAll('td.selected');
+            const intended = selected.length === 1 ? selected[0] : null;
+            table.querySelectorAll('td.single-selected').forEach(cell => {
+                if (cell !== intended) cell.classList.remove('single-selected');
+            });
+            if (intended && !intended.classList.contains('single-selected')) {
+                intended.classList.add('single-selected');
+            }
+        }
+
+        new MutationObserver(updateSingleCellCursor).observe(table, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
+        updateSingleCellCursor();
 
         // Helper to get row and column index of a TD element
         function getIndices(cell) {
@@ -133,6 +162,11 @@
                 sel_cols = 0;
                 sel_rows = 0;
                 tableActive = false;
+                anchorCell = null;
+                activeCell = null;
+                lastClickedCell = null;
+                table.classList.remove('text-selecting');
+                table.querySelectorAll('td.text-selecting').forEach(td => td.classList.remove('text-selecting'));
             }
         }, { signal });
 
@@ -140,17 +174,56 @@
             const cell = e.target.closest('td');
             if (!cell) return;
 
-            isDragging = true;
             tableActive = true;
+            const sameSingleCell = lastClickedCell === cell &&
+                table.querySelectorAll('td.selected').length === 1 && cell.classList.contains('selected');
+
+            if (sameSingleCell && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                table.classList.add('text-selecting');
+                cell.classList.add('text-selecting');
+                activeCell = getIndices(cell);
+                return; // The native click supplies the caret/text-selection behavior.
+            }
+
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                if (cell.classList.contains('selected')) {
+                    cell.classList.remove('selected');
+                } else {
+                    cell.classList.add('selected');
+                }
+                cell.classList.remove('text-selecting');
+                table.classList.remove('text-selecting');
+                activeCell = getIndices(cell);
+                updateSelectionSize();
+                if (sel_cols === 0) {
+                    anchorCell = null;
+                    lastClickedCell = null;
+                } else {
+                    lastClickedCell = cell.classList.contains('selected') ? cell : null;
+                }
+                return;
+            }
+
+            isDragging = true;
             startCell = getIndices(cell);
+            activeCell = startCell;
+            table.classList.remove('text-selecting');
+            table.querySelectorAll('td.text-selecting').forEach(td => td.classList.remove('text-selecting'));
 
-            // Clear previous selections
-            clearSelection();
-            cell.classList.add('selected');
-
-            sel_cols = 1;
-            sel_rows = 1;
+            if (e.shiftKey && anchorCell) {
+                selectRectangle(anchorCell, startCell);
+            } else {
+                clearSelection();
+                cell.classList.add('selected');
+                sel_cols = 1;
+                sel_rows = 1;
+                anchorCell = startCell;
+            }
+            lastClickedCell = cell;
         }, { signal });
+
+        let anchorCell = null;
         
         table.addEventListener('mouseover', (e) => {
             if (!isDragging) return;
@@ -183,6 +256,47 @@
             isDragging = false;
         }, { signal });
 
+        function selectRectangle(from, to) {
+            clearSelection();
+            const startRow = Math.min(from.row, to.row);
+            const endRow = Math.max(from.row, to.row);
+            const startCol = Math.min(from.col, to.col);
+            const endCol = Math.max(from.col, to.col);
+            for (let r = startRow; r <= endRow; r++) {
+                for (let c = startCol; c <= endCol; c++) {
+                    table.rows[r].cells[c].classList.add('selected');
+                }
+            }
+            sel_rows = endRow - startRow + 1;
+            sel_cols = endCol - startCol + 1;
+        }
+
+        function updateSelectionSize() {
+            const selected = table.querySelectorAll('td.selected');
+            if (!selected.length) {
+                sel_rows = 0;
+                sel_cols = 0;
+                return;
+            }
+            const bounds = getSelectionBounds();
+            sel_rows = bounds.endRow - bounds.startRow + 1;
+            sel_cols = bounds.endCol - bounds.startCol + 1;
+        }
+
+        function getSelectionBounds() {
+            const selected = table.querySelectorAll('td.selected');
+            let startRow = Infinity, endRow = -Infinity;
+            let startCol = Infinity, endCol = -Infinity;
+            selected.forEach(cell => {
+                const index = getIndices(cell);
+                startRow = Math.min(startRow, index.row);
+                endRow = Math.max(endRow, index.row);
+                startCol = Math.min(startCol, index.col);
+                endCol = Math.max(endCol, index.col);
+            });
+            return { startRow, endRow, startCol, endCol };
+        }
+
         function clearSelection() {
             const selectedCells = table.querySelectorAll('td.selected');
             selectedCells.forEach(cell => cell.classList.remove('selected'));
@@ -200,7 +314,44 @@
             // select whole table
             sel_rows = body.rows.length;
             sel_cols = body.rows[0].cells.length;
+            activeCell = { row: 1, col: 0 };
+            anchorCell = activeCell;
         }
+
+        document.addEventListener('keydown', (event) => {
+            if (!tableActive || table.offsetParent === null || table.classList.contains('text-selecting')) return;
+            const arrowOffsets = {
+                ArrowLeft: [0, -1],
+                ArrowRight: [0, 1],
+                ArrowUp: [-1, 0],
+                ArrowDown: [1, 0]
+            };
+            if (!arrowOffsets[event.key]) return;
+
+            event.preventDefault();
+            if (!anchorCell) {
+                const selected = table.querySelector('td.selected');
+                anchorCell = activeCell || (selected ? getIndices(selected) : { row: 1, col: 0 });
+            }
+            activeCell = activeCell || anchorCell;
+            const [rowOffset, colOffset] = arrowOffsets[event.key];
+            activeCell = {
+                row: Math.max(table.tHead ? 1 : 0,
+                    Math.min(table.rows.length - 1, activeCell.row + rowOffset)),
+                col: Math.max(0, Math.min(table.rows[0].cells.length - 1, activeCell.col + colOffset))
+            };
+
+            if (event.shiftKey) {
+                selectRectangle(anchorCell, activeCell);
+            } else {
+                clearSelection();
+                table.rows[activeCell.row].cells[activeCell.col].classList.add('selected');
+                anchorCell = activeCell;
+                sel_rows = 1;
+                sel_cols = 1;
+                lastClickedCell = table.rows[activeCell.row].cells[activeCell.col];
+            }
+        }, { signal });
 
         // If click has activated table, listen for Ctrl+A to select all
         document.addEventListener('keydown', (event) => {
@@ -212,23 +363,24 @@
 
         // Build TSV for the current selection, optionally including headers
         function buildSelectionTSV(includeHeaders) {
-            const cells = table.querySelectorAll('td.selected');
+            const bounds = getSelectionBounds();
             const out = [];
 
-            if (includeHeaders) {
-                const headerCells = table.tHead ? table.tHead.rows[0].cells : [];
+            if (includeHeaders && table.tHead) {
+                const headerCells = table.tHead.rows[0].cells;
                 const header = [];
-                for (let c = 0; c < sel_cols; c++) {
-                    const th = headerCells[cells[c].cellIndex];
+                for (let c = bounds.startCol; c <= bounds.endCol; c++) {
+                    const th = headerCells[c];
                     header.push(th ? th.textContent.replace(/[▲▼]/g, '').trim() : '');
                 }
                 out.push(header.join('\t'));
             }
 
-            for (let r = 0; r < sel_rows; r++) {
+            for (let r = bounds.startRow; r <= bounds.endRow; r++) {
                 const row = [];
-                for (let c = 0; c < sel_cols; c++) {
-                    row.push(cells[r * sel_cols + c].innerText.trim());
+                for (let c = bounds.startCol; c <= bounds.endCol; c++) {
+                    const cell = table.rows[r].cells[c];
+                    row.push(cell && cell.classList.contains('selected') ? cell.innerText.trim() : '');
                 }
                 out.push(row.join('\t'));  // TSV format for clipboard into Excel etc.
             }
