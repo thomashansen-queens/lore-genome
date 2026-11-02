@@ -128,6 +128,8 @@
         let sel_cols = 0;
         let tableActive = false;  // user has clicked into this table (gates Ctrl+A)
         let lastClickedCell = null;
+        let ctrlSelectionMode = null;
+        let ctrlSelectionSnapshot = null;
 
         function updateSingleCellCursor() {
             const selected = table.querySelectorAll('td.selected');
@@ -187,21 +189,15 @@
 
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
-                if (cell.classList.contains('selected')) {
-                    cell.classList.remove('selected');
-                } else {
-                    cell.classList.add('selected');
-                }
+                ctrlSelectionSnapshot = new Set(table.querySelectorAll('td.selected'));
+                ctrlSelectionMode = cell.classList.contains('selected') ? 'remove' : 'add';
+                isDragging = true;
+                startCell = getIndices(cell);
+                activeCell = startCell;
+                applyCtrlRectangle(startCell, startCell);
                 cell.classList.remove('text-selecting');
                 table.classList.remove('text-selecting');
-                activeCell = getIndices(cell);
-                updateSelectionSize();
-                if (sel_cols === 0) {
-                    anchorCell = null;
-                    lastClickedCell = null;
-                } else {
-                    lastClickedCell = cell.classList.contains('selected') ? cell : null;
-                }
+                lastClickedCell = ctrlSelectionMode === 'add' ? cell : null;
                 return;
             }
 
@@ -238,22 +234,45 @@
             const startCol = Math.min(startCell.col, currentCell.col);
             const endCol = Math.max(startCell.col, currentCell.col);
 
-            clearSelection();
+            if (ctrlSelectionMode) {
+                applyCtrlRectangle(startCell, currentCell);
+            } else {
+                clearSelection();
 
-            // Highlight all cells within the calculated rectangle
+                // Highlight all cells within the calculated rectangle
+                for (let r = startRow; r <= endRow; r++) {
+                    for (let c = startCol; c <= endCol; c++) {
+                        table.rows[r].cells[c].classList.add('selected');
+                    }
+                }
+
+                sel_cols = endCol - startCol + 1;
+                sel_rows = endRow - startRow + 1;
+            }
+        }, { signal });
+
+        function applyCtrlRectangle(from, to) {
+            clearSelection();
+            ctrlSelectionSnapshot.forEach(cell => cell.classList.add('selected'));
+
+            const startRow = Math.min(from.row, to.row);
+            const endRow = Math.max(from.row, to.row);
+            const startCol = Math.min(from.col, to.col);
+            const endCol = Math.max(from.col, to.col);
             for (let r = startRow; r <= endRow; r++) {
                 for (let c = startCol; c <= endCol; c++) {
-                table.rows[r].cells[c].classList.add('selected');
+                    const cell = table.rows[r].cells[c];
+                    cell.classList.toggle('selected', ctrlSelectionMode === 'add');
                 }
             }
-
-            sel_cols = endCol - startCol + 1;
-            sel_rows = endRow - startRow + 1;
-        }, { signal });
+            updateSelectionSize();
+        }
 
         // Stop selection when mouse is released anywhere on the page
         window.addEventListener('mouseup', () => {
             isDragging = false;
+            ctrlSelectionMode = null;
+            ctrlSelectionSnapshot = null;
         }, { signal });
 
         function selectRectangle(from, to) {
