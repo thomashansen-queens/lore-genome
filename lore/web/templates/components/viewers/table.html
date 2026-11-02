@@ -406,10 +406,28 @@
             return out.join('\n');
         }
 
-        // Ctrl+C: copy the selected cells (no headers).
+        // Ctrl+C: copy the selected text when one cell is selected and text is highlighted;
+        // otherwise copy the selected cells as TSV.
         document.addEventListener('copy', (event) => {
             // Ignore if no cells selected or table 'display: none;''
             if (sel_cols === 0 || table.offsetParent === null) return;
+
+            const selectedCells = table.querySelectorAll('td.selected');
+            const textSelection = window.getSelection();
+            if (selectedCells.length === 1 && textSelection && !textSelection.isCollapsed && textSelection.toString()) {
+                const selectedCell = selectedCells[0];
+                const anchorNode = textSelection.anchorNode;
+                const focusNode = textSelection.focusNode;
+                const anchorElement = anchorNode && (anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode);
+                const focusElement = focusNode && (focusNode.nodeType === Node.TEXT_NODE ? focusNode.parentElement : focusNode);
+
+                if (anchorElement && focusElement && selectedCell.contains(anchorElement) && selectedCell.contains(focusElement)) {
+                    event.preventDefault();
+                    event.clipboardData.setData('text/plain', textSelection.toString());
+                    return;
+                }
+            }
+
             event.preventDefault();
             event.clipboardData.setData('text/plain', buildSelectionTSV(false));
         }, { signal });
