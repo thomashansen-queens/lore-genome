@@ -8,7 +8,7 @@ from typing import Any, List, Dict
 from .models import Workflow
 from lore.core.bindings import Binding, ReferenceBinding, LiteralBinding, UserInputBinding
 from lore.core.sessions import Session
-from lore.core.tasks import Task, TaskStatus
+from lore.core.tasks import Task, TaskStatus, task_registry
 from lore.core.utils import auto_increment, slugify
 
 
@@ -189,7 +189,6 @@ class WorkflowManager:
         """
         Dehydrates a live Session into a reusable Workflow template.
         """
-        from lore.core.tasks import task_registry
 
         # 1. First pass: Map Artifacts to the Task that created them
         # This converts hardcoded LiteralBindings (Artifact IDs) into ReferenceBindings
@@ -357,7 +356,7 @@ class WorkflowManager:
                 task_inputs[input_key] = translated_bindings
 
             # 5. Push the translated inputs to the Task and set its state
-            live_task.update(inputs=task_inputs)
+            live_task.update(inputs=task_inputs, input_labels=template_task.input_labels.copy())
             session.mark_dirty()
 
     # --- Task management ---
@@ -381,6 +380,29 @@ class WorkflowManager:
             raise ValueError(f"Task not found in workflow: {task_id}")
 
         task.update(name=new_name)
+
+        self.save_workflow(workflow)
+        return task
+
+    def rename_task_input(self, workflow_id: str, task_id: str, input_key: str, new_name: str) -> Task:
+        """Update the display label for an input without changing its workflow key."""
+        workflow = self.get_workflow(workflow_id)
+        if not workflow:
+            raise ValueError(f"Workflow not found: {workflow_id}")
+
+        task = workflow.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task not found in workflow: {task_id}")
+
+        task_def = task_registry.get(task.registry_key)
+        if not task_def or input_key not in task_def.input_model.model_fields:
+            raise ValueError(f"Input not found in task: {input_key}")
+
+        new_name = new_name.strip()
+        if new_name:
+            task.input_labels[input_key] = new_name
+        else:
+            task.input_labels.pop(input_key, None)
 
         self.save_workflow(workflow)
         return task
@@ -418,5 +440,12 @@ class WorkflowManager:
             raise ValueError(f"Task not found in workflow: {task_id}")
 
         workflow.tasks.remove(task)
+        for remaining_task in workflow.tasks:
+            for input_name, bindings in list(remaining_task.inputs.items()):
+                remaining_task.inputs[input_name] = [
+                    binding for binding in bindings
+                    if not (isinstance(binding, ReferenceBinding) and binding.source_id == task_id)
+                ]
+
         self.save_workflow(workflow)
         return workflow

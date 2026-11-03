@@ -85,6 +85,7 @@ class Task(BaseModel):
     registry_key: str
     name: str | None = None
     description: str | None = None
+    input_labels: dict[str, str] = Field(default_factory=dict)
 
     # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)

@@ -243,6 +243,47 @@ def view_workflow_task(
     )
 
 
+@router.post("/{workflow_id}/tasks/{task_id}/delete", response_class=RedirectResponse)
+def delete_workflow_task_action(
+    workflow_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Delete a task from a workflow template."""
+    try:
+        rt.workflows.delete_task(workflow_id, task_id)
+        return ctx.redirect(
+            f"/workflows/{workflow_id}",
+            message="Task deleted successfully.",
+            message_type="success",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{workflow_id}/tasks/{task_id}/inputs/{input_key}/rename", response_class=RedirectResponse)
+def rename_workflow_task_input_action(
+    workflow_id: str,
+    task_id: str,
+    input_key: str,
+    rt: RT,
+    name: str = Form(...),
+    ctx: PageContext = Depends(),
+):
+    """Rename an input's display label in a workflow task."""
+    try:
+        rt.workflows.rename_task_input(workflow_id, task_id, input_key, name)
+        return ctx.redirect_back(
+            fallback_url=f"/workflows/{workflow_id}",
+            message="Task input renamed successfully.",
+            message_type="success",
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/{workflow_id}/tasks/{task_id}/rename", response_class=RedirectResponse)
 async def rename_workflow_task_action(
     workflow_id: str,
