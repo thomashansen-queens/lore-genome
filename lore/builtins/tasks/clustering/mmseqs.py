@@ -5,7 +5,7 @@ import subprocess
 import shutil
 from pathlib import Path
 
-from lore.builtins.adapters.fasta import ProteinFastaAdapter
+from lore.builtins.adapters.fasta import ProteinFastaAdapter, ProteinMatchFastaAdapter
 import lore
 
 
@@ -32,7 +32,7 @@ class Mmseqs2ClusterInputs:
     """Inputs for MMseqs2 clustering Task"""
     source_fasta = lore.ArtifactInput(
         label="Protein FASTA",
-        accepted_data=["protein_fasta", "fasta"],
+        accepted_data=["protein_fasta", "fasta", "protein_match_fasta"],
         select="single",
         load_as="path",
     )
@@ -188,6 +188,40 @@ def _sliced_fasta(
     ctx.logger.info(f"Sliced FASTA created with {kept_count} sequences kept and {dropped_count} sequences dropped based on the specified window.")
     return tmp_out
 
+def _weighted_members(
+    ctx: lore.ExecutionContext,
+    source_path: Path,
+) -> dict[str, int] | None:
+    """Return match contribution sizes for protein_match_fasta inputs."""
+    artifacts = ctx.get_input_artifact("source_fasta") or []
+    if not any(artifact.data_type == "protein_match_fasta" for artifact in artifacts):
+        return None
+
+    weights = {}
+    adapter = ProteinMatchFastaAdapter()
+    with source_path.open("r", encoding="utf-8") as source_file:
+        for record in adapter.adapt_stream(source_file):
+            accession = record.get("protein_accession") or record.get("accession")
+            if accession:
+                weights[str(accession)] = max(int(record.get("cluster_size", 1)), 0)
+    return weights
+
+
+def _add_match_weights(tsv_path: Path, weights: dict[str, int] | None) -> None:
+    if not weights:
+        return
+
+    lines = []
+    with tsv_path.open("r", encoding="utf-8") as tsv_file:
+        for line in tsv_file:
+            parts = line.rstrip("\r\n").split("\t")
+            if len(parts) >= 2:
+                member = parts[1]
+                lines.append("\t".join((parts[0], member, str(weights.get(member, 1)))))
+
+    tsv_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
 # --- Main Task ---
 
 @lore.task(
@@ -270,6 +304,9 @@ def mmseqs2_handler(
 
     if not rep_path.exists() or not tsv_path.exists():
         raise RuntimeError("Expected MMseqs2 output files not found.")
+
+    weights = _weighted_members(ctx, source_path)
+    _add_match_weights(tsv_path, weights)
 
     ctx.materialize_file(
         source=tsv_path,
