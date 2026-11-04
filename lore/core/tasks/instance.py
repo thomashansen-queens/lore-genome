@@ -194,6 +194,7 @@ class Task(BaseModel):
         exec_config: dict[str, Any] | None = None,
         name: str | None = None,
         description: str | None = None,
+        input_labels: dict[str, str] | None = None,
     ) -> None:
         """
         Mutate the Task in place. Handles DRAFT/READY status.
@@ -202,6 +203,8 @@ class Task(BaseModel):
             self.name = name
         if description is not None:
             self.description = description
+        if input_labels is not None:
+            self.input_labels = input_labels
 
         # 1. Update the raw stored dictionaries
         if inputs is not None:
@@ -209,7 +212,11 @@ class Task(BaseModel):
         if exec_config is not None:
             self.exec_config = exec_config
 
-        is_mutated = (inputs is not None) or (exec_config is not None)
+        is_mutated = (
+            (inputs is not None)
+            or (exec_config is not None)
+            or (input_labels is not None)
+        )
         if is_mutated and self.status == TaskStatus.COMPLETED:
             self.status = TaskStatus.DRAFT
             self.integrity = TaskIntegrity.PENDING

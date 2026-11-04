@@ -66,7 +66,7 @@ def task(
                 cluster_size = info[1]
                 headers = info[0]
                 rep_header = headers[0]
-                f.write(f">{rep_header[0]} {rep_header[1]} ({cluster_size} total)\n{seq}\n")
+                f.write(f">{rep_header[1]} {rep_header[0]} ({cluster_size} total)\n{seq}\n")
 
                 for header in headers:
                     f_csv.write(f"{rep_header[0]},{header[0]},{header[1]},{header[2]}\n")
