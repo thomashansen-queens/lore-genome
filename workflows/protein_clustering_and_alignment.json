@@ -188,19 +188,42 @@
       "name": "WP Accession to FASTA",
       "description": "",
       "input_labels": {},
-      "status": "template",
+      "status": "ready",
       "integrity": "unknown",
-      "exec_config": {},
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
       "inputs": {
-        "table": [],
-        "seq_column": [],
-        "acc_column": [],
         "accessions": [
           {
             "type": "reference",
             "source_id": "2e7a6734-a820-490f-ae96-64366fda2ad3",
             "output_key": "column",
             "artifact_id": null
+          }
+        ],
+        "table": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ],
+        "acc_column": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ],
+        "seq_column": [
+          {
+            "type": "literal",
+            "value": ""
           }
         ],
         "index_from_ncbi": [

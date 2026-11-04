@@ -50,10 +50,10 @@ def cluster_proteins_from_entrez_links(
     prev_query_uid = None
 
     def resolve_conflict(protein_acc_merge, protein_acc_target):
-        merged_uids = clusters.pop(protein_acc_merge)
+        merged_uids = clusters[protein_acc_merge]
         merged_accessions[protein_acc_merge] = [protein_acc_target, merged_uids]
         if protein_acc_merge in reverse_merged_accession_map.keys():
-            remerge_acc = reverse_merged_accession_map.pop(protein_acc_merge)
+            remerge_acc = reverse_merged_accession_map[protein_acc_merge]
             merged_accessions[remerge_acc][0] = protein_acc_target
         reverse_merged_accession_map[protein_acc_target] = protein_acc_merge
 
@@ -65,7 +65,7 @@ def cluster_proteins_from_entrez_links(
         target_uid = entry["target_uid"]
         if prev_query_uid != query_uid:
             if conflicts:
-                superset = query_uid
+                superset = prev_query_uid
                 for uid in conflicts:
                     if len(clusters[superset]) < len(clusters[uid]):
                         resolve_conflict(superset, uid)
@@ -77,32 +77,32 @@ def cluster_proteins_from_entrez_links(
             prev_query_uid = query_uid
         clusters[query_uid].add(target_uid)
         if target_uid in reverse_mappings.keys():
-            conflicts = conflicts.union(reverse_mappings[target_uid])
             reverse_mappings[target_uid].add(query_uid)
+            conflicts = conflicts.union(reverse_mappings[target_uid])
         else:
             reverse_mappings[target_uid] = set([query_uid])
     
     output_path = ctx.get_temp_path("cluster_table.tsv")
-    merge_acc_output_path = ctx.get_temp_path("merged_accession_table.tsv")
 
     with open(output_path, "w", encoding="utf-8") as output_file:
         output_file.write("protein_accession\tcluster_size\tnuucore_uids\n")
         for query_uid, target_uids in clusters.items():
             output_file.write(f"{query_uid}\t{len(target_uids)}\t{",".join(target_uids)}\n")
 
-    with open(merge_acc_output_path, 'w', encoding="utf-8") as f:
-        f.write("protein_accession\tcluster_size\tmerged_to\tnuucore_uids")
-        for query_uid in merged_accessions.keys():
-            target_uids = merged_accessions[query_uid]
-            merged_to, uids = merged_accessions[query_uid]
-            f.write(f"{query_uid}\t{len(target_uid)}\t{merged_to}\t{','.join(uids)}")
-
     ctx.materialize_file(
         source=output_path,
         output_key="cluster_table",
     )
 
-    ctx.materialize_file(
-        source=merge_acc_output_path,
-        output_key="merged_accessions"
-    )
+    if merged_accessions:
+        ctx.logger.info(f"Found {len(merged_accessions)} merged accessions. ({merged_accessions})")
+        merge_acc_output_path = ctx.get_temp_path("merged_accession_table.tsv")
+        with open(merge_acc_output_path, 'w', encoding="utf-8") as f:
+            f.write("protein_accession\tcluster_size\tmerged_to\tnuucore_uids\n")
+            for query_uid, (merged_to, uids) in merged_accessions.items():
+                f.write(f"{query_uid}\t{len(uids)}\t{merged_to}\t{','.join(uids)}\n")
+
+        ctx.materialize_file(
+            source=merge_acc_output_path,
+            output_key="merged_accessions"
+        )
