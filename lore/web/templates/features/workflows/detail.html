@@ -47,7 +47,7 @@
                                 {% set ns.requires_input = true %}
 
                                 <label style="display: block; font-weight: bold; margin-bottom: 0.25rem; margin-top: 1rem;">
-                                    {{ extra.label or (key | replace('_', ' ') | title) }} <span class="required">*</span>
+                                    {{ task.input_labels.get(key, extra.label or (key | replace('_', ' ') | title)) }} <span class="required">*</span>
                                 </label>
                                 
                                 {% if extra.description %}

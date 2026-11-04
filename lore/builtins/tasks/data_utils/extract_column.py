@@ -37,7 +37,7 @@ class ExtractColumnInputs:
 class ExtractColumnOutputs:
     """Outputs for ExtractColumn Task"""
     column = lore.TaskOutput(
-        data_type="series",
+        data_type=lore.ValuePassthrough("column_name"),
         label="Extracted Column",
         is_primary=True,
     )
@@ -109,10 +109,11 @@ def extract_column(
 
     # 3. Materialize the output
     out_name = new_name if new_name else column_name
+    data_type = out_name.strip().lower().replace("-", "_").replace(" ", "_")
     ctx.materialize_file(
         source=out_path,
         output_key="column",
-        data_type=out_name.lower().strip(),
+        data_type=data_type,
         extension="tsv",
         metadata={
             "columns": [out_name],

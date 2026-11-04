@@ -9,11 +9,12 @@ DEFAULT_ACCESSION_HEADER_NAMES = ["mmseqs_cluster_id", "protein_accession", "acc
 DEFAULT_PROTEIN_HEADER_NAMES = ["protein_sequence", "sequence"]
 
 class Inputs:
-    accessions = lore.ValueInput(
-        str,
+    accessions = lore.ArtifactInput(
+        accepted_data=["protein_accession", "accession"],
         label="WP Accessions",
-        examples=["WP_322621732.1,WP_001264253.1"],
-        default="",
+        select="multiple",
+        load_as="adapted",
+        examples=["WP_322621732.1,WP_001264253.1"]
     )
     
     table = lore.ArtifactInput(
@@ -67,7 +68,7 @@ class Outputs:
 )
 def wp_to_fasta(
     ctx: lore.ExecutionContext,
-    accessions: str = "",
+    accessions: list[str],
     table: list[dict] = [],
     seq_column: str = "",
     acc_column: str = "",
@@ -85,7 +86,7 @@ def wp_to_fasta(
         else:
             has_api_key = True
         
-    acc_list = [acc for acc in re.split(r"[,\s]+", accessions) if acc]
+    acc_list = list(dict.fromkeys([acc for acc in accessions if acc]))  # Remove duplicates
     out_path = ctx.get_temp_path("wp_protein.faa")
     acc_seq_map = dict()
     

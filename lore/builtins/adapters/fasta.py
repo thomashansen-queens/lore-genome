@@ -252,7 +252,7 @@ class ProteinMatchFastaAdapter(BaseFastaAdapter):
     @property
     def schema(self):
         return {
-            "representative_nucleotide_accession": "accession",
+            "protein_accession": "accession",
             "description": "description",
             "cluster_size": "cluster_size",
             "protein_sequence": "sequence",

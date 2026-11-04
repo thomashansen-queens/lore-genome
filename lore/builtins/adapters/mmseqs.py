@@ -75,7 +75,11 @@ class Mmseqs2ClusterAdapter(lore.CsvAdapter):
             if len(parts) >= 2: # Use >= to safely ignore trailing empty tabs
                 rep = parts[0].strip()
                 member = parts[1].strip()
-                cluster_counts[rep] += 1
+                try:
+                    contribution = int(parts[2].strip()) if len(parts) >= 3 else 1
+                except (TypeError, ValueError):
+                    contribution = 1
+                cluster_counts[rep] += max(contribution, 0)
                 parsed_pairs.append((rep, member))
 
         return [
@@ -98,14 +102,18 @@ class Mmseqs2ClusterAdapter(lore.CsvAdapter):
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 parts = line.strip().split("\t")
-                if len(parts) == 2:
-                    cluster_counts[parts[0]] += 1
+                if len(parts) >= 2:
+                    try:
+                        contribution = int(parts[2].strip()) if len(parts) >= 3 else 1
+                    except (TypeError, ValueError):
+                        contribution = 1
+                    cluster_counts[parts[0]] += max(contribution, 0)
 
         # Pass 2: Stream again to yield fully-formed records
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 parts = line.strip().split("\t")
-                if len(parts) == 2:
+                if len(parts) >= 2:
                     rep, member = parts[0], parts[1]
                     yield {
                         "cluster_rep": rep,

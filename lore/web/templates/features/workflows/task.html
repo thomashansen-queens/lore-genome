@@ -12,6 +12,9 @@
         <a href="/workflows/{{ workflow.id }}/" class="btn secondary">
             ⬅ Back to Workflow
         </a>
+        <form action="/workflows/{{ workflow.id }}/tasks/{{ task.id }}/delete" method="POST" style="margin-left: auto;" onsubmit="return confirm('Delete this task from the workflow?');">
+            <button type="submit" class="btn danger">🗑 Delete Task</button>
+        </form>
     </div>
 
     {# === Task configuration === #}

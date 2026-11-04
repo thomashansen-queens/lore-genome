@@ -52,20 +52,20 @@
             {% endfor %}
 
             <div class="column gapped">
-                <button type="submit" class="btn primary">
+                <button id="save-button" type="submit" class="btn primary" tabindex="-1">
                     {% if edit_task_id %}
-                        🗒 Save edits
+                        🗒 Save edits [Ctrl+S]
                     {% else %}
-                        ➡ Commit to Task
+                        ➡ Commit to Task [Ctrl+S]
                     {% endif %}
                 </button>
 
-                <button type="submit" name="run_immediately" value="true" class="btn secondary">
-                    ▶ Commit & Run
+                <button id="run-button" type="submit" name="run_immediately" value="true" class="btn secondary" tabindex="-1">
+                    ▶ Commit & Run [Ctrl+R]
                 </button>
 
                 {% if task_def.preview_mode.is_allowed %}
-                <button id="preview-button" type="button" class="btn secondary"
+                <button id="preview-button" type="button" class="btn secondary" tabindex="-1"
                     hx-post="{{ preview_api_url }}"
                     hx-target="#preview-target"
                     hx-indicator="#preview-loader"
@@ -75,7 +75,7 @@
                         hx-trigger="click, input delay:400ms from:#task-config-form"
                     {% endif %}
                     >
-                    👁 Preview
+                    👁 Preview [Ctrl+P]
                 </button>
                 {% endif %}
             </div>
@@ -125,6 +125,51 @@ document.addEventListener("DOMContentLoaded", function() {
     const sortAscInput = document.getElementById('config-sort-asc');
     const sortByInput = document.getElementById('config-sort-by');
     const previewButton = document.getElementById('preview-button');
+    const saveButton = document.getElementById('save-button');
+    const runButton = document.getElementById('run-button');
+    const taskForm = document.getElementById('task-config-form');
+
+    function excludeNonFieldTabStops() {
+        taskForm.querySelectorAll('button, a[href], summary, [tabindex="0"], [contenteditable="true"]')
+            .forEach(element => element.tabIndex = -1);
+    }
+
+    excludeNonFieldTabStops();
+    taskForm.addEventListener('htmx:afterSwap', excludeNonFieldTabStops);
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            const fields = Array.from(taskForm.querySelectorAll('input:not([type="hidden"]), textarea, select'))
+                .filter(field => !field.disabled && field.tabIndex >= 0 && field.getClientRects().length > 0);
+            if (!fields.length) return;
+
+            event.preventDefault();
+            const currentIndex = fields.indexOf(document.activeElement);
+            const direction = event.shiftKey ? -1 : 1;
+            let nextIndex;
+            if (currentIndex === -1) {
+                nextIndex = direction === 1 ? 0 : fields.length - 1;
+            } else {
+                nextIndex = (currentIndex + direction + fields.length) % fields.length;
+            }
+            fields[nextIndex].focus();
+            return;
+        }
+
+
+        if (!event.ctrlKey || event.altKey || event.shiftKey) return;
+
+        const key = event.key.toLowerCase();
+        let button;
+        if (key === 's') button = saveButton;
+        else if (key === 'r') button = runButton;
+        else if (key === 'p') button = previewButton;
+        else return;
+
+        if (!button) return;
+        event.preventDefault();
+        button.click();
+    });
 
     target.addEventListener('click', function(e) {
         let shouldFetch = false;

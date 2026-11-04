@@ -17,7 +17,9 @@ from lore.core.adapters import AdapterPreview
 from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
+from lore.core.topology.traversal import get_parent_ids, get_task_descendants
 from lore.web.deps import RT, ActiveSession, ReadOnlySession, templates, PageContext
+from lore.web.features.artifacts.urls import artifact_page_url
 from lore.web.utils.adapters import build_adapter_config
 from lore.web.utils.configure_task import build_task_configure_context, build_widget_context
 from lore.web.utils.forms import get_form_str, form_json_to_dict
@@ -132,6 +134,13 @@ def view_session_task(
 
     task_log = s.get_task_log(task_id)
 
+    tasks = s.list_tasks()
+    task_by_id = {item.id: item for item in tasks}
+    upstream_ids = get_parent_ids(task)
+    downstream_ids = get_task_descendants(tasks, task_id, generations=1)
+    upstream_tasks = [task_by_id[upstream_id] for upstream_id in upstream_ids if upstream_id in task_by_id]
+    downstream_tasks = [item for item in tasks if item.id in downstream_ids]
+
     ctx.generate_breadcrumbs({s.id: s.name, task_id: task.name or "Task Details"})
     return templates.TemplateResponse(
         request=ctx.request,
@@ -142,6 +151,9 @@ def view_session_task(
             task=task,
             outputs=resolved_outputs,
             task_log=task_log,
+            upstream_tasks=upstream_tasks,
+            downstream_tasks=downstream_tasks,
+            artifact_page_url=artifact_page_url,
         ),
         headers = {"Cache-Control": "no-store"}
     )
@@ -249,6 +261,7 @@ async def rename_task_action(
 
     if new_name:
         s.rename_task(task_id, new_name)
+        s.save()
     return ctx.redirect_back(fallback_url=f"/sessions/{s.id}/tasks/{task_id}")
 
 @router.post("/{task_id}/run_cancel", response_class=RedirectResponse)
@@ -678,6 +691,7 @@ async def stream_task_updates(
                 outputs_changed=outputs_changed,
                 task_log=new_logs,
                 error_changed=error_changed,
+                artifact_page_url=artifact_page_url,
             )
         if html_data.strip():
             yield ServerSentEvent(raw_data=html_data, event="task_update")

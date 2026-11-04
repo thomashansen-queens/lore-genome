@@ -1,0 +1,312 @@
+{
+  "id": "protein_clustering_and_alignment (2)",
+  "name": "Protein Clustering and Alignment Pipeline",
+  "description": "Given a list of protein accessions and an aa sequence to align with, this pipeline will determine the number of genomes which each protein can be derived from and cluster them based on the provided alignment, producing a final clustered result which displays the number of genomes from which each cluster can be derived from.",
+  "created_at": "2026-11-03T22:30:49.442013Z",
+  "tasks": [
+    {
+      "id": "08aabd3d-575b-4cf6-a91b-f85f076f2d38",
+      "registry_key": "mmseqs.easy_cluster",
+      "name": "MMseqs2 easy-cluster",
+      "description": "",
+      "input_labels": {},
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "source_fasta": [
+          {
+            "type": "reference",
+            "source_id": "87ecd740-88c3-4f82-af1c-76763035405c",
+            "output_key": "fasta",
+            "artifact_id": null
+          }
+        ],
+        "min_seq_id": [
+          {
+            "type": "literal",
+            "value": 0.9
+          }
+        ],
+        "coverage": [
+          {
+            "type": "literal",
+            "value": 0.8
+          }
+        ],
+        "sensitivity": [
+          {
+            "type": "literal",
+            "value": 4.0
+          }
+        ],
+        "cluster_window": [
+          {
+            "type": "user_input",
+            "input_key": "cluster_window",
+            "value": null
+          }
+        ],
+        "strict_window": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "keep_representative_fasta": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "keep_truncated": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.434166Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "87ecd740-88c3-4f82-af1c-76763035405c",
+      "registry_key": "aleyssu.gene_from_protein_workflow.match_protein_protein",
+      "name": "Match Protein Sequences to Protein Subsequence",
+      "description": "",
+      "input_labels": {},
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "c22318b6-a693-45c9-9c86-ff583863bbb9",
+            "output_key": "fasta",
+            "artifact_id": null
+          }
+        ],
+        "compare_seq": [
+          {
+            "type": "user_input",
+            "input_key": "compare_seq",
+            "value": null
+          }
+        ],
+        "entrez_cluster_table": [
+          {
+            "type": "reference",
+            "source_id": "3541d6e2-a290-435a-a913-b50614830e3e",
+            "output_key": "cluster_table",
+            "artifact_id": null
+          }
+        ],
+        "preserve_length": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "open_gap_score": [
+          {
+            "type": "literal",
+            "value": -12.0
+          }
+        ],
+        "extend_gap_score": [
+          {
+            "type": "literal",
+            "value": -1.0
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.438772Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "2e7a6734-a820-490f-ae96-64366fda2ad3",
+      "registry_key": "extract_column",
+      "name": "Extract Column",
+      "description": "",
+      "input_labels": {},
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "3541d6e2-a290-435a-a913-b50614830e3e",
+            "output_key": "cluster_table",
+            "artifact_id": null
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ],
+        "new_name": [],
+        "column_name": [
+          {
+            "type": "literal",
+            "value": "protein_accession"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.439747Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "c22318b6-a693-45c9-9c86-ff583863bbb9",
+      "registry_key": "aleyssu.wp_to_fasta",
+      "name": "WP Accession to FASTA",
+      "description": "",
+      "input_labels": {},
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "accessions": [
+          {
+            "type": "reference",
+            "source_id": "2e7a6734-a820-490f-ae96-64366fda2ad3",
+            "output_key": "column",
+            "artifact_id": null
+          }
+        ],
+        "table": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ],
+        "acc_column": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ],
+        "seq_column": [
+          {
+            "type": "literal",
+            "value": ""
+          }
+        ],
+        "index_from_ncbi": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.440519Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "3541d6e2-a290-435a-a913-b50614830e3e",
+      "registry_key": "workflow_specific.cluster_proteins_from_entrez_links",
+      "name": "Cluster Proteins from Entrez Links",
+      "description": "",
+      "input_labels": {},
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "entrez_link_table": [
+          {
+            "type": "reference",
+            "source_id": "671d8c5f-9f71-42df-9a49-5a6232c1c096",
+            "output_key": "link_results",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.441025Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "671d8c5f-9f71-42df-9a49-5a6232c1c096",
+      "registry_key": "ncbi.entrez.elink",
+      "name": "Fetch Nuucore UIDs",
+      "description": "",
+      "input_labels": {
+        "uid": "Protein Accessions"
+      },
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "user_input",
+            "input_key": "uid",
+            "value": null
+          }
+        ],
+        "dbfrom": [
+          {
+            "type": "literal",
+            "value": "protein"
+          }
+        ],
+        "db": [
+          {
+            "type": "literal",
+            "value": "nuccore"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-03T22:30:49.441939Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

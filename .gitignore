@@ -187,3 +187,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+delete_this_when_updating.txt
+lore_runtime.log*

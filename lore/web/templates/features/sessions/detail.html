@@ -4,6 +4,11 @@
 
 {% block workspace %}
 
+<div id="file-drop-overlay" hidden
+     style="position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.65); color: white; align-items: center; justify-content: center; font-size: 1.5rem; pointer-events: none;">
+    Drop files to ingest them
+</div>
+
 {# === Open SSE stream for live updates === #}
 <div class="column gapped"
      hx-ext="sse"
@@ -49,4 +54,96 @@
 
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const overlay = document.getElementById('file-drop-overlay');
+    let savingFiles = false;
+
+    function isFileDrag(event) {
+        return Array.from(event.dataTransfer?.types || []).includes('Files');
+    }
+
+    document.addEventListener('dragenter', function(event) {
+        if (isFileDrag(event)) {
+            event.preventDefault();
+            overlay.hidden = false;
+            overlay.style.display = 'flex';
+        }
+    });
+
+    document.addEventListener('dragover', function(event) {
+        if (isFileDrag(event)) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            overlay.hidden = false;
+            overlay.style.display = 'flex';
+        }
+    });
+
+    document.addEventListener('dragleave', function(event) {
+        if (isFileDrag(event) && !event.relatedTarget) {
+            overlay.hidden = true;
+            overlay.style.display = 'none';
+        }
+    });
+
+    document.addEventListener('drop', async function(event) {
+        if (!isFileDrag(event)) return;
+
+        event.preventDefault();
+        overlay.hidden = false;
+        overlay.style.display = 'flex';
+        if (savingFiles) return;
+
+        const files = Array.from(event.dataTransfer.files);
+        if (!files.length) {
+            overlay.hidden = true;
+            overlay.style.display = 'none';
+            return;
+        }
+
+        savingFiles = true;
+        overlay.textContent = 'Ingesting files...';
+        try {
+            const formData = new FormData();
+            const metadata = files.map((file) => {
+                const filename = file.name.split(/[\\/]/).pop();
+                const extensionStart = filename.lastIndexOf('.');
+                const fileType = extensionStart > 0 && extensionStart < filename.length - 1
+                    ? filename.slice(extensionStart + 1).toLowerCase()
+                    : 'unknown';
+
+                formData.append('files', file);
+                return {
+                    isRemote: false,
+                    name: filename.slice(0, extensionStart > 0 ? extensionStart : filename.length),
+                    type: fileType,
+                };
+            });
+            formData.append('metadata', JSON.stringify(metadata));
+
+            const response = await fetch(
+                `/sessions/{{ session.id }}/artifacts/ingest`,
+                { method: 'POST', body: formData },
+            );
+            const result = await response.json();
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || `Ingestion failed (${response.status}).`);
+            }
+            window.location.href = `/sessions/{{ session.id }}`;
+        } catch (error) {
+            savingFiles = false;
+            overlay.textContent = `Could not ingest files: ${error.message}`;
+            window.setTimeout(function() {
+                overlay.hidden = true;
+                overlay.style.display = 'none';
+                overlay.textContent = 'Drop files to ingest them';
+            }, 5000);
+        }
+    });
+});
+</script>
 {% endblock %}

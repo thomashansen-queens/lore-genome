@@ -7,7 +7,7 @@
         <td><small class="muted">{{ loop_index }}</small></td>
         <td>
             <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}" class="code">
-                {{ a.name or a.filename }}
+                {{ ui.artifact_display_name(a) }}
             </a>
             {# A bundle-Artifact (more than just the 'main' file) reveals each of its slots #}
             {% if a.files | length > 1 %}
@@ -43,7 +43,8 @@
 
                     {# Section 2: Standard actions #}
                     <a href="/sessions/{{ session_id }}/artifacts/{{ a.id }}/download">⬇ Download</a>
-                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/update",  "name", a.name or a.filename) }}
+                    {{ ui.rename_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/rename",  "name", a.name or a.filename) }}
+                    {{ ui.change_data_type("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/retype",  "name", a.data_type) }}
                     <hr />
                     {{ ui.delete_item("/sessions/" ~ session_id ~ "/artifacts/" ~ a.id ~ "/delete") }}
                 </div>

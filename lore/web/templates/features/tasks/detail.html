@@ -112,6 +112,9 @@
     <div id="task-activity" class="column" style="height: 40vh; margin-top: var(--spacing-md);">
         
         <header class="row gapped" style="gap: var(--spacing-sm); margin-left: var(--spacing-sm); flex-shrink: 0;">
+            <button type="button" class="btn-tab activity-tab" data-target="activity-connections-panel">
+                Tasks
+            </button>
             <button type="button" class="btn-tab activity-tab" data-target="activity-log-panel"
                 style="border-bottom: 2px solid transparent;">
                 Log
@@ -127,6 +130,75 @@
         </header>
 
         <div class="column card fill">
+            {# Immediate upstream and downstream tasks #}
+            <div id="activity-connections-panel" class="activity-panel column fill">
+                <div class="scroll-area row stretch gapped" style="padding: var(--spacing-sm);">
+                    <section style="flex: 1; min-width: 0;">
+                        <div class="ui-label">Upstream Tasks</div>
+                        <div class="column gapped muted" style="margin-top: var(--spacing-sm);">
+                            {% if upstream_tasks %}
+                                {% for upstream_task in upstream_tasks %}
+                                    {% set integrity = upstream_task.integrity.value if upstream_task.integrity.value else upstream_task.integrity | string | lower %}
+                                    {% if upstream_task.status.value == 'completed' and integrity in ['degraded', 'unknown'] %}
+                                        {% set integrity_border = 'var(--danger-border)' %}
+                                    {% elif upstream_task.status.value == 'completed' and integrity != 'intact' %}
+                                        {% set integrity_border = 'var(--warning-border)' %}
+                                    {% elif integrity == 'intact' and upstream_task.status.value == 'completed' %}
+                                        {% set integrity_border = 'var(--success-border)' %}
+                                    {% else %}
+                                        {% set integrity_border = 'var(--info-border)' %}
+                                    {% endif %}
+                                    {% set integrity_warning = upstream_task.status.value == 'completed' and integrity != 'intact' %}
+                                    <a href="/sessions/{{ session.id }}/tasks/{{ upstream_task.id }}"
+                                        class="card clickable"
+                                        style="padding: var(--spacing-sm); border-left: 4px solid {{ integrity_border }}; text-decoration: none;">
+                                        <span class="row" style="justify-content: space-between; align-items: center; gap: var(--spacing-sm);">
+                                            <strong>{% if integrity_warning %}⚠ {% endif %}{{ upstream_task.name or upstream_task.registry_key }}</strong>
+                                            {{ ui.status_badge(upstream_task.status) }}
+                                        </span>
+                                        <span class="muted small" style="display: block;">{{ upstream_task.registry_key }}{% if integrity_warning %} · {{ integrity | title }} integrity{% endif %}</span>
+                                    </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="muted">No upstream tasks.</div>
+                            {% endif %}
+                        </div>
+                    </section>
+
+                    <section style="flex: 1; min-width: 0;">
+                        <div class="ui-label">Downstream Tasks</div>
+                        <div class="column gapped muted" style="margin-top: var(--spacing-sm);">
+                            {% if downstream_tasks %}
+                                {% for downstream_task in downstream_tasks %}
+                                    {% set integrity = downstream_task.integrity.value if downstream_task.integrity.value else downstream_task.integrity | string | lower %}
+                                    {% if downstream_task.status.value == 'completed' and integrity in ['degraded', 'unknown'] %}
+                                        {% set integrity_border = 'var(--danger-border)' %}
+                                    {% elif downstream_task.status.value == 'completed' and integrity != 'intact' %}
+                                        {% set integrity_border = 'var(--warning-border)' %}
+                                    {% elif integrity == 'intact' and downstream_task.status.value == 'completed' %}
+                                        {% set integrity_border = 'var(--success-border)' %}
+                                    {% else %}
+                                        {% set integrity_border = 'var(--info-border)' %}
+                                    {% endif %}
+                                    {% set integrity_warning = downstream_task.status.value == 'completed' and integrity != 'intact' %}
+                                    <a href="/sessions/{{ session.id }}/tasks/{{ downstream_task.id }}"
+                                        class="card clickable"
+                                        style="padding: var(--spacing-sm); border-left: 4px solid {{ integrity_border }}; text-decoration: none;">
+                                        <span class="row" style="justify-content: space-between; align-items: center; gap: var(--spacing-sm);">
+                                            <strong>{% if integrity_warning %}⚠ {% endif %}{{ downstream_task.name or downstream_task.registry_key }}</strong>
+                                            {{ ui.status_badge(downstream_task.status) }}
+                                        </span>
+                                        <span class="muted small" style="display: block;">{{ downstream_task.registry_key }}{% if integrity_warning %} · {{ integrity | title }} integrity{% endif %}</span>
+                                    </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="muted">No downstream tasks.</div>
+                            {% endif %}
+                        </div>
+                    </section>
+                </div>
+            </div>
+
             {# Log panel #}
             <div id="activity-log-panel" class="activity-panel column fill"
                 {% if task.error %}style="display: none;"{% endif %}>
@@ -209,7 +281,7 @@
                                 {% if out.value[0] == "MISSING" %}
                                     <div class="card warning small">⚠ Artifact file missing from disk!</div>
                                 {% else %}
-                                    {{ ui.artifact_card(out.value[0], session_id=session.id) }}
+                                    {{ ui.artifact_card(out.value[0], href=artifact_page_url(session.id, out.value[0].id, origin_task=task.id)) }}
                                 {% endif %}
                             {% else %}
                                 <button class="card clickable"
@@ -225,8 +297,8 @@
                                         {% if item == "MISSING" %}
                                             <div class="card warning small" style="margin: var(--spacing-xs) var(--spacing-sm);">⚠ Missing</div>
                                         {% else %}
-                                            <a href="/sessions/{{ session.id }}/artifacts/{{ item.id }}">
-                                                {{ item.name or item.id[:8] }}
+                                            <a href="{{ artifact_page_url(session.id, item.id, origin_task=task.id) }}">
+                                                {{ ui.artifact_display_name(item) }}
                                                 <span class="badge muted small">{{ item.data_type }}</span>
                                             </a>
                                         {% endif %}
@@ -295,12 +367,24 @@
         }
     });
 
-    // --- Activity panel: Log / Error tabs ---
+    // --- Activity panel tabs ---
     (function () {
         const panel = document.getElementById('task-activity');
         if (!panel) return;
 
-        function activate(targetId) {
+        const storageKey = 'lore.task-detail.activity-tab';
+        const validTargets = new Set([
+            'activity-connections-panel',
+            'activity-log-panel',
+            'activity-error-panel'
+        ]);
+        const copyBtn = panel.querySelector('.activity-copy-btn');
+
+        function activate(targetId, persist = false) {
+            if (!validTargets.has(targetId)) {
+                targetId = 'activity-connections-panel';
+            }
+
             panel.querySelectorAll('.activity-tab').forEach(b => {
                 const isTarget = b.getAttribute('data-target') === targetId;
                 b.classList.toggle('active', isTarget);
@@ -310,18 +394,22 @@
             panel.querySelectorAll('.activity-panel').forEach(p => {
                 p.style.display = (p.id === targetId) ? 'flex' : 'none';
             });
+
+            if (copyBtn) {
+                copyBtn.hidden = targetId === 'activity-connections-panel';
+            }
+            if (persist) {
+                localStorage.setItem(storageKey, targetId);
+            }
         }
 
-        // Tab clicks (delegated, so OOB-swapped buttons keep working)
         panel.addEventListener('click', (e) => {
             const btn = e.target.closest('.activity-tab');
             if (!btn) return;
             e.preventDefault();
-            activate(btn.getAttribute('data-target'));
+            activate(btn.getAttribute('data-target'), true);
         });
 
-        // Copy the currently-visible panel's text
-        const copyBtn = panel.querySelector('.activity-copy-btn');
         if (copyBtn) {
             copyBtn.addEventListener('click', async () => {
                 const visible = [...panel.querySelectorAll('.activity-panel')]
@@ -338,18 +426,20 @@
             });
         }
 
-        // Live error swaps: switch focus to Error tab
         document.body.addEventListener('htmx:oobAfterSwap', (evt) => {
             if (evt.detail.target.id === 'task-error-tab') {
                 const hasError = evt.detail.target.style.display !== 'none';
-                activate(hasError ? 'activity-error-panel' : 'activity-log-panel');
+                if (hasError) activate('activity-error-panel');
             }
         });
 
-        // Default to show Error tab if there is one
-        const errTab = document.getElementById('task-error-tab');
-        const startError = errTab && errTab.style.display !== 'none';
-        activate(startError ? 'activity-error-panel' : 'activity-log-panel');
+        const savedTarget = localStorage.getItem(storageKey);
+        const errorTab = document.getElementById('task-error-tab');
+        const savedErrorAvailable = savedTarget !== 'activity-error-panel' ||
+            (errorTab && errorTab.style.display !== 'none');
+        activate(validTargets.has(savedTarget) && savedErrorAvailable
+            ? savedTarget
+            : 'activity-connections-panel');
     })();
 </script>
 {% endblock %}

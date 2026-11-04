@@ -63,7 +63,11 @@ def elink(
     api_key = config.get("api_key")
     email = config.get("email")
 
-    clean_uids = [u for u in uid if u]  # Filter out empty UIDs
+    # Filter out empty UIDs and ensure proper space splitting
+    clean_uids = []
+    for u in uid:
+        if u:
+            clean_uids += u.split()
 
     @retry(tries=3, delay=2, default_logger=ctx.logger)
     def _execute_link():
@@ -78,7 +82,10 @@ def elink(
                 },
             )
             response.raise_for_status()
-            return response.json()
+            try:
+                return response.json()
+            except json.decoder.JSONDecodeError:
+                raise ValueError("Invalid accession in input.")
 
     # 2. Execute the ELink request
     data = _execute_link()
@@ -90,10 +97,12 @@ def elink(
     elif "error" in linksets[0]:
         raise RuntimeError(f"ELink API error: {linksets[0]['error']}")
 
+    query_uids = iter(clean_uids)
     # 3. Process the retrieved linksets and prepare output table
     table_data = []
     for linkset in linksets:
         source_uid = linkset.get("ids", [None])[0]  # Get the first UID from the source
+        query_uid = next(query_uids)
 
         for linksetdb in linkset.get("linksetdbs", []):
             link_name = linksetdb.get("linkname", "unknown_link")
@@ -101,6 +110,7 @@ def elink(
             for target_uid in linksetdb.get("links", []):
                 table_data.append({
                     "source_db": dbfrom.value,
+                    "query_uid": query_uid,
                     "source_uid": source_uid,
                     "target_db": db.value,
                     "target_uid": target_uid,

@@ -17,7 +17,7 @@ from lore.core.bindings import (
     UnresolvedReferenceError,
 )
 from lore.core.utils import is_collection_type
-from .parameters import Cardinality, Passthrough
+from .parameters import Cardinality, Passthrough, ValuePassthrough
 from .state import TaskIntegrity, TaskStatus
 
 if TYPE_CHECKING:
@@ -85,6 +85,7 @@ class Task(BaseModel):
     registry_key: str
     name: str | None = None
     description: str | None = None
+    input_labels: dict[str, str] = Field(default_factory=dict)
 
     # State
     status: TaskStatus = Field(default=TaskStatus.DRAFT)
@@ -193,6 +194,7 @@ class Task(BaseModel):
         exec_config: dict[str, Any] | None = None,
         name: str | None = None,
         description: str | None = None,
+        input_labels: dict[str, str] | None = None,
     ) -> None:
         """
         Mutate the Task in place. Handles DRAFT/READY status.
@@ -201,6 +203,8 @@ class Task(BaseModel):
             self.name = name
         if description is not None:
             self.description = description
+        if input_labels is not None:
+            self.input_labels = input_labels
 
         # 1. Update the raw stored dictionaries
         if inputs is not None:
@@ -208,7 +212,11 @@ class Task(BaseModel):
         if exec_config is not None:
             self.exec_config = exec_config
 
-        is_mutated = (inputs is not None) or (exec_config is not None)
+        is_mutated = (
+            (inputs is not None)
+            or (exec_config is not None)
+            or (input_labels is not None)
+        )
         if is_mutated and self.status == TaskStatus.COMPLETED:
             self.status = TaskStatus.DRAFT
             self.integrity = TaskIntegrity.PENDING
@@ -263,6 +271,14 @@ class Task(BaseModel):
         data_type = meta.get("data_type", "unknown")
 
         # 3. Base case: Static type (e.g. "protein_sequence")
+        if isinstance(data_type, ValuePassthrough):
+            bindings = self.inputs.get(data_type.slot, [])
+            for binding in bindings:
+                if isinstance(binding, LiteralBinding) and isinstance(binding.value, str):
+                    semantic_type = binding.value.strip().lower().replace("-", "_").replace(" ", "_")
+                    return {"data_type": semantic_type}
+            return {"data_type": "series"}
+
         if not isinstance(data_type, Passthrough):
             return {"data_type": data_type}
 

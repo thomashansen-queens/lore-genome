@@ -5,6 +5,8 @@ Routers for the Workflows feature.
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from pydantic_core import PydanticUndefined
+
 from lore.core.tasks import task_registry
 from lore.core.topology.diagram import generate_dag_diagram
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
@@ -243,6 +245,47 @@ def view_workflow_task(
     )
 
 
+@router.post("/{workflow_id}/tasks/{task_id}/delete", response_class=RedirectResponse)
+def delete_workflow_task_action(
+    workflow_id: str,
+    task_id: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Delete a task from a workflow template."""
+    try:
+        rt.workflows.delete_task(workflow_id, task_id)
+        return ctx.redirect(
+            f"/workflows/{workflow_id}",
+            message="Task deleted successfully.",
+            message_type="success",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{workflow_id}/tasks/{task_id}/inputs/{input_key}/rename", response_class=RedirectResponse)
+def rename_workflow_task_input_action(
+    workflow_id: str,
+    task_id: str,
+    input_key: str,
+    rt: RT,
+    name: str = Form(...),
+    ctx: PageContext = Depends(),
+):
+    """Rename an input's display label in a workflow task."""
+    try:
+        rt.workflows.rename_task_input(workflow_id, task_id, input_key, name)
+        return ctx.redirect_back(
+            fallback_url=f"/workflows/{workflow_id}",
+            message="Task input renamed successfully.",
+            message_type="success",
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/{workflow_id}/tasks/{task_id}/rename", response_class=RedirectResponse)
 async def rename_workflow_task_action(
     workflow_id: str,
@@ -275,7 +318,7 @@ async def update_workflow_task_action(
     # 1. Get form data
     form_data = await ctx.request.form()
     description = get_form_str(form_data, "description") or ""
-    raw_inputs = form_html_to_dict(form_data, task_def.input_model, blank_to_default=False)
+    raw_inputs = form_html_to_dict(form_data, task_def.input_model, blank_to_default=True)
     new_inputs = {}  # rebuild config from scratch
     processed_keys = set()  # track which keys we've processed to avoid duplicates
 
@@ -303,19 +346,25 @@ async def update_workflow_task_action(
 
         # 3. Construct the correct Binding object
         if binding_type == "literal":
-            # Preserve blanks: a field absent from raw_inputs means the user cleared it
+            val = raw_inputs.get(key)
             if key not in raw_inputs:
-                new_inputs[key].append(LiteralBinding(value=None))
-            else:
-                val = raw_inputs[key]
-                if isinstance(val, list):
-                    # Task inputs are a list of Bindings,  one LiteralBinding per item
-                    if val:
-                        new_inputs[key].extend(LiteralBinding(value=item) for item in val)
-                    else:
-                        new_inputs[key].append(LiteralBinding(value=None))
+                field_info = task_def.input_model.model_fields.get(key)
+                if field_info is not None and not field_info.is_required():
+                    val = field_info.get_default(call_default_factory=True)
                 else:
-                    new_inputs[key].append(LiteralBinding(value=val))
+                    val = None
+
+            if val is PydanticUndefined:
+                val = None
+
+            if isinstance(val, list):
+                # Task inputs are a list of Bindings,  one LiteralBinding per item
+                if val:
+                    new_inputs[key].extend(LiteralBinding(value=item) for item in val)
+                else:
+                    new_inputs[key].append(LiteralBinding(value=None))
+            else:
+                new_inputs[key].append(LiteralBinding(value=val))
 
         elif binding_type == "user_input":
             # Instantiate a UserInputBinding for each value (even if empty)
