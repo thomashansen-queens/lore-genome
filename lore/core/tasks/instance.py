@@ -17,7 +17,7 @@ from lore.core.bindings import (
     UnresolvedReferenceError,
 )
 from lore.core.utils import is_collection_type
-from .parameters import Cardinality, Passthrough
+from .parameters import Cardinality, Passthrough, ValuePassthrough
 from .state import TaskIntegrity, TaskStatus
 
 if TYPE_CHECKING:
@@ -271,6 +271,14 @@ class Task(BaseModel):
         data_type = meta.get("data_type", "unknown")
 
         # 3. Base case: Static type (e.g. "protein_sequence")
+        if isinstance(data_type, ValuePassthrough):
+            bindings = self.inputs.get(data_type.slot, [])
+            for binding in bindings:
+                if isinstance(binding, LiteralBinding) and isinstance(binding.value, str):
+                    semantic_type = binding.value.strip().lower().replace("-", "_").replace(" ", "_")
+                    return {"data_type": semantic_type}
+            return {"data_type": "series"}
+
         if not isinstance(data_type, Passthrough):
             return {"data_type": data_type}
 

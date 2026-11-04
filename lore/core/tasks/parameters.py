@@ -412,6 +412,12 @@ class Passthrough:
     slot: str
 
 
+@dataclass(frozen=True)
+class ValuePassthrough:
+    """Resolve an output's semantic type from a literal ValueInput."""
+    slot: str
+
+
 class TaskOutput(BaseModel):
     """
     A named output slot for a Task
@@ -428,7 +434,7 @@ class TaskOutput(BaseModel):
     """
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    data_type: str | type | Passthrough  # LoRē semantic type, Python type, or Passthrough
+    data_type: str | type | Passthrough | ValuePassthrough  # LoRē semantic type, Python type, or Passthrough
     label: str
     yields: CardinalityLiteral | Cardinality = Cardinality.SINGLE
     description: str = ""

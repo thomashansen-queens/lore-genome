@@ -30,6 +30,7 @@ from .parameters import (
     ArtifactInput,
     ValueInput,
     Passthrough,
+    ValuePassthrough,
     TaskOutput,
 )
 
@@ -68,6 +69,7 @@ __all__ = [
     "ArtifactInput",
     "ValueInput",
     "Passthrough",
+    "ValuePassthrough",
     "TaskOutput",
 
     "TaskRegistry",

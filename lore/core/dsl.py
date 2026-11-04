@@ -13,6 +13,7 @@ from lore.core.tasks import (
     Cardinality,
     Materialization,
     Passthrough,
+    ValuePassthrough,
     PreviewMode,
     CardinalityLiteral,
     MaterializationLiteral,
@@ -69,6 +70,7 @@ __all__ = [
     "Cardinality",
     "Materialization",
     "Passthrough",
+    "ValuePassthrough",
     "PreviewMode",
     "PathBundle",
     # Execution
