@@ -36,10 +36,18 @@
                             {% endif %}
                         {% endif %}
                         
+                        {% set integrity = node.payload.integrity.value if node.payload.integrity.value else node.payload.integrity | string | lower %}
                         <rect class="{{ node.css_class }}" 
-                            data-status="{{ visual_status }}" 
+                            data-status="{{ visual_status }}"
+                            data-integrity="{{ integrity }}"
                             width="{{ node.width }}" height="{{ node.height }}" 
                             rx="var(--radius-sm)" ry="var(--radius-sm)" />
+                        {% if visual_status == 'completed' and integrity != 'intact' %}
+                            <text x="{{ node.width - 12 }}" y="22"
+                                text-anchor="end" font-family="sans-serif" font-size="16"
+                                fill="{% if integrity in ['degraded', 'unknown'] %}var(--danger){% else %}var(--warning){% endif %}"
+                                style="pointer-events: none;">⚠</text>
+                        {% endif %}
                         
                         <text x="12" y="24" font-family="sans-serif" font-size="14" font-weight="bold" fill="var(--text-main)">
                             {{ node.label | truncate(25) }}

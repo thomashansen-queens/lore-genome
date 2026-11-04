@@ -319,7 +319,7 @@ async def stream_session(
     SSE stream that pushes DOM updates for changes in Session state (e.g.
     Task status change, new Artifact emitted, etc.).
     """
-    last_task_statuses = {}
+    last_task_states = {}
     last_artifact_ids = set()
 
     # Set initial state trackers
@@ -327,7 +327,7 @@ async def stream_session(
         initial_tasks = s.list_tasks(reverse=True)
         initial_artifacts = s.list_artifacts(reverse=True)
 
-        last_task_statuses = {t.id: t.status for t in initial_tasks}
+        last_task_states = {t.id: (t.status, t.integrity) for t in initial_tasks}
         last_artifact_ids = set(a.id for a in initial_artifacts)
 
     while True:
@@ -339,11 +339,11 @@ async def stream_session(
             current_tasks = s.list_tasks(reverse=True)
             current_artifacts = s.list_artifacts(reverse=True)
 
-        current_task_statuses = {t.id: t.status for t in current_tasks}
+        current_task_states = {t.id: (t.status, t.integrity) for t in current_tasks}
         current_artifact_ids = set(a.id for a in current_artifacts)
 
         # 2. Check for changes
-        tasks_changed = current_task_statuses != last_task_statuses
+        tasks_changed = current_task_states != last_task_states
         artifacts_changed = current_artifact_ids != last_artifact_ids
 
         if tasks_changed or artifacts_changed:
@@ -354,7 +354,7 @@ async def stream_session(
                 # Diff the tasks to find which ones changed status
                 changed_tasks = [
                     t for t in current_tasks 
-                    if last_task_statuses.get(t.id) != t.status
+                    if last_task_states.get(t.id) != (t.status, t.integrity)
                 ]
 
                 # topo_map mirrored from the /view endpoint
@@ -402,7 +402,7 @@ async def stream_session(
             yield ServerSentEvent(raw_data=clean_html)
 
             # 5. Update state trackers
-            last_task_statuses = current_task_statuses
+            last_task_states = current_task_states
             last_artifact_ids = current_artifact_ids
 
         # Wait 1 second before checking again

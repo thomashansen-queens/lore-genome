@@ -28,7 +28,11 @@
             <small class="muted">{{ topo_map[task.id] }}</small>
         </td>
         <td>
+            {% set integrity = task.integrity.value if task.integrity.value else task.integrity | string | lower %}
             <a href="/sessions/{{ session_id }}/tasks/{{ task.id }}" class="code">
+                {% if task.status.value == 'completed' and integrity != 'intact' %}
+                    <span title="Completion integrity: {{ integrity }}" style="color: var(--warning);" aria-label="Warning: completion integrity is {{ integrity }}">⚠</span>
+                {% endif %}
                 {{ task.name }}
             </a>
         </td>
