@@ -17,6 +17,13 @@
 {% endif %}
 
 {% if adapted_previews %}
+    <script>
+        // These scripts are inserted before any viewer scripts in this preview,
+        // so cleanup only removes listeners from the previous preview.
+        window.viewerScripts?.forEach(script => script.destroy());
+        window.viewerScripts = [];
+    </script>
+
     <div id="preview-wrapper" class="column fill">
         
         {# --- Output selector --- #}
@@ -70,12 +77,6 @@
 
     {# --- Tab switcher --- #}
     <script>
-        // Clean up old viewer script event listeners when reloading preview content.
-        window.viewerScripts?.slice(0, -1).forEach( script => {
-            script.destroy();
-        });
-        window.viewerScripts = window.viewerScripts.slice(-1);
-
         (() => {
             // Scope to avoid global variable leakage
             const wrapper = document.getElementById('preview-wrapper');

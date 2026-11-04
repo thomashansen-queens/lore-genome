@@ -118,7 +118,8 @@
         const { signal } = controller;
 
         // Excel-like table selection
-        const table = document.getElementById('preview-table-{{ key }}');
+        const root = document.currentScript?.previousElementSibling;
+        const table = root?.querySelector('table[id^="preview-table-"]');
         if (!table) return;
 
         let isDragging = false;
