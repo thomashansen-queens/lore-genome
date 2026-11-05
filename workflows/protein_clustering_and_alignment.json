@@ -307,6 +307,57 @@
       "created_at": "2026-11-03T22:30:49.441939Z",
       "started_at": null,
       "completed_at": null
+    },
+    {
+      "id": "e9d22f89-b9e5-4f0a-abe2-b2921f390e43",
+      "registry_key": "workflow_specific.resolve_protein_clusters",
+      "name": "Resolve protein clusters",
+      "description": "",
+      "input_labels": {},
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "entrez_cluster_table": [
+          {
+            "type": "reference",
+            "source_id": "3541d6e2-a290-435a-a913-b50614830e3e",
+            "output_key": "cluster_table",
+            "artifact_id": null
+          }
+        ],
+        "mmseqs_cluster_map": [
+          {
+            "type": "reference",
+            "source_id": "08aabd3d-575b-4cf6-a91b-f85f076f2d38",
+            "output_key": "cluster_tsv",
+            "artifact_id": null
+          }
+        ],
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "08aabd3d-575b-4cf6-a91b-f85f076f2d38",
+            "output_key": "representative_fasta",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-05T19:35:53.723947Z",
+      "started_at": null,
+      "completed_at": null
     }
   ]
 }
