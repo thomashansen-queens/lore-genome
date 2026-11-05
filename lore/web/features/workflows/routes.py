@@ -213,6 +213,44 @@ def workflow_steps(workflow_id: str, ctx: PageContext = Depends()):
     return ctx.redirect(f"/workflows/{workflow_id}")
 
 
+@router.get("/{workflow_id}/tasks/catalogue", response_class=HTMLResponse)
+def workflow_task_catalogue(workflow_id: str, rt: RT, ctx: PageContext = Depends()):
+    """Display the available tasks that can be added to a workflow."""
+    workflow = rt.workflows.get_workflow(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    ctx.generate_breadcrumbs({workflow_id: workflow.name, "catalogue": "Add Tasks"})
+    return templates.TemplateResponse(
+        request=ctx.request,
+        name="features/workflows/catalogue.html",
+        context=ctx.render(
+            workflow=workflow,
+            task_definitions=list(task_registry.all.values()),
+        ),
+    )
+
+
+@router.post("/{workflow_id}/tasks/catalogue/{task_key}", response_class=RedirectResponse)
+def add_workflow_task_action(
+    workflow_id: str,
+    task_key: str,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Add a task definition to a workflow, then open its configuration."""
+    try:
+        task = rt.workflows.add_task(workflow_id, task_key)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return ctx.redirect(
+        f"/workflows/{workflow_id}/tasks/{task.id}",
+        message="Task added to workflow.",
+        message_type="success",
+    )
+
+
 @router.get("/{workflow_id}/tasks/{task_id}", response_class=HTMLResponse)
 def view_workflow_task(
     workflow_id: str,
@@ -385,8 +423,8 @@ async def update_workflow_task_action(
     # 4. Update the task and save the workflow
     rt.workflows.update_task(workflow_id, task_id, description, new_inputs)
 
-    return ctx.redirect_back(
-        fallback_url=f"/workflows/{workflow_id}",
+    return ctx.redirect(
+        f"/workflows/{workflow_id}",
         message="Task updated successfully.",
         message_type="success",
     )
@@ -419,6 +457,8 @@ def get_workflow_input_widget(
         request=ctx.request,
         name="components/task_input.html",
         context=ctx.render(
+            workflow=workflow,
+            task=task,
             context_type="workflow",
             edit_task_id=task_id,
             field_name=f_name,

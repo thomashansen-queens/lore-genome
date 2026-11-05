@@ -4,6 +4,7 @@ Disk IO and factory methods for Workflows.
 import json
 from pathlib import Path
 from typing import Any, List, Dict
+from uuid import uuid4
 
 from .models import Workflow
 from lore.core.bindings import Binding, ReferenceBinding, LiteralBinding, UserInputBinding
@@ -360,6 +361,32 @@ class WorkflowManager:
             session.mark_dirty()
 
     # --- Task management ---
+
+    def add_task(
+        self,
+        workflow_id: str,
+        registry_key: str,
+        name: str | None = None,
+    ) -> Task:
+        """Add a new draft task to a workflow template."""
+        workflow = self.get_workflow(workflow_id)
+        if not workflow:
+            raise ValueError(f"Workflow not found: {workflow_id}")
+
+        task_def = task_registry.get(registry_key)
+        if not task_def:
+            raise ValueError(f"Unknown Task key: '{registry_key}'")
+
+        task = Task(
+            id=str(uuid4()),
+            registry_key=registry_key,
+            name=name or task_def.name,
+            status=TaskStatus.DRAFT,
+        )
+        workflow.tasks.append(task)
+        task.update()
+        self.save_workflow(workflow)
+        return task
 
     def get_task(self, workflow_id: str, task_id: str) -> Task | None:
         """Retrieve a specific task from a workflow."""
