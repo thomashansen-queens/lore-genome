@@ -51,10 +51,11 @@
         {% set display_complete = metadata.get('display_complete', True) %}
         {% if not display_complete %}
             {# Display cap (DOM/RAM) which truncates to avoid browser issues, but doesn't affect result completeness #}
-            <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
+            <div class="badge small info" title="Data truncated to prevent browser performance issues.">
                 Showing: Top {{ '{:,}'.format(data|length) }}
             </div>
         {% endif %}
+        <span class="table-selection-count push-right" hidden></span>
     </div>
 
     {# --- Data viewer --- #}
@@ -132,6 +133,17 @@
         let ctrlSelectionMode = null;
         let ctrlSelectionSnapshot = null;
 
+        const selectionCount = root?.querySelector('.table-selection-count');
+
+        function updateSelectionStatus() {
+            const count = table.querySelectorAll('td.selected').length;
+            if (!selectionCount) return;
+            selectionCount.hidden = count === 0;
+            selectionCount.textContent = count
+                ? `${count.toLocaleString()} cell${count === 1 ? '' : 's'} selected`
+                : '';
+        }
+
         function updateSingleCellCursor() {
             const selected = table.querySelectorAll('td.selected');
             const intended = selected.length === 1 ? selected[0] : null;
@@ -143,12 +155,17 @@
             }
         }
 
-        new MutationObserver(updateSingleCellCursor).observe(table, {
+        function updateSelectionIndicators() {
+            updateSingleCellCursor();
+            updateSelectionStatus();
+        }
+
+        new MutationObserver(updateSelectionIndicators).observe(table, {
             subtree: true,
             attributes: true,
             attributeFilter: ['class']
         });
-        updateSingleCellCursor();
+        updateSelectionIndicators();
 
         // Helper to get row and column index of a TD element
         function getIndices(cell) {
@@ -435,6 +452,7 @@
 
         function updateSelectionSize() {
             const selected = table.querySelectorAll('td.selected');
+            updateSelectionStatus();
             if (!selected.length) {
                 sel_rows = 0;
                 sel_cols = 0;
@@ -551,6 +569,16 @@
                 };
             }
 
+            if (event.ctrlKey && event.shiftKey) {
+                const firstBodyRow = table.tHead ? 1 : 0;
+                const lastBodyRow = table.rows.length - 1;
+                const lastColumn = table.rows[0].cells.length - 1;
+                if (colOffset < 0) activeCell.col = 0;
+                if (colOffset > 0) activeCell.col = lastColumn;
+                if (rowOffset < 0) activeCell.row = firstBodyRow;
+                if (rowOffset > 0) activeCell.row = lastBodyRow;
+            }
+
             if (event.shiftKey) {
                 clearSelection();
                 shiftKeyboardSnapshot.forEach(cell => cell.classList.add('selected'));
@@ -575,10 +603,15 @@
                 lastClickedCell = table.rows[activeCell.row].cells[activeCell.col];
             }
 
-            table.rows[activeCell.row].cells[activeCell.col]?.scrollIntoView({
+            const activeRow = activeCell.row;
+            const firstDataRow = table.tHead ? 1 : 0;
+            table.rows[activeRow].cells[activeCell.col]?.scrollIntoView({
                 block: 'nearest',
                 inline: 'nearest'
             });
+            if (activeRow === firstDataRow && scrollContainer) {
+                scrollContainer.scrollTop = 0;
+            }
         }, { signal });
 
         document.addEventListener('keyup', (event) => {
