@@ -86,7 +86,14 @@ async def configure_task(
         source_artifact_ids=source_artifact_ids,    
     )
 
-    ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
+    if load_task:
+        task = ui_context["task"]
+        ctx.generate_breadcrumbs(
+            {s.id: s.name, task.id: task.name or "Task Details", "edit": "Edit"},
+            custom_path=f"/sessions/{s.id}/tasks/{task.id}/edit",
+        )
+    else:
+        ctx.generate_breadcrumbs({s.id: s.name, "configure": "Configure Task"})
     return templates.TemplateResponse(
         request=ctx.request,
         name="features/tasks/configure.html",

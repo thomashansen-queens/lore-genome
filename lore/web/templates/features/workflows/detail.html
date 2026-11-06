@@ -83,7 +83,12 @@
     </aside>
     
     {% block workspace %}
-        <div class="scroll-area" style="flex: 1;">
+        <div class="scroll-area" style="flex: 1; position: relative;">
+            <div style="position: absolute; top: var(--spacing-sm); right: var(--spacing-sm); z-index: 2;">
+                <a href="/workflows/{{ workflow.id }}/tasks/catalogue" class="btn primary">
+                    ＋ Add tasks to workflow
+                </a>
+            </div>
             {% include "/components/task_graph.html" %}
         </div>
     {% endblock %}

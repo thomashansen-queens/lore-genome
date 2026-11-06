@@ -1,6 +1,7 @@
 """
 Adapter for handling FASTA files in LoRē Genome.
 """
+import re
 from typing import Any, ClassVar, Iterator
 
 import lore
@@ -260,10 +261,17 @@ class ProteinMatchFastaAdapter(BaseFastaAdapter):
 
     def parse_header_to_schema(self, header):
         parts = header.split()
+        cluster_size = 1
+        for index, part in enumerate(parts):
+            match = re.fullmatch(r"\((\d+)\)?", part)
+            if match and index + 1 < len(parts) and parts[index + 1].lower().rstrip("().,;:") == "total":
+                cluster_size = int(match.group(1))
+                break
+
         return {
             "accession": parts[0] if parts else "unknown_entry",
-            "description": parts[1] if len(parts) > 1 else None,
-            "cluster_size": int(parts[2][1:]) if len(parts) > 2 else 1,
+            "description": " ".join(parts[1:]).strip() or None,
+            "cluster_size": cluster_size,
         }
 
 

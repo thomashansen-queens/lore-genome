@@ -1,0 +1,52 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+<div class="column fill stretch">
+    <div class="row" style="align-items: center; justify-content: space-between; flex-wrap: wrap;">
+        <div>
+            <h2>Add tasks to {{ workflow.name }}</h2>
+            <div class="muted">Choose a task definition to add to this workflow.</div>
+        </div>
+        <a href="/workflows/{{ workflow.id }}" class="btn secondary">⬅ Back to Workflow</a>
+    </div>
+
+    <input
+        type="search"
+        id="workflow-task-search"
+        placeholder="Search tasks..."
+        autocomplete="off"
+        style="margin-top: var(--spacing-md);"
+    />
+
+    <div class="scroll-area" style="margin-top: var(--spacing-md);">
+        {% for category, tasks in task_definitions | groupby('category') | sort %}
+        <details open style="margin-bottom: var(--spacing-md);">
+            <summary class="ui-label" style="cursor: pointer;">{{ category }}</summary>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--spacing-sm); margin-top: var(--spacing-sm);">
+                {% for task in tasks | sort(attribute='name') %}
+                <form action="/workflows/{{ workflow.id }}/tasks/catalogue/{{ task.key }}" method="POST" class="workflow-task-catalogue-item">
+                    <button type="submit" class="card clickable" style="width: 100%; height: 100%; text-align: left;">
+                        <h3><span>{{ task.icon }}</span> {{ task.name }}</h3>
+                        <div class="muted small task-description">{{ task.description }}</div>
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+        </details>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+(function () {
+    const search = document.getElementById('workflow-task-search');
+    const items = Array.from(document.querySelectorAll('.workflow-task-catalogue-item'));
+    search.addEventListener('input', function () {
+        const query = search.value.trim().toLowerCase();
+        items.forEach(function (item) {
+            item.hidden = query !== '' && !item.textContent.toLowerCase().includes(query);
+        });
+    });
+})();
+</script>
+{% endblock %}

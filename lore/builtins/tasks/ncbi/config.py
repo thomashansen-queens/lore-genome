@@ -32,7 +32,7 @@ class NcbiDatasetsConfig:
     )
 
 
-def retry(exceptions=(httpx.RequestError, httpx.TimeoutException), tries=4, delay=2, default_logger=None):
+def retry(exceptions=(httpx.RequestError, httpx.TimeoutException), tries=4, delay:float=2, default_logger=None):
     """
     A decorator that allows API calls to retry a set number of times before failing.
 
@@ -65,13 +65,15 @@ def retry(exceptions=(httpx.RequestError, httpx.TimeoutException), tries=4, dela
                     last_exec = e
 
                 sleeptime = delay ** attempt
-                msg = f"API request failed: {last_exec}. Retrying in {sleeptime} seconds..."
+                msg = f"API request failed: {last_exec}.{ f"Retrying in {sleeptime} seconds..." if attempt < tries else ' No more retries left.'}"
 
                 if logger:
                     logger.warning(msg)
                 else:
                     print(msg)
-                sleep(sleeptime)
+
+                if attempt < tries:
+                    sleep(sleeptime)
 
             if logger:
                 logger.error("Failed to execute %s after %s attempts.", func.__name__, tries)

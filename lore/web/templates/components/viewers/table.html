@@ -51,10 +51,11 @@
         {% set display_complete = metadata.get('display_complete', True) %}
         {% if not display_complete %}
             {# Display cap (DOM/RAM) which truncates to avoid browser issues, but doesn't affect result completeness #}
-            <div class="badge small info push-right" title="Data truncated to prevent browser performance issues.">
+            <div class="badge small info" title="Data truncated to prevent browser performance issues.">
                 Showing: Top {{ '{:,}'.format(data|length) }}
             </div>
         {% endif %}
+        <span class="table-selection-count push-right" hidden></span>
     </div>
 
     {# --- Data viewer --- #}
@@ -132,6 +133,17 @@
         let ctrlSelectionMode = null;
         let ctrlSelectionSnapshot = null;
 
+        const selectionCount = root?.querySelector('.table-selection-count');
+
+        function updateSelectionStatus() {
+            const count = table.querySelectorAll('td.selected').length;
+            if (!selectionCount) return;
+            selectionCount.hidden = count === 0;
+            selectionCount.textContent = count
+                ? `${count.toLocaleString()} cell${count === 1 ? '' : 's'} selected`
+                : '';
+        }
+
         function updateSingleCellCursor() {
             const selected = table.querySelectorAll('td.selected');
             const intended = selected.length === 1 ? selected[0] : null;
@@ -143,12 +155,17 @@
             }
         }
 
-        new MutationObserver(updateSingleCellCursor).observe(table, {
+        function updateSelectionIndicators() {
+            updateSingleCellCursor();
+            updateSelectionStatus();
+        }
+
+        new MutationObserver(updateSelectionIndicators).observe(table, {
             subtree: true,
             attributes: true,
             attributeFilter: ['class']
         });
-        updateSingleCellCursor();
+        updateSelectionIndicators();
 
         // Helper to get row and column index of a TD element
         function getIndices(cell) {
@@ -158,9 +175,15 @@
             };
         }
 
+        let suppressOutsideClickAfterDrag = false;
+
         document.addEventListener('click', (event) => {
             // Check if the click happened outside the table
             if (!table.contains(event.target)) {
+                if (suppressOutsideClickAfterDrag) {
+                    suppressOutsideClickAfterDrag = false;
+                    return;
+                }
                 clearSelection();
                 sel_cols = 0;
                 sel_rows = 0;
@@ -178,6 +201,11 @@
             if (!cell) return;
 
             tableActive = true;
+            shiftKeyboardSnapshot = null;
+            shiftKeyboardAnchor = null;
+            dragPointer = { x: e.clientX, y: e.clientY };
+            if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+            autoScrollFrame = requestAnimationFrame(autoScrollWhileSelecting);
             const sameSingleCell = lastClickedCell === cell &&
                 table.querySelectorAll('td.selected').length === 1 && cell.classList.contains('selected');
 
@@ -221,15 +249,15 @@
         }, { signal });
 
         let anchorCell = null;
-        
-        table.addEventListener('mouseover', (e) => {
-            if (!isDragging) return;
-            const cell = e.target.closest('td');
-            if (!cell) return;
+        const scrollContainer = table.closest('.scroll-area');
+        let dragPointer = null;
+        let autoScrollFrame = null;
 
-            const currentCell = getIndices(cell);
-            
-            // Calculate bounding boxes (handles dragging up, down, left, or right)
+        function extendSelectionTo(cell) {
+            if (!cell || !table.contains(cell)) return;
+            activeCell = getIndices(cell);
+            const currentCell = activeCell;
+
             const startRow = Math.min(startCell.row, currentCell.row);
             const endRow = Math.max(startCell.row, currentCell.row);
             const startCol = Math.min(startCell.col, currentCell.col);
@@ -240,7 +268,6 @@
             } else {
                 clearSelection();
 
-                // Highlight all cells within the calculated rectangle
                 for (let r = startRow; r <= endRow; r++) {
                     for (let c = startCol; c <= endCol; c++) {
                         table.rows[r].cells[c].classList.add('selected');
@@ -250,7 +277,128 @@
                 sel_cols = endCol - startCol + 1;
                 sel_rows = endRow - startRow + 1;
             }
+        }
+
+        table.addEventListener('mouseover', (e) => {
+            if (!isDragging) return;
+            extendSelectionTo(e.target.closest('td'));
         }, { signal });
+
+        document.addEventListener('mousemove', (event) => {
+            if (!isDragging) return;
+            dragPointer = { x: event.clientX, y: event.clientY };
+        }, { signal });
+
+        function getCellAtPointer(x, y) {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const insideViewport = x >= containerRect.left && x <= containerRect.right &&
+                y >= containerRect.top && y <= containerRect.bottom;
+            const element = insideViewport ? document.elementFromPoint(x, y)?.closest('td') : null;
+            if (element && table.contains(element)) return element;
+
+            const firstRowIndex = table.tHead ? 1 : 0;
+            let rowIndex = firstRowIndex;
+            let previousBottom = null;
+            let averageHeight = 20;
+
+            for (let r = firstRowIndex; r < table.rows.length; r++) {
+                const rect = table.rows[r].getBoundingClientRect();
+                if (y >= rect.top && y <= rect.bottom) {
+                    rowIndex = r;
+                    break;
+                }
+                if (rect.height > 0) {
+                    averageHeight = rect.height;
+                    previousBottom = rect.bottom;
+                }
+                if (y < rect.top) break;
+                rowIndex = r;
+            }
+
+            if (y < table.rows[firstRowIndex].getBoundingClientRect().top) {
+                rowIndex = firstRowIndex;
+            } else {
+                const lastIndex = table.rows.length - 1;
+                const lastRect = table.rows[lastIndex].getBoundingClientRect();
+                if (y > lastRect.bottom) {
+                    rowIndex = Math.min(lastIndex, lastIndex + Math.max(0, Math.floor((y - lastRect.bottom) / Math.max(1, averageHeight))));
+                }
+            }
+            rowIndex = Math.max(firstRowIndex, Math.min(table.rows.length - 1, rowIndex));
+
+            const row = table.rows[rowIndex];
+            let colIndex = 0;
+            for (let c = 0; c < row.cells.length; c++) {
+                const rect = row.cells[c].getBoundingClientRect();
+                if (x >= rect.left && x <= rect.right) {
+                    colIndex = c;
+                    break;
+                }
+                if (x < rect.left) break;
+                colIndex = c;
+            }
+
+            const firstRect = row.cells[0].getBoundingClientRect();
+            const lastRect = row.cells[row.cells.length - 1].getBoundingClientRect();
+            if (x < firstRect.left) colIndex = 0;
+            if (x > lastRect.right) {
+                const averageWidth = row.cells.length
+                    ? row.cells[row.cells.length - 1].getBoundingClientRect().width
+                    : 1;
+                colIndex = Math.min(row.cells.length - 1,
+                    row.cells.length - 1 + Math.max(0, Math.floor((x - lastRect.right) / Math.max(1, averageWidth))));
+            }
+            return row.cells[Math.max(0, colIndex)] || null;
+        }
+
+        let autoScrollStartedAt = null;
+        let lastAutoScrollTime = null;
+
+        function autoScrollWhileSelecting(timestamp) {
+            if (!isDragging || !dragPointer || !scrollContainer) {
+                autoScrollFrame = null;
+                autoScrollStartedAt = null;
+                lastAutoScrollTime = null;
+                return;
+            }
+
+            if (lastAutoScrollTime === null) lastAutoScrollTime = timestamp;
+            if (autoScrollStartedAt === null) autoScrollStartedAt = timestamp;
+            const elapsedSeconds = (timestamp - autoScrollStartedAt) / 1000;
+            const frameScale = Math.min(2, Math.max(0.2, (timestamp - lastAutoScrollTime) / (1000 / 60)));
+            lastAutoScrollTime = timestamp;
+
+            const bounds = scrollContainer.getBoundingClientRect();
+            const edge = 32;
+            const outsideDistance = (value, min, max) => value < min
+                ? min - value
+                : value > max ? value - max : 0;
+            const getAxisVelocity = (value, min, max) => {
+                if (value >= min && value <= max) {
+                    if (value < min + edge) return -Math.min(1, (min + edge - value) / edge);
+                    if (value > max - edge) return Math.min(1, (value - (max - edge)) / edge);
+                    return 0;
+                }
+
+                const beyond = outsideDistance(value, min, max);
+                const outsideFactor = 1 + beyond / edge;
+                return value < min ? -outsideFactor : outsideFactor;
+            };
+
+            const xVelocity = getAxisVelocity(dragPointer.x, bounds.left, bounds.right);
+            const yVelocity = getAxisVelocity(dragPointer.y, bounds.top, bounds.bottom);
+
+            if (xVelocity || yVelocity) {
+                const distanceFactor = Math.pow(Math.max(Math.abs(xVelocity), Math.abs(yVelocity)), 1.35);
+                const durationFactor = Math.pow(1.8, Math.min(elapsedSeconds, 8));
+                const speed = 5 * distanceFactor * durationFactor * frameScale;
+                scrollContainer.scrollBy(xVelocity * speed, yVelocity * speed);
+                extendSelectionTo(getCellAtPointer(dragPointer.x, dragPointer.y));
+            }
+
+            autoScrollFrame = requestAnimationFrame(autoScrollWhileSelecting);
+        }
+
 
         function applyCtrlRectangle(from, to) {
             clearSelection();
@@ -270,8 +418,19 @@
         }
 
         // Stop selection when mouse is released anywhere on the page
-        window.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', (event) => {
+            const finishedDrag = isDragging;
+            if (finishedDrag && !table.contains(event.target)) {
+                suppressOutsideClickAfterDrag = true;
+                setTimeout(() => { suppressOutsideClickAfterDrag = false; }, 0);
+            }
+
             isDragging = false;
+            dragPointer = null;
+            if (autoScrollFrame !== null) cancelAnimationFrame(autoScrollFrame);
+            autoScrollFrame = null;
+            autoScrollStartedAt = null;
+            lastAutoScrollTime = null;
             ctrlSelectionMode = null;
             ctrlSelectionSnapshot = null;
         }, { signal });
@@ -293,6 +452,7 @@
 
         function updateSelectionSize() {
             const selected = table.querySelectorAll('td.selected');
+            updateSelectionStatus();
             if (!selected.length) {
                 sel_rows = 0;
                 sel_cols = 0;
@@ -338,6 +498,9 @@
             anchorCell = activeCell;
         }
 
+        let shiftKeyboardSnapshot = null;
+        let shiftKeyboardAnchor = null;
+
         document.addEventListener('keydown', (event) => {
             if (!tableActive || table.offsetParent === null || table.classList.contains('text-selecting')) return;
             const arrowOffsets = {
@@ -349,20 +512,88 @@
             if (!arrowOffsets[event.key]) return;
 
             event.preventDefault();
+            const [rowOffset, colOffset] = arrowOffsets[event.key];
+
+            if (!event.shiftKey) {
+                shiftKeyboardSnapshot = null;
+                shiftKeyboardAnchor = null;
+            }
+
             if (!anchorCell) {
                 const selected = table.querySelector('td.selected');
                 anchorCell = activeCell || (selected ? getIndices(selected) : { row: 1, col: 0 });
             }
-            activeCell = activeCell || anchorCell;
-            const [rowOffset, colOffset] = arrowOffsets[event.key];
-            activeCell = {
-                row: Math.max(table.tHead ? 1 : 0,
-                    Math.min(table.rows.length - 1, activeCell.row + rowOffset)),
-                col: Math.max(0, Math.min(table.rows[0].cells.length - 1, activeCell.col + colOffset))
-            };
+
+            if (event.shiftKey && shiftKeyboardSnapshot === null) {
+                const bounds = getSelectionBounds();
+                const fallback = activeCell || anchorCell;
+
+                if (!Number.isFinite(bounds.startRow)) {
+                    shiftKeyboardAnchor = fallback;
+                    activeCell = fallback;
+                } else {
+                    shiftKeyboardAnchor = { row: bounds.startRow, col: bounds.startCol };
+                    activeCell = { row: bounds.endRow, col: bounds.endCol };
+                }
+
+                shiftKeyboardSnapshot = new Set();
+                table.querySelectorAll('td.selected').forEach(cell => {
+                    const index = getIndices(cell);
+                    if (index.row < bounds.startRow || index.row > bounds.endRow ||
+                        index.col < bounds.startCol || index.col > bounds.endCol) {
+                        shiftKeyboardSnapshot.add(cell);
+                    }
+                });
+
+                if (colOffset !== 0) {
+                    activeCell.col = Math.min(table.rows[0].cells.length - 1,
+                        activeCell.col + colOffset);
+                }
+                if (rowOffset !== 0) {
+                    activeCell.row = Math.min(table.rows.length - 1,
+                        Math.max(table.tHead ? 1 : 0, activeCell.row + rowOffset));
+                }
+            } else if (!event.shiftKey) {
+                activeCell = activeCell || anchorCell;
+                activeCell = {
+                    row: Math.max(table.tHead ? 1 : 0,
+                        Math.min(table.rows.length - 1, activeCell.row + rowOffset)),
+                    col: Math.max(0, Math.min(table.rows[0].cells.length - 1, activeCell.col + colOffset))
+                };
+            } else {
+                activeCell = activeCell || shiftKeyboardAnchor || anchorCell;
+                activeCell = {
+                    row: Math.max(table.tHead ? 1 : 0,
+                        Math.min(table.rows.length - 1, activeCell.row + rowOffset)),
+                    col: Math.max(0, Math.min(table.rows[0].cells.length - 1, activeCell.col + colOffset))
+                };
+            }
+
+            if (event.ctrlKey && event.shiftKey) {
+                const firstBodyRow = table.tHead ? 1 : 0;
+                const lastBodyRow = table.rows.length - 1;
+                const lastColumn = table.rows[0].cells.length - 1;
+                if (colOffset < 0) activeCell.col = 0;
+                if (colOffset > 0) activeCell.col = lastColumn;
+                if (rowOffset < 0) activeCell.row = firstBodyRow;
+                if (rowOffset > 0) activeCell.row = lastBodyRow;
+            }
 
             if (event.shiftKey) {
-                selectRectangle(anchorCell, activeCell);
+                clearSelection();
+                shiftKeyboardSnapshot.forEach(cell => cell.classList.add('selected'));
+                const startRow = Math.min(shiftKeyboardAnchor.row, activeCell.row);
+                const endRow = Math.max(shiftKeyboardAnchor.row, activeCell.row);
+                const startCol = Math.min(shiftKeyboardAnchor.col, activeCell.col);
+                const endCol = Math.max(shiftKeyboardAnchor.col, activeCell.col);
+                for (let r = startRow; r <= endRow; r++) {
+                    for (let c = startCol; c <= endCol; c++) {
+                        if (table.rows[r] && table.rows[r].cells[c]) {
+                            table.rows[r].cells[c].classList.add('selected');
+                        }
+                    }
+                }
+                updateSelectionSize();
             } else {
                 clearSelection();
                 table.rows[activeCell.row].cells[activeCell.col].classList.add('selected');
@@ -371,6 +602,22 @@
                 sel_cols = 1;
                 lastClickedCell = table.rows[activeCell.row].cells[activeCell.col];
             }
+
+            const activeRow = activeCell.row;
+            const firstDataRow = table.tHead ? 1 : 0;
+            table.rows[activeRow].cells[activeCell.col]?.scrollIntoView({
+                block: 'nearest',
+                inline: 'nearest'
+            });
+            if (activeRow === firstDataRow && scrollContainer) {
+                scrollContainer.scrollTop = 0;
+            }
+        }, { signal });
+
+        document.addEventListener('keyup', (event) => {
+            if (event.key !== 'Shift') return;
+            shiftKeyboardSnapshot = null;
+            shiftKeyboardAnchor = null;
         }, { signal });
 
         // If click has activated table, listen for Ctrl+A to select all
