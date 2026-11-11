@@ -591,7 +591,12 @@ def api_task_preview(
             )
             truncation_reason = output.truncation_reason
             if output.result_complete and not display_complete:
-                truncation_reason = "capped"
+                truncation_reason = (
+                    "capped"
+                    if adapted.metadata.get("ram_limit_hit", False)
+                    or adapted.metadata.get("ui_limit_hit", False)
+                    else "sampled"
+                )
 
             adapted.metadata["result_complete"] = output.result_complete
             adapted.metadata["display_complete"] = display_complete

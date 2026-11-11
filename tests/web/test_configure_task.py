@@ -188,11 +188,12 @@ def test_task_output_preview_uses_adapted_display_completeness(
                 data=[{"summary": "All source data represented"}],
                 data_type="json",
                 result_complete=True,
-                display_complete=True,
+                display_complete=False,
+                truncation_reason="sampled",
                 io_metadata={
                     "extension": "json",
-                    "file_eof_hit": True,
-                    "total_rows": 12,
+                    "file_eof_hit": False,
+                    "total_rows": None,
                 },
             )
         },
@@ -224,8 +225,9 @@ def test_task_output_preview_uses_adapted_display_completeness(
     assert response.status_code == 200
     assert "All source data represented" in response.text
     assert "1 cols ×" in response.text
-    assert "1 rows" in response.text
-    assert "Showing: Top" not in response.text
+    assert "unknown" in response.text
+    assert "PREVIEW (Click to load full)" in response.text
+    assert "Showing: Top 1" in response.text
 
 
 def test_input_artifact_preview_full_strategy_loads_remaining_rows(
@@ -280,9 +282,11 @@ def test_input_artifact_preview_full_strategy_loads_remaining_rows(
     assert peek_response.status_code == 200
     assert "row-11" not in peek_response.text
     assert "Showing: Top" in peek_response.text
+    assert "PREVIEW (Click to load full)" in peek_response.text
     assert full_response.status_code == 200
     assert "row-11" in full_response.text
     assert "Showing: Top" not in full_response.text
+    assert "PREVIEW (Click to load full)" not in full_response.text
 def test_task_output_reference_renders_adapter_selector(
     temp_session, monkeypatch
 ):

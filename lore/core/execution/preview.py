@@ -256,10 +256,10 @@ def run_preview_worker(
             output_ram = io_meta.get("ram_limit_hit", False)
             display_complete = output_eof and not output_ram
 
-            if not inputs_complete:
-                truncation_reason = "capped" if input_capped else "sampled"
-            elif not display_complete:
+            if input_capped or output_ram:
                 truncation_reason = "capped"
+            elif not inputs_complete or not output_eof:
+                truncation_reason = "sampled"
             else:
                 truncation_reason = None
 
