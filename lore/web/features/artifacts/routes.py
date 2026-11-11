@@ -30,23 +30,16 @@ _DEFAULT_EXPLORE_DISPLAY_LIMIT = 1000
 router = APIRouter(prefix="/sessions/{session_id}/artifacts", tags=["artifacts"])
 
 
-def _viewer_completeness(metadata: dict, shown: int) -> dict:
+def _viewer_completeness(metadata: dict) -> dict:
     """
     Lift a reader/adapter's low-level flags into two completeness checks:
       result_complete  — did this read reach the end of the source?
       display_complete — is everything that exists actually on screen?
     """
     file_eof_hit = metadata.get("file_eof_hit", True)
-    total = metadata.get("total_rows")
+    result_complete = file_eof_hit and not metadata.get("ram_limit_hit", False)
     ui_limit_hit = metadata.get("ui_limit_hit", False)
-    shown = metadata.get("total_lines_previewed", shown)
-
-    result_complete = file_eof_hit
-    display_complete = (
-        file_eof_hit
-        and not ui_limit_hit
-        and (total is None or shown >= total)
-    )
+    display_complete = result_complete and not ui_limit_hit
 
     if not result_complete:
         reason = "sampled"
@@ -291,7 +284,7 @@ async def view_artifact_explore(
 
     # 3. Two-axis completeness + the htmx escalation URL for non-table viewers
     md = preview_result.metadata
-    md.update(_viewer_completeness(md, shown=len(preview_result.data)))
+    md.update(_viewer_completeness(md))
     load_full_url = _explore_load_full_url(s.id, artifact_id, adapter)
 
     _generate_artifact_breadcrumbs(ctx, s, artifact, origin_task)
@@ -385,7 +378,7 @@ def explore_view_fragment(
 
     preview_result = adapter.preview(data, io_metadata, config=config)
     md = preview_result.metadata
-    md.update(_viewer_completeness(md, shown=len(preview_result.data)))
+    md.update(_viewer_completeness(md))
 
     return templates.TemplateResponse(
         request=ctx.request,

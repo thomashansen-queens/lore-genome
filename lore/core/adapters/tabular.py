@@ -188,12 +188,23 @@ class TabularAdapter(BaseAdapter):
         result = super().preview(raw_data, io_metadata, config, **kwargs)
         kwconfig = self._prepare_config(config, **kwargs)
 
-        if not isinstance(result.data, list) or not result.data:
+        if not isinstance(result.data, list):
             return result
 
         # 2. Inject tabular metadata
-        if isinstance(result.data[0], dict):
-            result.metadata["columns"] = list(result.data[0].keys())
+        result.metadata["columns"] = list(dict.fromkeys(
+            key
+            for record in result.data
+            if isinstance(record, dict)
+            for key in record
+        ))
+        if result.metadata.get("ram_limit_hit", False):
+            result.metadata["total_rows"] = None
+        elif result.metadata.get("file_eof_hit", True):
+            result.metadata["total_rows"] = len(result.data)
+
+        if not result.data:
+            return result
 
         # 3. Apply view-level config transformations (e.g. sorting)
         view_state = kwconfig.get("view_state", {})

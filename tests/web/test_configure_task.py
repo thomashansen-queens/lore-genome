@@ -4,8 +4,10 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
+from lore.core.adapters.tabular import TabularAdapter
 from lore.core.artifacts.artifact import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding
+from lore.core.execution.preview import PreviewOutput, PreviewPayload
 from lore.core.tasks import (
     ArtifactInput,
     Cardinality,
@@ -13,6 +15,9 @@ from lore.core.tasks import (
     Task,
     TaskDefinition,
 )
+from lore.web.features.artifacts.routes import _viewer_completeness
+from lore.web.features.tasks import routes as task_routes
+from lore.web.features.tasks.routes import _display_complete_for_data
 from lore.web.deps import templates
 from lore.web.utils import configure_task
 from lore.web.utils.configure_task import _build_field_ui_state
@@ -43,14 +48,35 @@ class MultipleArtifactTaskInputs(BaseModel):
     ]
 
 
-def _render_task_input(task_def, ui_state, field_name="source"):
+def _render_task_input(
+    task_def,
+    ui_state,
+    field_name="source",
+    input_preview_api_url=None,
+):
     return templates.env.get_template("components/task_input.html").render(
         context_type="session",
         task=None,
+        input_preview_api_url=input_preview_api_url,
         field_info=task_def.input_model.model_fields[field_name],
         field_name=field_name,
         ui_state=ui_state,
     )
+
+
+def test_display_complete_for_adapted_preview_data() -> None:
+    metadata = {"file_eof_hit": True, "total_rows": 12}
+
+    assert _display_complete_for_data(metadata) is True
+    assert _viewer_completeness(metadata)["display_complete"] is True
+
+    capped = {"file_eof_hit": True, "total_rows": 12, "ui_limit_hit": True}
+    assert _display_complete_for_data(capped) is False
+    assert _viewer_completeness(capped)["display_complete"] is False
+
+    ram_limited = {"file_eof_hit": True, "ram_limit_hit": True}
+    assert _display_complete_for_data(ram_limited) is False
+    assert _viewer_completeness(ram_limited)["display_complete"] is False
 
 
 def test_single_artifact_literal_renders_adapter_selector(temp_session, tmp_path):
@@ -78,14 +104,185 @@ def test_single_artifact_literal_renders_adapter_selector(temp_session, tmp_path
         candidates=[artifact],
         mode_override=None,
     )
-    rendered = _render_task_input(task_def, ui_state)
+    rendered = _render_task_input(
+        task_def,
+        ui_state,
+        input_preview_api_url="/preview",
+    )
 
     assert ui_state["adapter_enabled"]
     assert 'name="task_config[input_adapters][source]"' in rendered
     assert f'value="{ui_state["adapter_value"]}"' in rendered
     assert 'data-adapter-control hidden' not in rendered
+    assert 'data-preview-url="/preview"' in rendered
+    assert 'data-adapter-preview' in rendered
 
 
+def test_input_artifact_preview_endpoint_renders_adapter_output(
+    client, temp_runtime, tmp_path, monkeypatch
+):
+    task_def = TaskDefinition(
+        key="test.input_artifact_preview",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    monkeypatch.setattr(
+        configure_task.task_registry,
+        "get",
+        lambda task_key: task_def if task_key == task_def.key else None,
+    )
+    artifact_path = tmp_path / "source.json"
+    artifact_path.write_text('[{"id": 1}]', encoding="utf-8")
+    session = temp_runtime.create_session(name="Input artifact preview")
+    with session:
+        artifact = session.register_artifact(
+            artifact_path,
+            name="Preview source",
+            data_type="json",
+        )
+
+    adapter = artifact.get_adapters()[0]
+    response = client.post(
+        f"/sessions/{session.id}/tasks/configure/{task_def.key}/input-preview",
+        json={
+            "artifact_ids": [artifact.id],
+            "adapter_name": adapter.name,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Preview source" in response.text
+    assert adapter.name in response.text
+
+
+def test_task_output_preview_uses_adapted_display_completeness(
+    client, temp_runtime, monkeypatch
+):
+    task_def = TaskDefinition(
+        key="test.task_output_adapted_completeness",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    monkeypatch.setattr(
+        configure_task.task_registry,
+        "get",
+        lambda task_key: task_def if task_key == task_def.key else None,
+    )
+    monkeypatch.setitem(
+        task_routes.task_registry._tasks,
+        task_def.key,
+        task_def,
+    )
+    monkeypatch.setattr(task_routes, "form_json_to_dict", lambda *args: {})
+    monkeypatch.setattr(task_routes, "infer_bindings_from_raw", lambda *args: {})
+
+    preview_payload = PreviewPayload(
+        task_key=task_def.key,
+        is_dry_run=False,
+        resolved_inputs={},
+        execution_config={},
+        output_previews={
+            "result": PreviewOutput(
+                data=[{"summary": "All source data represented"}],
+                data_type="json",
+                result_complete=True,
+                display_complete=True,
+                io_metadata={
+                    "extension": "json",
+                    "file_eof_hit": True,
+                    "total_rows": 12,
+                },
+            )
+        },
+    )
+    monkeypatch.setattr(
+        temp_runtime,
+        "preview_task",
+        lambda **kwargs: preview_payload,
+    )
+
+    class SummaryAdapter(TabularAdapter):
+        name = "SummaryAdapter"
+
+        def adapt(self, raw_data, config=None, **kwargs):
+            return [{"summary": "All source data represented"}]
+
+    monkeypatch.setattr(
+        task_routes.adapter_registry,
+        "get_for_type",
+        lambda **kwargs: [SummaryAdapter()],
+    )
+
+    session = temp_runtime.create_session(name="Task output preview completeness")
+    response = client.post(
+        f"/sessions/{session.id}/tasks/configure/{task_def.key}/preview",
+        json={"task_config": {}},
+    )
+
+    assert response.status_code == 200
+    assert "All source data represented" in response.text
+    assert "1 cols ×" in response.text
+    assert "1 rows" in response.text
+    assert "Showing: Top" not in response.text
+
+
+def test_input_artifact_preview_full_strategy_loads_remaining_rows(
+    client, temp_runtime, tmp_path, monkeypatch
+):
+    task_def = TaskDefinition(
+        key="test.input_artifact_full_preview",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    monkeypatch.setattr(
+        configure_task.task_registry,
+        "get",
+        lambda task_key: task_def if task_key == task_def.key else None,
+    )
+    monkeypatch.setattr(temp_runtime.settings, "preview_peek_limit", 10)
+
+    artifact_path = tmp_path / "source.csv"
+    artifact_path.write_text(
+        "id\n" + "".join(f"row-{index}\n" for index in range(12)),
+        encoding="utf-8",
+    )
+    session = temp_runtime.create_session(name="Input artifact full preview")
+    with session:
+        artifact = session.register_artifact(
+            artifact_path,
+            name="Preview source",
+            data_type="csv",
+        )
+
+    adapter = next(
+        adapter for adapter in artifact.get_adapters()
+        if adapter.name == "CsvAdapter"
+    )
+    preview_url = (
+        f"/sessions/{session.id}/tasks/configure/{task_def.key}/input-preview"
+    )
+    peek_response = client.post(
+        preview_url,
+        json={"artifact_ids": [artifact.id], "adapter_name": adapter.name},
+    )
+    full_response = client.post(
+        preview_url,
+        json={
+            "artifact_ids": [artifact.id],
+            "adapter_name": adapter.name,
+            "strategy": "full",
+        },
+    )
+
+    assert peek_response.status_code == 200
+    assert "row-11" not in peek_response.text
+    assert "Showing: Top" in peek_response.text
+    assert full_response.status_code == 200
+    assert "row-11" in full_response.text
+    assert "Showing: Top" not in full_response.text
 def test_task_output_reference_renders_adapter_selector(
     temp_session, monkeypatch
 ):

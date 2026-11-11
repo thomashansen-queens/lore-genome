@@ -18,10 +18,14 @@
 
 {% if adapted_previews %}
     <script>
-        // These scripts are inserted before any viewer scripts in this preview,
-        // so cleanup only removes listeners from the previous preview.
-        window.viewerScripts?.forEach(script => script.destroy());
-        window.viewerScripts = [];
+        // A task preview replaces its own viewers but leaves input preview tabs mounted.
+        const removedViewers = (window.viewerScripts || []).filter(script =>
+            !script.scope || !script.scope.isConnected
+        );
+        removedViewers.forEach(script => script.destroy());
+        window.viewerScripts = (window.viewerScripts || []).filter(script =>
+            !removedViewers.includes(script)
+        );
     </script>
 
     <div id="preview-wrapper" class="column fill">

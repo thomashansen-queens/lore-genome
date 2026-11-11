@@ -110,9 +110,11 @@
         const controller = new AbortController();
         const { signal } = controller;
         
-        const viewport = document.querySelector(".preview-scroll-area");
-        const tooltip = document.getElementById("tooltip");
-        const copyMsg = document.getElementById("copy-flash");
+        const root = document.currentScript?.previousElementSibling;
+        const viewport = root?.querySelector(".preview-scroll-area");
+        const tooltip = viewport?.querySelector("#tooltip");
+        const copyMsg = viewport?.querySelector("#copy-flash");
+        if (!viewport || !tooltip || !copyMsg) return;
         
         let svgType = null;
 
@@ -377,7 +379,7 @@
         let startX, startXAdjusted, startY, startYAdjusted;
         let currentX, currentY;
         let toBeSelected = [];
-        const selectionBox = document.getElementById("selectionBox");
+        const selectionBox = viewport.querySelector("#selectionBox");
 
         // Start dragging
         viewport.addEventListener("mousedown", e => {
@@ -507,6 +509,7 @@
         }
         
         window.viewerScripts.push({
+            scope: root,
             destroy() {
                 controller.abort();
             }

@@ -78,6 +78,7 @@
                 supports_adapter_selection=ui_state.supports_adapter_selection,
                 adapter_value=ui_state.adapter_value,
                 adapter_enabled=ui_state.adapter_enabled,
+                input_preview_api_url=input_preview_api_url | default(none),
             ) }}
             
         {% elif ui_state.binding_mode == 'reference' %}
@@ -127,6 +128,16 @@
                                 </option>
                             {% endfor %}
                         </select>
+                        {% if input_preview_api_url is defined %}
+                            <button type="button" class="btn small secondary"
+                                data-adapter-preview
+                                data-input-name="{{ field_name }}"
+                                data-input-label="{{ label }}"
+                                data-preview-url="{{ input_preview_api_url }}"
+                                {% if not ui_state.adapter_enabled %}disabled{% endif %}>
+                            Preview
+                            </button>
+                        {% endif %}
                     </div>
                 {% endif %}
 

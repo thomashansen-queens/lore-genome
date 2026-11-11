@@ -2,7 +2,8 @@
 {% macro render_field(name, field_info, prefill_val, candidates=[],
                       adapter_options_by_artifact={}, adapter_choices=[],
                       adapter_value='',
-                      adapter_enabled=false, supports_adapter_selection=false) %}
+                      adapter_enabled=false, supports_adapter_selection=false,
+                      input_preview_api_url=none) %}
     {% set extra = field_info.json_schema_extra or {} %}
     {% set widget = extra.get('widget', 'text') %}
     {% set label = field_info.title or name|capitalize %}
@@ -30,21 +31,33 @@
                     {% endfor %}
                 </select>
                 {% if supports_adapter_selection %}
-                    <div data-adapter-control {% if not adapter_enabled %}hidden{% endif %}>
-                    <label class="small muted" style="display: block; margin-bottom: 0.25rem;">
-                        Adapt with
-                    </label>
-                    <select name="task_config[input_adapters][{{ name }}]"
-                            class="form-control small"
-                            data-adapter-select
-                            {% if not adapter_enabled %}disabled{% endif %}>
-                        {% for adapter in adapter_choices %}
-                            <option value="{{ adapter.value }}"
-                                    {% if adapter.value == adapter_value %}selected{% endif %}>
-                                {{ adapter.label }}
-                            </option>
-                        {% endfor %}
-                    </select>
+                    <div data-adapter-control class="row gapped"
+                         style="align-items: center; margin-bottom: 0.5rem;"
+                         {% if not adapter_enabled %}hidden{% endif %}>
+                        <label class="small muted" style="margin: 0; white-space: nowrap;">
+                            Adapt with
+                        </label>
+                        <select name="task_config[input_adapters][{{ name }}]"
+                                class="form-control small"
+                                data-adapter-select
+                                {% if not adapter_enabled %}disabled{% endif %}>
+                            {% for adapter in adapter_choices %}
+                                <option value="{{ adapter.value }}"
+                                        {% if adapter.value == adapter_value %}selected{% endif %}>
+                                    {{ adapter.label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        {% if input_preview_api_url %}
+                            <button type="button" class="btn small secondary"
+                                    data-adapter-preview
+                                    data-input-name="{{ name }}"
+                                    data-input-label="{{ label }}"
+                                    data-preview-url="{{ input_preview_api_url }}"
+                                    {% if not adapter_enabled %}disabled{% endif %}>
+                                Preview
+                            </button>
+                        {% endif %}
                     </div>
                 {% endif %}
                 <input name="{{ name }}__manual" type="text" value="{{ manual_val }}" placeholder="Or enter manually (e.g., GCF_12345)" class="text-sm">
@@ -103,21 +116,33 @@
                     {% endfor %}
                 </div>
                 {% if supports_adapter_selection %}
-                    <div data-adapter-control {% if not adapter_enabled %}hidden{% endif %}>
-                    <label class="small muted" style="display: block; margin-bottom: 0.25rem;">
-                        Adapt with
-                    </label>
-                    <select name="task_config[input_adapters][{{ name }}]"
-                            class="form-control small"
-                            data-adapter-select
-                            {% if not adapter_enabled %}disabled{% endif %}>
-                        {% for adapter in adapter_choices %}
-                            <option value="{{ adapter.value }}"
-                                    {% if adapter.value == adapter_value %}selected{% endif %}>
-                                {{ adapter.label }}
-                            </option>
-                        {% endfor %}
-                    </select>
+                    <div data-adapter-control class="row gapped"
+                         style="align-items: center; margin-bottom: 0.5rem;"
+                         {% if not adapter_enabled %}hidden{% endif %}>
+                        <label class="small muted" style="margin: 0; white-space: nowrap;">
+                            Adapt with
+                        </label>
+                        <select name="task_config[input_adapters][{{ name }}]"
+                                class="form-control small"
+                                data-adapter-select
+                                {% if not adapter_enabled %}disabled{% endif %}>
+                            {% for adapter in adapter_choices %}
+                                <option value="{{ adapter.value }}"
+                                        {% if adapter.value == adapter_value %}selected{% endif %}>
+                                    {{ adapter.label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        {% if input_preview_api_url %}
+                            <button type="button" class="btn small secondary"
+                                    data-adapter-preview
+                                    data-input-name="{{ name }}"
+                                    data-input-label="{{ label }}"
+                                    data-preview-url="{{ input_preview_api_url }}"
+                                    {% if not adapter_enabled %}disabled{% endif %}>
+                                Preview
+                            </button>
+                        {% endif %}
                     </div>
                 {% endif %}
                 <textarea name="{{ name }}__manual" rows="2" placeholder="and/or enter additional inputs/artifact IDs (comma-separated)..." class="text-sm">{{ manual_val }}</textarea>
