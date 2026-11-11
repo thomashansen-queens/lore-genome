@@ -11,6 +11,7 @@ def my_route(rt: RT):
 """
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Generator
@@ -29,6 +30,12 @@ import traceback
 
 # --- Templates setup ---
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+def main_css_version() -> str:
+    """Return a content hash so browsers fetch changed CSS instead of a cached copy."""
+    return sha256((STATIC_DIR / "css" / "main.css").read_bytes()).hexdigest()
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.trim_blocks = True
@@ -36,6 +43,7 @@ templates.env.lstrip_blocks = True
 templates.env.globals["task_registry"] = task_registry
 templates.env.globals["adapter_registry"] = adapter_registry
 templates.env.globals["version"] = version("lore-genome")
+templates.env.globals["main_css_version"] = main_css_version
 
 
 # --- Runtime Dependency injection ---
