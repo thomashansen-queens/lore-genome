@@ -136,6 +136,15 @@ class Settings(BaseModel):
         return self.data_root / "workflows"
 
     # --- UI ---
+    auto_preview_selected_artifacts: bool = Field(
+        default=True,
+        title="Automatically Preview Selected Artifacts",
+        description=(
+            "Automatically open an input preview when artifacts are selected "
+            "in the Task workbench."
+        ),
+        json_schema_extra={"widget": "checkbox"},
+    )
     preview_peek_limit: int = Field(
         default=100,
         ge=10,

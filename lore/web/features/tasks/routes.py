@@ -112,6 +112,9 @@ async def configure_task(
         context=ctx.render(
             session=s,
             context_type="session",
+            auto_preview_selected_artifacts=(
+                s.runtime.settings.auto_preview_selected_artifacts
+            ),
             preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/preview",
             input_preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/input-preview",
             commit_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}",

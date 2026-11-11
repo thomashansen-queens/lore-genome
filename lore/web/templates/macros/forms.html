@@ -89,11 +89,11 @@
                     <span class="muted">Select from session:</span>
                     <div>
                         <button type="button" class="btn small" style="padding: 0.1rem 0.4rem;"
-                                onclick="const container = this.closest('.task-input-container'); const inputs = container.querySelectorAll('input[name=\'{{ name }}\']'); inputs.forEach(cb => cb.checked = true); if (inputs.length) updateTaskInputAdapters(inputs[0], true)">
+                                onclick="const container = this.closest('.task-input-container'); const inputs = container.querySelectorAll('input[name=\'{{ name }}\']'); inputs.forEach(cb => cb.checked = true); if (inputs.length) { updateTaskInputAdapters(inputs[0], true); inputs[inputs.length - 1].dispatchEvent(new Event('change', {bubbles: true})); }">
                             All
                         </button>
                         <button type="button" class="btn small" style="padding: 0.1rem 0.4rem;"
-                                onclick="const container = this.closest('.task-input-container'); const inputs = container.querySelectorAll('input[name=\'{{ name }}\']'); inputs.forEach(cb => cb.checked = false); if (inputs.length) updateTaskInputAdapters(inputs[0], true)">
+                                onclick="const container = this.closest('.task-input-container'); const inputs = container.querySelectorAll('input[name=\'{{ name }}\']'); inputs.forEach(cb => cb.checked = false); if (inputs.length) { updateTaskInputAdapters(inputs[0], true); inputs[0].dispatchEvent(new Event('change', {bubbles: true})); }">
                             None
                         </button>
                     </div>

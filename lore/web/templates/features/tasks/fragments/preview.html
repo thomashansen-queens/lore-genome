@@ -89,12 +89,6 @@
             const btnTab = wrapper.querySelectorAll('.btn-tab');
             const tabs = wrapper.querySelectorAll('.out-tab');
 
-            // Set initial active tab
-            if (btnTab.length > 0) {
-                btnTab[0].style.borderBottomColor = 'var(--primary)';
-                btnTab[0].style.color = 'var(--primary)';
-            }
-
             // --- Output tab switcher ---
             btnTab.forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -104,15 +98,11 @@
                     // 1. Reset all buttons and hide all tabs
                     btnTab.forEach(b => {
                         b.classList.remove('active');
-                        b.style.borderBottomColor = 'transparent';
-                        b.style.color = 'var(--text-muted)';
                     });
                     tabs.forEach(t => t.style.display = 'none');
 
                     // 2. Activate clicked button
                     btn.classList.add('active');
-                    btn.style.borderBottomColor = 'var(--primary)';
-                    btn.style.color = 'var(--primary-dark)';
 
                     // 3. Show target tab
                     const targetId = btn.getAttribute('data-target');

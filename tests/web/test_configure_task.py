@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 
 from typing import Annotated
@@ -62,6 +63,70 @@ def _render_task_input(
         field_name=field_name,
         ui_state=ui_state,
     )
+
+
+def test_configure_page_uses_auto_preview_setting(
+    client, temp_runtime, monkeypatch
+):
+    task_def = TaskDefinition(
+        key="test.auto_preview_setting",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    monkeypatch.setitem(task_routes.task_registry._tasks, task_def.key, task_def)
+    session = temp_runtime.create_session(name="Auto-preview setting")
+    configure_url = f"/sessions/{session.id}/tasks/configure/{task_def.key}"
+
+    enabled_response = client.get(configure_url)
+    assert enabled_response.status_code == 200
+    assert 'data-auto-preview-selected-artifacts="true"' in enabled_response.text
+
+    monkeypatch.setattr(
+        temp_runtime.settings, "auto_preview_selected_artifacts", False
+    )
+    disabled_response = client.get(configure_url)
+    assert disabled_response.status_code == 200
+    assert 'data-auto-preview-selected-artifacts="false"' in disabled_response.text
+
+
+def test_input_artifact_preview_displays_last_artifact_by_default():
+    previews = [
+        {
+            "artifact": SimpleNamespace(ui_name="First"),
+            "preview": SimpleNamespace(
+                data="first data",
+                metadata={},
+                adapter_name="RawAdapter",
+                view_mode="raw",
+            ),
+        },
+        {
+            "artifact": SimpleNamespace(ui_name="Last"),
+            "preview": SimpleNamespace(
+                data="last data",
+                metadata={},
+                adapter_name="RawAdapter",
+                view_mode="raw",
+            ),
+        },
+    ]
+
+    rendered = templates.env.get_template(
+        "features/tasks/fragments/input_preview.html"
+    ).render(previews=previews)
+
+    assert 'class="btn-tab secondary active"\n                        data-input-preview-target="input-artifact-tab-2"' in rendered
+    assert re.search(
+        r'id="input-artifact-tab-1"\s+class="input-artifact-tab column fill"\s+'
+        r'style="display: none;"',
+        rendered,
+    )
+    assert re.search(
+        r'id="input-artifact-tab-2"\s+class="input-artifact-tab column fill"',
+        rendered,
+    )
+    assert "last data" in rendered
 
 
 def test_display_complete_for_adapted_preview_data() -> None:
