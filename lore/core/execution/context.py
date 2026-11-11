@@ -63,6 +63,19 @@ class ExecutionContext:
             return None
 
         adapters = artifacts[0].get_adapters()
+        selected_name = self.task.exec_config.get("input_adapters", {}).get(input_key)
+        if selected_name:
+            selected_adapter = next(
+                (adapter for adapter in adapters if adapter.name == selected_name),
+                None,
+            )
+            if selected_adapter is None:
+                raise ValueError(
+                    f"Selected adapter '{selected_name}' is not available for "
+                    f"input '{input_key}' artifact '{artifacts[0].id}'."
+                )
+            return selected_adapter
+
         return adapters[0] if adapters else None
 
     def get_temp_path(self, filename: str) -> Path:

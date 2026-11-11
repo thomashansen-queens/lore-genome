@@ -3,6 +3,7 @@ Helper to render the input widget to configure tasks.
 """
 
 from lore.core.artifacts.artifact import Artifact
+from lore.core.adapters import adapter_registry
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.sessions import Session, find_artifact_candidates, map_artifacts_to_task_inputs
 from lore.core.tasks import Task, TaskDefinition, Cardinality, task_registry
@@ -202,6 +203,123 @@ def _build_field_ui_state(
         if isinstance(b, ReferenceBinding):
             ref_val = f"ref:{b.source_id}::{b.output_key}"
 
+    _, field_meta = task_def.field_meta(field_name)
+    supports_adapter_selection = field_meta.get("widget") in (
+        "artifact_multi_select",
+        "artifact_single_select",
+    )
+    def adapter_options(adapters):
+        return [
+            {"value": adapter.name, "label": adapter.name}
+            for adapter in adapters
+        ]
+
+    adapter_options_by_artifact = {
+        artifact.id: (
+            adapter_options(artifact.get_adapters())
+            if supports_adapter_selection else []
+        )
+        for artifact in candidates
+    }
+
+    adapter_options_by_reference = {}
+    if supports_adapter_selection:
+        for upstream in avail_tasks:
+            upstream_task = upstream["task"]
+            upstream_def = task_registry.get_safe(upstream_task.registry_key)
+            if not upstream_def or not upstream_def.output_model:
+                continue
+
+            for output_key in upstream["valid_outputs"]:
+                reference = f"ref:{upstream_task.id}::{output_key}"
+                output_field = upstream_def.output_model.model_fields.get(output_key)
+                if not output_field:
+                    continue
+                _, output_meta = upstream_def.field_meta(output_key, is_output=True)
+                output_meta = {
+                    **output_meta,
+                    **upstream_task.resolve_output_type(output_key, container),
+                }
+
+                output_artifacts = []
+                if isinstance(container, Session):
+                    output_artifacts = [
+                        artifact
+                        for artifact_id in upstream_task.outputs.get(output_key, [])
+                        if (artifact := container.get_artifact(artifact_id)) is not None
+                    ]
+
+                if output_artifacts:
+                    if field_meta.get("cardinality") in ("multiple", "optional_multiple"):
+                        available_adapters = output_artifacts[0].get_adapters()
+                        other_adapter_names = [
+                            {adapter.name for adapter in artifact.get_adapters()}
+                            for artifact in output_artifacts[1:]
+                        ]
+                        adapters = [
+                            adapter for adapter in available_adapters
+                            if all(adapter.name in names for names in other_adapter_names)
+                        ]
+                    else:
+                        adapters = output_artifacts[-1].get_adapters()
+                else:
+                    adapters = adapter_registry.get_for_type(
+                        data_type=output_meta.get("data_type", "unknown"),
+                        extension=output_meta.get("format", "*"),
+                    )
+
+                adapter_options_by_reference[reference] = adapter_options(adapters)
+
+    is_multiple = field_meta.get("widget") == "artifact_multi_select"
+    selected_artifact_ids = (
+        val if isinstance(val, list) else [val] if val else []
+    )
+    selected_adapters = [
+        adapter_options_by_artifact[artifact_id]
+        for artifact_id in selected_artifact_ids
+        if artifact_id in adapter_options_by_artifact
+    ]
+    if selected_adapters:
+        adapter_choices = [
+            adapter
+            for adapter in selected_adapters[0]
+            if all(
+                adapter["value"] in {choice["value"] for choice in choices}
+                for choices in selected_adapters[1:]
+            )
+        ]
+    elif candidates:
+        adapter_choices = next(
+            (
+                adapter_options_by_artifact[artifact.id]
+                for artifact in candidates
+                if adapter_options_by_artifact[artifact.id]
+            ),
+            [],
+        )
+    else:
+        adapter_choices = []
+
+    if binding_mode == "reference" and ref_val:
+        adapter_choices = adapter_options_by_reference.get(ref_val, [])
+    elif binding_mode == "reference" and adapter_options_by_reference:
+        adapter_choices = next(
+            (
+                options for options in adapter_options_by_reference.values()
+                if options
+            ),
+            [],
+        )
+
+    saved_input_adapters = (
+        (task.exec_config or {}).get("input_adapters", {})
+        if task else {}
+    )
+    adapter_value = saved_input_adapters.get(field_name)
+    available_adapter_values = {choice["value"] for choice in adapter_choices}
+    if adapter_value not in available_adapter_values:
+        adapter_value = adapter_choices[0]["value"] if adapter_choices else ""
+
     return {
         "widget_url": widget_url,
         "binding_mode": binding_mode,
@@ -209,4 +327,22 @@ def _build_field_ui_state(
         "ref_val": ref_val,
         "avail_tasks": avail_tasks,
         "candidates": candidates,
+        "adapter_options_by_artifact": adapter_options_by_artifact,
+        "adapter_options_by_reference": adapter_options_by_reference,
+        "adapter_choices": adapter_choices,
+        "supports_adapter_selection": supports_adapter_selection,
+        "has_adapter_options": any(
+            adapter_options_by_reference.values()
+            if binding_mode == "reference"
+            else adapter_options_by_artifact.values()
+        ),
+        "adapter_value": adapter_value,
+        "adapter_enabled": bool(
+            (selected_adapters or (
+                binding_mode == "reference" and ref_val
+                and adapter_options_by_reference.get(ref_val)
+            ))
+            and adapter_choices
+        ),
+        "is_multiple_artifact_input": is_multiple,
     }

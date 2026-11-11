@@ -61,6 +61,7 @@ def run_task_worker(rt: "Runtime", session_id: str, task_id: str) -> None:
                 s=s,
                 task_def=task_def,
                 bindings=task.inputs,
+                input_adapters=task.exec_config.get("input_adapters", {}),
             )
     except Exception as e:
         logger.error("Worker failed during materialization: %s", e)

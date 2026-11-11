@@ -191,6 +191,7 @@ def run_preview_worker(
             task_def=task_def,
             bindings=ephemeral_task.inputs,
             strategy=strategy,
+            input_adapters=ephemeral_task.exec_config.get("input_adapters", {}),
         )
 
     # 4. Completeness check. Was every input delivered to the handler in full? If not, was
