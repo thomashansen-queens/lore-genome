@@ -4,14 +4,18 @@ LoRē domain-specific language (DSL) for defining Task inputs and outputs.
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum, StrEnum
-from typing import Any, Literal, Type, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias
+
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from lore.core.topology import traits
 from lore.core.utils import is_collection_type, is_optional_type
-from lore.core.utils.pydantic import get_base_type, extract_choices
+from lore.core.utils.pydantic import extract_choices, get_base_type
+
+if TYPE_CHECKING:
+    from lore.core.adapters import BaseAdapter
 
 # --- Input enums and type aliases ---
 
@@ -203,6 +207,8 @@ class ArtifactInput(TaskInput):
         broad trait (e.g. "tabular"), a specific type (e.g. "genome_annotations") 
         or a slice of from a table (e.g. "genome_accessions"). If provided as a list, 
         any one match is sufficient.
+        - adapt_as: Optional ordered list of BaseAdapter subclasses to expose in the
+        task's adapter selector. The first compatible adapter is selected by default.
     """
     def __init__(
         self,
@@ -211,6 +217,7 @@ class ArtifactInput(TaskInput):
         load_as: MaterializationLiteral | Materialization = Materialization.ADAPTED,
         # Fuzzy Matching: ["json", "ncbi", "genome_accessions"]
         accepted_data: str | traits.DataTrait | list[str | traits.DataTrait] | None = "*",
+        adapt_as: list[type["BaseAdapter"]] | None = None,
         # Pydantic pass-throughs
         default: Any = PydanticUndefined,
         label: str | None = None,
@@ -231,6 +238,20 @@ class ArtifactInput(TaskInput):
         else:
             self.accepted_data = [accepted_data]
 
+        if adapt_as is not None:
+            from lore.core.adapters import BaseAdapter
+
+            if not adapt_as:
+                raise ValueError("adapt_as must contain at least one adapter class.")
+            if any(
+                not isinstance(adapter, type) or not issubclass(adapter, BaseAdapter)
+                for adapter in adapt_as
+            ):
+                raise TypeError("adapt_as must contain only BaseAdapter subclasses.")
+            self.adapt_as = [adapter.__name__ for adapter in adapt_as]
+        else:
+            self.adapt_as = None
+
     def _enrich_schema_extra(self, extra: dict[str, Any]):
         """Artifact-specific metadata for UI rendering and validation"""
         extra.update(
@@ -247,6 +268,8 @@ class ArtifactInput(TaskInput):
                 ],
             }
         )
+        if self.adapt_as is not None:
+            extra["adapt_as"] = self.adapt_as
 
     def get_type_annotation(self) -> Type:
         """

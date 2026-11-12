@@ -1,10 +1,10 @@
 import re
 from types import SimpleNamespace
-
 from typing import Annotated
 
 from pydantic import BaseModel, Field
 
+from lore.core.adapters import BaseAdapter, JsonAdapter, TextAdapter
 from lore.core.adapters.tabular import TabularAdapter
 from lore.core.artifacts.artifact import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding
@@ -16,10 +16,10 @@ from lore.core.tasks import (
     Task,
     TaskDefinition,
 )
+from lore.web.deps import templates
 from lore.web.features.artifacts.routes import _viewer_completeness
 from lore.web.features.tasks import routes as task_routes
 from lore.web.features.tasks.routes import _display_complete_for_data
-from lore.web.deps import templates
 from lore.web.utils import configure_task
 from lore.web.utils.configure_task import _build_field_ui_state
 
@@ -44,6 +44,17 @@ class MultipleArtifactTaskInputs(BaseModel):
         ArtifactInput(
             accepted_data="*",
             select=Cardinality.MULTIPLE,
+            load_as=Materialization.ADAPTED,
+        ).to_field_info(),
+    ]
+
+
+class ConstrainedArtifactTaskInputs(BaseModel):
+    source: Annotated[
+        str,
+        ArtifactInput(
+            accepted_data="*",
+            adapt_as=[JsonAdapter, TextAdapter],
             load_as=Materialization.ADAPTED,
         ).to_field_info(),
     ]
@@ -181,6 +192,152 @@ def test_single_artifact_literal_renders_adapter_selector(temp_session, tmp_path
     assert 'data-adapter-control hidden' not in rendered
     assert 'data-preview-url="/preview"' in rendered
     assert 'data-adapter-preview' in rendered
+
+
+def test_adapter_priority_orders_choices_and_selects_default(
+    temp_session, tmp_path, monkeypatch
+):
+    class NormalPriorityAdapter(BaseAdapter):
+        pass
+
+    class HighPriorityAdapter(BaseAdapter):
+        priority = 1
+
+    artifact_path = tmp_path / "source.json"
+    artifact_path.write_text('[{"id": 1}]', encoding="utf-8")
+    artifact = temp_session.register_artifact(
+        artifact_path,
+        name="Source",
+        data_type="json",
+    )
+    monkeypatch.setattr(
+        Artifact,
+        "get_adapters",
+        lambda self: [NormalPriorityAdapter(), HighPriorityAdapter()],
+    )
+    task_def = TaskDefinition(
+        key="test.priority_artifact_input",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+
+    ui_state = _build_field_ui_state(
+        container=temp_session,
+        task_def=task_def,
+        field_name="source",
+        task=None,
+        raw_prefill=artifact.id,
+        avail_tasks=[],
+        candidates=[artifact],
+        mode_override=None,
+    )
+
+    assert [choice["value"] for choice in ui_state["adapter_choices"]] == [
+        "HighPriorityAdapter",
+        "NormalPriorityAdapter",
+    ]
+    assert ui_state["adapter_value"] == "HighPriorityAdapter"
+
+
+def test_adapt_as_filters_and_orders_artifact_adapter_choices(
+    temp_session, tmp_path, monkeypatch
+):
+    artifact_path = tmp_path / "source.json"
+    artifact_path.write_text('[{"id": 1}]', encoding="utf-8")
+    artifact = temp_session.register_artifact(
+        artifact_path,
+        name="Source",
+        data_type="json",
+    )
+    available_adapters = [TextAdapter(), JsonAdapter(), BaseAdapter()]
+    monkeypatch.setattr(
+        Artifact,
+        "get_adapters",
+        lambda self: available_adapters if self.id == artifact.id else [],
+    )
+    task_def = TaskDefinition(
+        key="test.constrained_artifact_input",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ConstrainedArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+
+    ui_state = _build_field_ui_state(
+        container=temp_session,
+        task_def=task_def,
+        field_name="source",
+        task=None,
+        raw_prefill=artifact.id,
+        avail_tasks=[],
+        candidates=[artifact],
+        mode_override=None,
+    )
+    rendered = _render_task_input(task_def, ui_state)
+
+    assert [choice["value"] for choice in ui_state["adapter_choices"]] == [
+        "JsonAdapter",
+        "TextAdapter",
+    ]
+    assert ui_state["adapter_value"] == "JsonAdapter"
+    assert re.search(r'value="JsonAdapter"\s+selected', rendered)
+
+
+def test_adapt_as_filters_upstream_adapter_choices(temp_session, monkeypatch):
+    task_def = TaskDefinition(
+        key="test.constrained_reference_input",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ConstrainedArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    upstream = SimpleNamespace(
+        id="upstream-task",
+        registry_key="test.upstream",
+        outputs={},
+        resolve_output_type=lambda output_key, container: {"data_type": "json"},
+    )
+    upstream_def = TaskDefinition(
+        key="test.upstream",
+        handler=lambda ctx, **kwargs: None,
+        input_model=ArtifactTaskInputs,
+        output_model=ArtifactTaskOutputs,
+    )
+    monkeypatch.setattr(
+        configure_task.task_registry,
+        "get_safe",
+        lambda task_key: upstream_def if task_key == "test.upstream" else None,
+    )
+    monkeypatch.setattr(
+        configure_task.adapter_registry,
+        "get_for_type",
+        lambda **kwargs: [TextAdapter(), JsonAdapter()],
+    )
+    current_task = Task(
+        id="current-task",
+        registry_key=task_def.key,
+        inputs={
+            "source": [
+                ReferenceBinding(source_id="upstream-task", output_key="result")
+            ]
+        },
+        exec_config={},
+    )
+
+    ui_state = _build_field_ui_state(
+        container=temp_session,
+        task_def=task_def,
+        field_name="source",
+        task=current_task,
+        raw_prefill=None,
+        avail_tasks=[{"task": upstream, "valid_outputs": ["result"]}],
+        candidates=[],
+        mode_override=None,
+    )
+
+    assert [
+        choice["value"] for choice in ui_state["adapter_choices"]
+    ] == ["JsonAdapter", "TextAdapter"]
+    assert ui_state["adapter_value"] == "JsonAdapter"
 
 
 def test_input_artifact_preview_endpoint_renders_adapter_output(

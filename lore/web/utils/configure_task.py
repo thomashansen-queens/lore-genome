@@ -2,11 +2,11 @@
 Helper to render the input widget to configure tasks.
 """
 
-from lore.core.artifacts.artifact import Artifact
 from lore.core.adapters import adapter_registry
+from lore.core.artifacts.artifact import Artifact
 from lore.core.bindings import LiteralBinding, ReferenceBinding, UserInputBinding
 from lore.core.sessions import Session, find_artifact_candidates, map_artifacts_to_task_inputs
-from lore.core.tasks import Task, TaskDefinition, Cardinality, task_registry
+from lore.core.tasks import Cardinality, Task, TaskDefinition, task_registry
 from lore.core.topology.traversal import find_valid_upstream_tasks
 from lore.core.workflows.models import Workflow
 from lore.web.utils.forms import format_inputs_for_ui
@@ -208,7 +208,22 @@ def _build_field_ui_state(
         "artifact_multi_select",
         "artifact_single_select",
     )
+
+    adapt_as = field_meta.get("adapt_as")
+
     def adapter_options(adapters):
+        if adapt_as is not None:
+            adapters_by_name = {adapter.name: adapter for adapter in adapters}
+            adapters = [
+                adapters_by_name[name]
+                for name in adapt_as
+                if name in adapters_by_name
+            ]
+        adapters = sorted(
+            adapters,
+            key=lambda adapter: getattr(adapter, "priority", 0),
+            reverse=True,
+        )
         return [
             {"value": adapter.name, "label": adapter.name}
             for adapter in adapters

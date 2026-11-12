@@ -114,3 +114,27 @@ def test_adapter_registry_resolution(populated_adapter_registry: AdapterRegistry
     assert ncbi_adapters[0] == populated_adapter_registry["MockNcbiAdapter"]
     assert generic_adapters[0] == populated_adapter_registry["GenericJsonAdapter"]
     assert fasta_adapters[0] == populated_adapter_registry["ProteinFastaAdapter"]
+
+
+def test_adapter_registry_orders_by_priority_before_expertise():
+    from lore.core.adapters import BaseAdapter
+
+    class SpecificAdapter(BaseAdapter):
+        accepted_formats = {"json"}
+        accepted_types = {"example"}
+
+    class HighPriorityAdapter(BaseAdapter):
+        accepted_formats = {"*"}
+        accepted_types = {"*"}
+        priority = 1
+
+    registry = AdapterRegistry()
+    registry._register_core(SpecificAdapter())
+    registry._register_core(HighPriorityAdapter())
+
+    adapters = registry.get_for_type("example", "json")
+
+    assert [adapter.name for adapter in adapters] == [
+        "HighPriorityAdapter",
+        "SpecificAdapter",
+    ]
