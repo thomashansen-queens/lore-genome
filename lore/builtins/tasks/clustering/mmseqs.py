@@ -185,6 +185,12 @@ def _sliced_fasta(
             f_out.write(f">{record['protein_accession']}{name_part}\n{sliced}\n")
             kept_count += 1
 
+    if kept_count == 0:
+        raise RuntimeError(
+            f"No sequences were kept after slicing with window '{cluster_window}'. "
+            f"Check your window parameters and the input FASTA."
+        )
+
     ctx.logger.info(f"Sliced FASTA created with {kept_count} sequences kept and {dropped_count} sequences dropped based on the specified window.")
     return tmp_out
 
