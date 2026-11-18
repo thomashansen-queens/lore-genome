@@ -143,18 +143,18 @@ class AdapterRegistry:
                 if adapter.provides(must_provide):
                     matches.append(adapter)
 
-        # 3. Optimization: Sort by 'Expertise'
+        # 3. Sort by priority, then expertise for adapters with equal priority.
         def sort_score(a):
             """
-            Prioritize Adapters that explicitly provide rather than '*' with
-            semantic type (1.1) scored higher than file format (1.0)
+            Higher priority values come first. Within a priority, prefer
+            adapters that explicitly match the semantic type and format.
             """
             score = 0
             if extension in a.accepted_formats:
                 score += 1.0
             if data_type in a.accepted_types:
                 score += 1.1
-            return score
+            return a.priority, score
 
         matches.sort(key=sort_score, reverse=True)
         return matches

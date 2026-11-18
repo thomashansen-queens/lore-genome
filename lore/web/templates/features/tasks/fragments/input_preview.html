@@ -1,0 +1,43 @@
+{% import "macros/ui.html" as ui %}
+
+<div class="column fill input-preview-results">
+    {% if previews|length > 1 %}
+        <div class="row gapped input-artifact-tabs"
+             style="border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-md); gap: var(--spacing-sm);">
+            {% for item in previews %}
+                 <button type="button" class="btn-tab {% if loop.last %}active{% endif %}"
+                        data-input-preview-target="input-artifact-tab-{{ loop.index }}">
+                    {{ item.artifact.ui_name }}
+                </button>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% for item in previews %}
+        {% set preview = item.preview %}
+        <div id="input-artifact-tab-{{ loop.index }}"
+             class="input-artifact-tab column fill"
+             {% if not loop.last %}style="display: none;"{% endif %}>
+            {% with
+                data=preview.data,
+                metadata=preview.metadata,
+                keys=preview.metadata.get('columns', []),
+                view_state={}
+            %}
+                <div class="row gapped" style="flex-shrink: 0; align-items: center;">
+                    <span class="ui-label">{{ item.artifact.ui_name }} · {{ preview.adapter_name }}</span>
+                    {{ ui.truncation_notice(preview.metadata) }}
+                </div>
+
+                {% if preview.view_mode == 'table' %}
+                    {% include "components/viewers/table.html" %}
+                {% elif preview.view_mode == 'svg' %}
+                    {% set adapter_name = preview.adapter_name %}
+                    {% include "components/viewers/svg.html" %}
+                {% else %}
+                    {% include "components/viewers/raw.html" %}
+                {% endif %}
+            {% endwith %}
+        </div>
+    {% endfor %}
+</div>

@@ -1,5 +1,7 @@
 Adapters are reader classes used by LoRe.
 All adapters are subclasses of the BaseAdapter ABC (abstract base class).
+Adapters may set an integer `priority` class attribute (default `0`); higher
+values appear first in adapter choices and are selected by default.
 To take advantage of LoRe's magic materializer data slicing, use TabularAdapters with a defined schema.
 
 Tabular adapters take some input, and output a list of records (list[dict]).

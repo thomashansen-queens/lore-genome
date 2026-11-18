@@ -348,6 +348,22 @@ button:disabled {
     transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     font-family: inherit;
     font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background-color: var(--secondary);    
+} 
+
+.btn-tab:hover {
+    background-color: var(--secondary-hover);
+}
+
+.btn-tab.active {
+    filter: brightness(0.95);
+    color: var(--primary-dark);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-bottom-color: var(--primary); 
+    font-weight: 600;
 }
 
 .badge {

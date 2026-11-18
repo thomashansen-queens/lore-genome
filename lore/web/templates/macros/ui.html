@@ -173,20 +173,24 @@
 {% macro truncation_notice(metadata, load_url=None) %}
     {# Completeness: is the shown data computed from ALL the input data? (for previews) #}
     {% set result_complete = metadata.get('result_complete', True) %}
-    {% set is_capped = metadata.get('truncation_reason') == 'capped' %}
-    {% if not result_complete %}
-        {% if is_capped %}
-            {# RAM ceiling: escalating to a full load won't help #}
-            <span class="badge warning small" title="Dataset exceeded sensible RAM limits for previewing.">
-                File too large for full preview
-            </span>
-        {% else %}
-            {# Intentional sample: offer the escalation to a full computation #}
-            <button type="button" style="display: block; width: fit-content;"
-                class="btn-load-full btn badge primary small"
-                {% if load_url %}hx-get="{{ load_url }}" hx-target="#viewer-target" hx-swap="innerHTML" hx-indicator="#preview-loader"{% endif %}>
-                PREVIEW (Click to load full)
-            </button>
-        {% endif %}
+    {% set truncation_reason = metadata.get('truncation_reason') %}
+    {% set is_capped = truncation_reason == 'capped' or metadata.get('ram_limit_hit', False) %}
+    {% set needs_full = (
+        truncation_reason == 'sampled'
+        or (not result_complete and not is_capped)
+        or (not metadata.get('file_eof_hit', True) and not is_capped)
+    ) %}
+    {% if needs_full %}
+        {# Intentional sample: offer the escalation to a full computation #}
+        <button type="button" style="display: block; width: fit-content;"
+            class="btn-load-full btn badge primary small"
+            {% if load_url %}hx-get="{{ load_url }}" hx-target="#viewer-target" hx-swap="innerHTML" hx-indicator="#preview-loader"{% endif %}>
+            PREVIEW (Click to load full)
+        </button>
+    {% elif is_capped %}
+        {# RAM or display ceiling: escalating to a full load won't help #}
+        <span class="badge warning small" title="Dataset exceeded sensible preview limits.">
+            File too large for full preview
+        </span>
     {% endif %}
 {% endmacro %}

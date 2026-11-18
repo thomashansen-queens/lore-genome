@@ -27,6 +27,7 @@ class BaseAdapter(ABC):
     accepted_formats: ClassVar[set[str]] = set()  # e.g. {"json", "fasta", "csv"}
     accepted_types: ClassVar[set[str]] = set()  # e.g. {"ncbi_genome_report", "protein_sequence"}
     view_mode: ClassVar[str] = "raw"
+    priority: ClassVar[int] = 0
     version: ClassVar[str] = "1.0.0"  # Increment when parsing logic changes for hash purposes
 
     @property

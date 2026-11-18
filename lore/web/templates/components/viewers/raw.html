@@ -53,6 +53,7 @@
         }
         
         window.viewerScripts.push({
+            scope: root,
             destroy() {
                 controller.abort();
                 console.log("Aborted all old event listeners for raw viewer");

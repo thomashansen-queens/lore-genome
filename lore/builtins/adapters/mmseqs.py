@@ -120,3 +120,24 @@ class Mmseqs2ClusterAdapter(lore.CsvAdapter):
                         "protein_accession": member,
                         "cluster_size": cluster_counts[rep],
                     }
+
+@lore.adapter()
+class MMseqs2CompactAdapter(lore.CsvAdapter):
+    accepted_formats = {"tsv"}
+    accepted_types = {"mmseqs2_cluster_map"}
+    version = "1.0.0"
+
+    def adapt(self, raw_data, config=None, **kwargs):
+        records = super().parse(raw_data, config=config, **kwargs)
+        members_by_representative: dict[str, set[str]] = {}
+
+        for record in records:
+            representative = str(record.get("column_0") or "").strip()
+            member = str(record.get("column_1") or "").strip()
+            if representative and member:
+                members_by_representative.setdefault(representative, set()).add(member)
+
+        return [
+            {"protein_accession": representative, "cluster_size": len(members), "members": ', '.join(members)}
+            for representative, members in members_by_representative.items()
+        ]

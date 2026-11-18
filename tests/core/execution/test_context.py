@@ -3,6 +3,8 @@ Tests for ExecutionContext
 """
 import pytest
 
+from lore.core.adapters import BaseAdapter
+from lore.core.artifacts.artifact import Artifact
 from lore.core.execution import ExecutionContext, PreviewContext
 from lore.core.tasks import Task, TaskStatus
 
@@ -77,6 +79,47 @@ def test_context_output_tracking(
     with temp_runtime.open_session(closed_session.id) as s:
         assert s.get_artifact_path(output_artifact.id) is not None
         assert s.get_artifact_path(output_artifact.id).exists()
+
+
+def test_get_input_adapter_returns_selected_adapter(
+    temp_runtime,
+    closed_session,
+    dummy_task_plugin,
+    isolated_task_registry,
+    monkeypatch,
+):
+    class DefaultAdapter(BaseAdapter):
+        pass
+
+    class SelectedAdapter(BaseAdapter):
+        pass
+
+    default_adapter = DefaultAdapter()
+    selected_adapter = SelectedAdapter()
+    artifact = Artifact(
+        id="artifact-1",
+        data_type="test",
+        hash="artifact-hash",
+    )
+    monkeypatch.setattr(
+        Artifact,
+        "get_adapters",
+        lambda self: [default_adapter, selected_adapter],
+    )
+    task = Task(
+        id="task-1",
+        registry_key=dummy_task_plugin,
+        exec_config={"input_adapters": {"source": "SelectedAdapter"}},
+    )
+    ctx = ExecutionContext(
+        runtime=temp_runtime,
+        session_id=closed_session.id,
+        task=task,
+        task_def=isolated_task_registry.get(dummy_task_plugin),
+        input_artifacts={"source": [artifact]},
+    )
+
+    assert ctx.get_input_adapter("source") is selected_adapter
 
 
 def test_preview_context_interception(

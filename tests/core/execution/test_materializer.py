@@ -4,10 +4,13 @@ Tests for materializing artifacts from the engine
 import json
 from collections.abc import Iterator
 import pytest
+from pydantic import BaseModel
 
+from lore.core.bindings import LiteralBinding
+from lore.core.execution.materializer import _materialize_single_artifact, materialize_task_inputs
 from lore.core.artifacts.artifact import ArtifactPathBundle
-from lore.core.execution.materializer import _materialize_single_artifact
-from lore.core.tasks import AdapterStrategy, Materialization
+from lore.core.adapters.base import BaseAdapter
+from lore.core.tasks import AdapterStrategy, ArtifactInput, Materialization, TaskDefinition
 
 
 @pytest.fixture
@@ -144,6 +147,44 @@ def test_adapted_records_same_shape_in_preview_and_run(temp_session, uid_artifac
 
     assert isinstance(run[0], dict) and run[0]["uid"] == "111"
     assert run == preview
+
+
+def test_materialization_uses_selected_adapter(temp_session, uid_artifact, monkeypatch):
+    class PrefixAdapter(BaseAdapter):
+        accepted_formats = {"json"}
+
+        def adapt_record(self, record, config=None, **kwargs):
+            return {"uid": f"prefix-{record['uid']}"}
+
+    class SuffixAdapter(BaseAdapter):
+        accepted_formats = {"json"}
+
+        def adapt_record(self, record, config=None, **kwargs):
+            return {"uid": f"{record['uid']}-suffix"}
+
+    adapters = [PrefixAdapter(), SuffixAdapter()]
+    monkeypatch.setattr(type(uid_artifact), "get_adapters", lambda self: adapters)
+
+    class Inputs(BaseModel):
+        source: str = ArtifactInput(
+            accepted_data="*",
+            load_as=Materialization.ADAPTED,
+        ).to_field_info()
+
+    task_def = TaskDefinition(
+        key="test.adapter_selection",
+        handler=lambda ctx, **kwargs: None,
+        input_model=Inputs,
+        output_model=BaseModel,
+    )
+    result = materialize_task_inputs(
+        s=temp_session,
+        task_def=task_def,
+        bindings={"source": [LiteralBinding(value=uid_artifact.id)]},
+        input_adapters={"source": "SuffixAdapter"},
+    )
+
+    assert result.data["source"] == [{"uid": "111-suffix"}, {"uid": "222-suffix"}]
 
 
 def test_adapted_stream_slices_series_like_adapted(temp_session, uid_artifact):

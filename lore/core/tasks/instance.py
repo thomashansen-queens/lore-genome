@@ -70,6 +70,10 @@ class ExecutionConfig(BaseModel):
 class TaskConfig(BaseModel):
     """Namespaced configuration for a Task execution"""
     adapter: AdapterConfig = Field(default_factory=AdapterConfig)
+    input_adapters: dict[str, str] = Field(
+        default_factory=dict,
+        description="Adapter class names selected for artifact task inputs",
+    )
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     task: dict[str, Any] = Field(default_factory=dict)  # arbitrary Task-specific config
 

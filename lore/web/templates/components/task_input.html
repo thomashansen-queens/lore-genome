@@ -73,12 +73,20 @@
                 field_info=field_info, 
                 prefill_val=ui_state.literal_val, 
                 candidates=ui_state.candidates,
+                adapter_options_by_artifact=ui_state.adapter_options_by_artifact,
+                adapter_choices=ui_state.adapter_choices,
+                supports_adapter_selection=ui_state.supports_adapter_selection,
+                adapter_value=ui_state.adapter_value,
+                adapter_enabled=ui_state.adapter_enabled,
+                input_preview_api_url=input_preview_api_url | default(none),
             ) }}
             
         {% elif ui_state.binding_mode == 'reference' %}
             {# DAG Reference Dropdown #}
             <div style="margin-bottom: 1rem;">
-                <select name="{{ field_name }}" class="form-control fullwidth">
+                <select name="{{ field_name }}" class="form-control fullwidth"
+                        data-adapter-source="single"
+                        onchange="updateTaskInputAdapters(this, false)">
                     <option value="" disabled {% if not ui_state.ref_val %}selected{% endif %}>
                         Select an upstream output...
                     </option>
@@ -91,6 +99,7 @@
                                 {% set ref_string = "ref:" ~ upstream_task.task.id ~ "::" ~ out_key %}
                                 
                                 <option value="{{ ref_string }}" 
+                                    data-adapters="{{ ui_state.adapter_options_by_reference.get(ref_string, []) | tojson | forceescape }}"
                                     {% if ui_state.ref_val == ref_string %}selected{% endif %}>
                                     Output: {{ out_key }}
                                 </option>
@@ -100,10 +109,92 @@
                     {% endfor %}
                 </select>
                 
+                {% if ui_state.supports_adapter_selection %}
+                    <div data-adapter-control
+                         class="row"
+                         style="align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;"
+                         {% if not ui_state.adapter_enabled %}hidden{% endif %}>
+                        <label class="small muted" style="margin: 0; white-space: nowrap;">
+                            Adapt with:
+                        </label>
+                        <select name="task_config[input_adapters][{{ field_name }}]"
+                                class="form-control small"
+                                data-adapter-select
+                                {% if not ui_state.adapter_enabled %}disabled{% endif %}>
+                            {% for adapter in ui_state.adapter_choices %}
+                                <option value="{{ adapter.value }}"
+                                        {% if adapter.value == ui_state.adapter_value %}selected{% endif %}>
+                                    {{ adapter.label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        {% if input_preview_api_url is defined %}
+                            <button type="button" class="btn small secondary"
+                                data-adapter-preview
+                                data-input-name="{{ field_name }}"
+                                data-input-label="{{ label }}"
+                                data-preview-url="{{ input_preview_api_url }}"
+                                {% if not ui_state.adapter_enabled %}disabled{% endif %}>
+                            Preview
+                            </button>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
                 <small class="muted">
                     This input will wait for the selected task to generate its data.
                 </small>
             </div>
+
         {% endif %}
     </div>
 </div>
+
+<script>
+    if (!window.updateTaskInputAdapters) {
+        window.updateTaskInputAdapters = function (source, multiple) {
+            const container = source.closest(".task-input-container");
+            const adapterSelect = container && container.querySelector("[data-adapter-select]");
+            if (!adapterSelect) return;
+
+            const artifactChoices = multiple
+                ? Array.from(container.querySelectorAll('input[type="checkbox"]'))
+                    .filter(input => input.checked)
+                    .map(input => JSON.parse(input.dataset.adapters || "[]"))
+                : (() => {
+                    const option = source.selectedOptions[0];
+                    return option && option.value
+                        ? [JSON.parse(option.dataset.adapters || "[]")]
+                        : [];
+                })();
+            const available = artifactChoices.length
+                ? artifactChoices[0].filter(adapter =>
+                    artifactChoices.slice(1).every(choices =>
+                        choices.some(choice => choice.value === adapter.value)))
+                : [];
+            const previousValue = adapterSelect.value;
+            adapterSelect.replaceChildren(...available.map(adapter =>
+                new Option(adapter.label, adapter.value)));
+            adapterSelect.disabled = available.length === 0;
+            const adapterControl = adapterSelect.closest("[data-adapter-control]");
+            if (adapterControl) {
+                adapterControl.hidden = available.length === 0;
+            }
+            if (available.some(adapter => adapter.value === previousValue)) {
+                adapterSelect.value = previousValue;
+            }
+        };
+    }
+
+    document.querySelectorAll(".task-input-container").forEach(container => {
+        const singleSource = container.querySelector("[data-adapter-source='single']");
+        if (singleSource) {
+            updateTaskInputAdapters(singleSource, false);
+        }
+
+        const multipleSource = container.querySelector("[data-adapter-source='multiple']");
+        if (multipleSource) {
+            updateTaskInputAdapters(multipleSource, true);
+        }
+    });
+</script>

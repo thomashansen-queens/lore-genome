@@ -47,11 +47,10 @@
             {% endif %}
         </p>
 
-        {# Display truncation: were all existing output rows rendered? #}
+        {# Display truncation: did the adapted preview include all source data? #}
         {% set display_complete = metadata.get('display_complete', True) %}
         {% if not display_complete %}
-            {# Display cap (DOM/RAM) which truncates to avoid browser issues, but doesn't affect result completeness #}
-            <div class="badge small info" title="Data truncated to prevent browser performance issues.">
+            <div class="badge small info" title="The preview does not include all artifact data.">
                 Showing: Top {{ '{:,}'.format(data|length) }}
             </div>
         {% endif %}
@@ -724,6 +723,7 @@
         }
         
         window.viewerScripts.push({
+            scope: root,
             destroy() {
                 controller.abort();
                 console.log("Aborted all old event listeners for table viewer");

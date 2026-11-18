@@ -43,6 +43,7 @@ def materialize_task_inputs(
     task_def: "TaskDefinition",
     bindings: dict[str, list[Binding]],
     strategy: AdapterStrategy = AdapterStrategy.AUTO,
+    input_adapters: dict[str, str] | None = None,
 ) -> MaterializedInputs:
     """
     Resolves raw input references (i.e. Artifacts) to actual data based on the
@@ -53,6 +54,7 @@ def materialize_task_inputs(
     associated metadata.
     """
     dto = MaterializedInputs()
+    input_adapters = input_adapters or {}
 
     for key, binding_list in bindings.items():
         # 1. Get input field metadata from TaskDefinition
@@ -156,6 +158,7 @@ def materialize_task_inputs(
                 materialization=materialization,
                 accepted_data=accepted_data,
                 strategy=strategy,
+                adapter_name=input_adapters.get(key),
             )
             processed_artifacts.append(item_data)
             slot_io_metadata.append(io_meta)
@@ -239,6 +242,7 @@ def _materialize_single_artifact(
     materialization: str,
     accepted_data: list[str],
     strategy: AdapterStrategy = AdapterStrategy.AUTO,
+    adapter_name: str | None = None,
 ) -> tuple[Any, dict]:
     """
     Materialize one Artifact into the data a handler asked for, per the DSL.
@@ -298,9 +302,21 @@ def _materialize_single_artifact(
     #    available? Best-effort raw passthrough
     adapters = artifact.get_adapters()
     if not adapters:
+        if adapter_name:
+            raise ValueError(
+                f"Adapter '{adapter_name}' is not available for artifact '{artifact.id}'."
+            )
         return records, io_meta
 
-    adapter = adapters[0]
+    adapter = next(
+        (candidate for candidate in adapters if candidate.name == adapter_name),
+        None,
+    ) if adapter_name else adapters[0]
+    if adapter is None:
+        raise ValueError(
+            f"Adapter '{adapter_name}' cannot adapt artifact '{artifact.id}' "
+            f"(available adapters: {', '.join(a.name for a in adapters)})."
+        )
     adapted = adapter.adapt_stream(records, config=config) if stream else adapter.adapt(records, config=config)
 
     # 5a. Peek at first record to see if accepted_data is present as a column

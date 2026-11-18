@@ -6,14 +6,15 @@ from collections.abc import AsyncIterable
 import html
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-from lore.core.adapters import AdapterPreview
+from lore.core.readers import get_reader_for
+from lore.core.adapters import AdapterPreview, adapter_registry
 from lore.core.sessions import resolve_task_outputs
 from lore.core.tasks import TaskConfig, TaskStatus, task_registry
 from lore.core.topology.matcher import extract_lineage, infer_bindings_from_raw
@@ -25,6 +26,17 @@ from lore.web.utils.configure_task import build_task_configure_context, build_wi
 from lore.web.utils.forms import get_form_str, form_json_to_dict
 
 router = APIRouter(prefix="/sessions/{session_id}/tasks", tags=["tasks"])
+
+
+def _display_complete_for_data(metadata: dict[str, Any] | None) -> bool:
+    """Check source and adapter limits without assuming adapted data stays row-based."""
+    metadata = metadata or {}
+    if metadata.get("ui_limit_hit", False):
+        return False
+    if not metadata.get("file_eof_hit", True) or metadata.get("ram_limit_hit", False):
+        return False
+
+    return True
 
 
 @router.get("/", response_class=RedirectResponse)
@@ -100,7 +112,11 @@ async def configure_task(
         context=ctx.render(
             session=s,
             context_type="session",
+            auto_preview_selected_artifacts=(
+                s.runtime.settings.auto_preview_selected_artifacts
+            ),
             preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/preview",
+            input_preview_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}/input-preview",
             commit_api_url=f"/sessions/{s.id}/tasks/configure/{task_key}",
             **ui_context,  # Unpacks into expected vars for Jinja
         )
@@ -215,6 +231,9 @@ def get_input_widget(
         context=ctx.render(
             context_type="session",
             edit_task_id=task_id,
+            input_preview_api_url=(
+                f"/sessions/{s.id}/tasks/configure/{task_key}/input-preview"
+            ),
             field_name=f_name,
             field_info=f_info,
             ui_state=widget_context,
@@ -254,6 +273,13 @@ class TaskPayload(BaseModel):
     def inputs(self) -> dict[str, Any]:
         """Reconstructs inputs dictionary from extra fields in the payload"""
         return self.model_extra or {}
+
+
+class InputArtifactPreviewRequest(BaseModel):
+    adapter_name: str
+    artifact_ids: list[str] = Field(default_factory=list)
+    source_reference: str | None = None
+    strategy: Literal["peek", "full"] = "peek"
 
 
 @router.post("/{task_id}/rename", response_class=RedirectResponse)
@@ -497,8 +523,6 @@ def api_task_preview(
     AJAX endpoint for the Task preview. Runs the task in memory and returns
     rendered HTML of the results.
     """
-    from lore.core.adapters import adapter_registry
-
     try:
         task_def = task_registry.get(task_key)
         if not task_def:
@@ -530,9 +554,9 @@ def api_task_preview(
             # A. Choose which adapter to use (explicit config > type-based)
             explicit_key = payload.task_config.adapter.options.get(f"{key}_adapter")
             adapter = adapter_registry.get(explicit_key) if explicit_key else None
+            ext = output.io_metadata.get("extension", "*")
 
             if not adapter:
-                ext = output.io_metadata.get("extension", "*")
                 adapters = adapter_registry.get_for_type(data_type=output.data_type, extension=ext)
                 adapter = adapters[0] if adapters else None
 
@@ -561,11 +585,21 @@ def api_task_preview(
                 config=config,
             )
 
-            # E. Finalize display by checking if the adapter hit its preview limit
-            display_complete = output.display_complete and not adapted.metadata.get("ui_limit_hit", False)
+            # E. Finalize display by checking whether the adapted view still represents
+            # all rows/data for the artifact. Some adapters summarize or reshape the data
+            # without preserving source row counts; completeness is based on whether the
+            # full source was read and the adapter applied a display cap.
+            display_complete = output.display_complete and _display_complete_for_data(
+                adapted.metadata,
+            )
             truncation_reason = output.truncation_reason
             if output.result_complete and not display_complete:
-                truncation_reason = "capped"
+                truncation_reason = (
+                    "capped"
+                    if adapted.metadata.get("ram_limit_hit", False)
+                    or adapted.metadata.get("ui_limit_hit", False)
+                    else "sampled"
+                )
 
             adapted.metadata["result_complete"] = output.result_complete
             adapted.metadata["display_complete"] = display_complete
@@ -599,6 +633,104 @@ def api_task_preview(
         </div>
         """
         return HTMLResponse(content=err_html)
+
+
+@router.post("/configure/{task_key}/input-preview", response_class=HTMLResponse)
+def api_task_input_artifact_preview(
+    session_id: str,
+    task_key: str,
+    payload: InputArtifactPreviewRequest,
+    s: ReadOnlySession,
+    rt: RT,
+    ctx: PageContext = Depends(),
+):
+    """Render selected input artifacts with the adapter chosen in the task form."""
+    try:
+        if not task_registry.get(task_key):
+            raise HTTPException(status_code=404, detail=f"Task '{task_key}' not found.")
+
+        artifact_ids = payload.artifact_ids
+        if payload.source_reference:
+            if artifact_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Choose either a task output or artifacts, not both.",
+                )
+            parts = payload.source_reference.removeprefix("ref:").split("::", 1)
+            if len(parts) != 2 or not all(parts):
+                raise HTTPException(status_code=400, detail="Invalid task output reference.")
+            upstream = s.get_task(parts[0])
+            if upstream is None:
+                raise HTTPException(status_code=404, detail="Referenced task not found.")
+            artifact_ids = upstream.outputs.get(parts[1], [])
+            if artifact_ids:
+                artifact_ids = [artifact_ids[-1]]
+
+        if not artifact_ids:
+            raise HTTPException(status_code=400, detail="Select an artifact to preview.")
+
+        previews = []
+        for artifact_id in artifact_ids:
+            artifact = s.get_artifact(artifact_id)
+            if artifact is None:
+                raise HTTPException(status_code=404, detail=f"Artifact '{artifact_id}' not found.")
+            adapter = next(
+                (candidate for candidate in artifact.get_adapters()
+                 if candidate.name == payload.adapter_name),
+                None,
+            )
+            if adapter is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Adapter '{payload.adapter_name}' cannot preview artifact '{artifact.ui_name}'.",
+                )
+
+            config = build_adapter_config(
+                source_metadata=artifact.metadata,
+                ext=artifact.extension,
+                max_ram_bytes=s.runtime.settings.preview_max_ram_bytes,
+            )
+            reader = get_reader_for(s.get_artifact_path(artifact_id))
+            data, io_metadata = reader.preview(
+                peek_limit=s.runtime.settings.preview_peek_limit,
+                config={**config, "strategy": payload.strategy},
+            )
+            preview = adapter.preview(data, io_metadata, config=config)
+            result_complete = (
+                io_metadata.get("file_eof_hit", True)
+                and not io_metadata.get("ram_limit_hit", False)
+            )
+            display_complete = result_complete and _display_complete_for_data(preview.metadata)
+            preview.metadata.update(
+                result_complete=result_complete,
+                display_complete=display_complete,
+                truncation_reason=(
+                    "capped" if io_metadata.get("ram_limit_hit", False)
+                    else "sampled" if not result_complete
+                    else "capped" if not display_complete
+                    else None
+                ),
+            )
+            previews.append({"artifact": artifact, "preview": preview})
+
+        return templates.TemplateResponse(
+            request=ctx.request,
+            name="features/tasks/fragments/input_preview.html",
+            context=ctx.render(previews=previews),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        rt.logger.error("Input artifact preview error: %s", str(e), exc_info=True)
+        return HTMLResponse(
+            content=(
+                '<div class="card" style="background: var(--danger-bg); '
+                'border-color: var(--danger);">'
+                '<strong>Preview Failed</strong><p class="small">'
+                f'{html.escape(str(e))}</p></div>'
+            ),
+            status_code=500,
+        )
 
 
 # --- SSE for real-time updates ---

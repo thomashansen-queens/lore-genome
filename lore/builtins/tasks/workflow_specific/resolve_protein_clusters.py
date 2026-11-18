@@ -1,20 +1,35 @@
 """Resolve protein sequence and cluster provenance inputs into match outputs."""
+import csv
 from collections import defaultdict
 from collections.abc import Iterator
-import csv
 
 import lore
+from lore.builtins.adapters.protein_nucleotide_assembly import ProteinNucleotideAssemblyMappingAdapter
+from lore.builtins.adapters.mmseqs import Mmseqs2ClusterAdapter
 
 
 class Inputs:
-    entrez_cluster_table = lore.ArtifactInput(
-        accepted_data=["protein_nuucore_elink_cluster_table"],
+    protein_cluster_table = lore.ArtifactInput(
+        accepted_data=[
+            "protein_nucleotide_assembly_mapping",
+        ],
         select="single",
         load_as="adapted",
-        label="Protein-to-nuucore cluster table",
+        label="Protein cluster table",
+        description=(
+            "Protein cluster provenance or NCBI protein-to-nucleotide/assembly mappings."
+        ),
     )
+    alignment_scores = lore.ArtifactInput(
+        accepted_data=["alignment_scores"],
+        select="single",
+        load_as="adapted",
+        label="Protein match alignment scores",
+    )
+
     mmseqs_cluster_map = lore.ArtifactInput(
         accepted_data=["mmseqs2_cluster_map"],
+        adapt_as=[Mmseqs2ClusterAdapter],
         select="single",
         load_as="adapted",
         label="MMSeqs2 cluster map",
@@ -33,8 +48,9 @@ class Outputs:
         label="Protein match FASTA",
         is_primary=True,
     )
+
     cluster_table = lore.TaskOutput(
-        data_type="csv",
+        data_type="protein_nucleotide_assembly_mapping",
         label="Protein cluster resolution table",
         is_primary=False,
     )
@@ -46,45 +62,55 @@ class Outputs:
     outputs=Outputs,
     name="Resolve protein clusters",
     category="Workflow-Specific",
-    preview_mode="live",
+    preview_mode="full",
 )
 def resolve_protein_clusters(
     ctx: lore.ExecutionContext,
-    entrez_cluster_table: list[dict],
+    protein_cluster_table: list[dict],
     mmseqs_cluster_map: list[dict],
     protein_fasta: Iterator[dict],
+    alignment_scores: list[dict],
 ):
     """Combine MMSeqs2 clusters, nuccore provenance, and protein sequences."""
-    provenance = {}
-    for row in entrez_cluster_table or []:
-        accession = str(row.get("protein_accession", "")).strip()
-        if not accession:
-            continue
-        try:
-            contribution = max(int(row.get("cluster_size", 1)), 0)
-        except (TypeError, ValueError):
-            contribution = 1
-        raw_uids = row.get("nuucore_uids", "")
-        if isinstance(raw_uids, str):
-            uids = [uid.strip() for uid in raw_uids.split(",") if uid.strip()]
-        elif isinstance(raw_uids, (list, tuple, set)):
-            uids = [str(uid).strip() for uid in raw_uids if str(uid).strip()]
-        else:
-            uids = []
-        provenance[accession] = (contribution, ",".join(uids))
+    # Establish mapping for alignment scores
+    score_by_accession = {
+        str(record.get("accession", "")).strip(): float(record.get("score", 0))
+        for record in alignment_scores
+    }
 
-    sequence_by_accession = {}
-    for record in protein_fasta or []:
-        accession = str(record.get("protein_accession") or record.get("accession") or "").strip()
-        if accession:
-            sequence_by_accession[accession] = str(record.get("protein_sequence") or record.get("sequence") or "")
+    # Establish mapping from representative protein accession to its cluster members
+    cluster_mapping = defaultdict(list)
+    for row in protein_cluster_table or []:
+        representative = str(row.get("representative_protein_accession", "")).strip()
+        protein_accession = str(row.get("protein_accession", "")).strip()
+        nucleotide_accession = str(row.get("nucleotide_accession", "")).strip()
+        assembly_accession = str(row.get("assembly_accession", "")).strip()
+        if representative and protein_accession:
+            cluster_mapping[representative].append({
+                "protein_accession": protein_accession,
+                "nucleotide_accession": nucleotide_accession,
+                "assembly_accession": assembly_accession,
+                "score": score_by_accession[representative]
+            })
 
-    clusters = defaultdict(list)
+    # Combine MMSeqs2 clusters with the protein cluster mapping to create a final cluster representation
+    clusters = defaultdict(lambda: [0, []])
     for row in mmseqs_cluster_map or []:
-        representative = str(row.get("cluster_rep", "")).strip()
-        member = str(row.get("protein_accession", "")).strip()
-        if representative and member:
-            clusters[representative].append(member)
+        representative = row.get("cluster_rep", "").strip()
+        protein_accession = row.get("protein_accession", "").strip()
+        clusters[representative][1].extend(cluster_mapping[protein_accession])
+
+    # Sort clusters by average score
+    score_maps = []
+    for representative, (_, cluster) in clusters.items():
+        avg_score = sum(map(lambda entry: entry["score"], cluster)) / len(cluster)
+        score_maps.append((avg_score, representative))
+    score_maps.sort(key=lambda x: x[0], reverse=True)
+
+    sequence_by_accession = {
+        str(record.get("protein_accession", "")).strip(): str(record.get("protein_sequence", "")).strip()
+        for record in protein_fasta
+    }
 
     fasta_path = ctx.get_temp_path("protein_match_fasta.faa")
     csv_path = ctx.get_temp_path("protein_cluster_resolution.csv")
@@ -97,35 +123,23 @@ def resolve_protein_clusters(
         writer.writerow([
             "representative_protein_accession",
             "protein_accession",
-            "cluster_size_contribution",
-            "nuucore_uids",
+            "nucleotide_accession",
+            "assembly_accession"
         ])
 
-        for representative, members in clusters.items():
-            unique_members = list(dict.fromkeys(members))
-            total_size = 0
-            representative_sequence = sequence_by_accession.get(representative)
-
-            if representative_sequence is None:
-                representative_sequence = next(
-                    (sequence_by_accession[member] for member in unique_members if member in sequence_by_accession),
-                    None,
-                )
-            if not representative_sequence:
-                missing_sequences.add(representative)
-
-            for member in unique_members:
-                contribution, nuucore_uids = provenance.get(member, (1, ""))
-                total_size += contribution
+        for score, representative in score_maps: 
+            protein_info_list = clusters[representative][1]
+            for protein_info in protein_info_list:
                 writer.writerow([
                     representative,
-                    member,
-                    contribution,
-                    nuucore_uids,
+                    protein_info["protein_accession"],
+                    protein_info["nucleotide_accession"],
+                    protein_info["assembly_accession"]
                 ])
 
+            representative_sequence = sequence_by_accession[representative]
             if representative_sequence is not None:
-                fasta_file.write(f">{representative} protein ({total_size} total)\n")
+                fasta_file.write(f">{representative} ({len(protein_info_list)} total) (avg_score={int(score)})\n")
                 fasta_file.write(f"{representative_sequence}\n")
 
     if missing_sequences:

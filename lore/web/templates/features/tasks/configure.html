@@ -19,6 +19,7 @@
 
         <form id="task-config-form"
             hx-ext="json-enc"
+            data-auto-preview-selected-artifacts="{{ auto_preview_selected_artifacts | default(false) | string | lower }}"
 
             {# --- Commit endpoint --- #}
             hx-post="{{ commit_api_url }}"
@@ -96,19 +97,31 @@
             <span class="badge warning pulsing">⏳︎ Computing...</span>
         </div>
 
-        <div id="preview-target" class="card" style="max-height: 100%;">
-            <p class="muted">
-                {% if not task_def.preview_mode.is_allowed %}
-                    Preview is not available for this task — it runs heavy work
-                    that only executes when committed and run.
-                {% elif task_def.preview_mode.is_live %}
-                    Change a parameter to generate preview...
-                {% elif task_def.preview_mode.value == 'dry_run' %}
-                    Click "Preview" to validate inputs without running the task...
-                {% else %}
-                    Click "Preview" to generate a preview...
-                {% endif %}
-            </p>
+        <div id="preview-section-tabs" class="row gapped"
+             style="border-bottom: 2px solid var(--border); margin-bottom: var(--spacing-md); gap: var(--spacing-sm); flex-shrink: 0;">
+            <button type="button" class="btn-tab active"
+                    data-preview-section-tab="task-preview-panel">
+                Task outputs
+            </button>
+        </div>
+
+        <div id="preview-section-panels" class="column fill" style="min-height: 0;">
+            <div id="task-preview-panel" class="preview-section-panel column fill">
+                <div id="preview-target" class="card" style="max-height: 100%;">
+                    <p class="muted">
+                        {% if not task_def.preview_mode.is_allowed %}
+                            Preview is not available for this task — it runs heavy work
+                            that only executes when committed and run.
+                        {% elif task_def.preview_mode.is_live %}
+                            Change a parameter to generate preview...
+                        {% elif task_def.preview_mode.value == 'dry_run' %}
+                            Click "Preview" to validate inputs without running the task...
+                        {% else %}
+                            Click "Preview" to generate a preview...
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
         </div>
 
     </section>
@@ -128,6 +141,270 @@ document.addEventListener("DOMContentLoaded", function() {
     const saveButton = document.getElementById('save-button');
     const runButton = document.getElementById('run-button');
     const taskForm = document.getElementById('task-config-form');
+    const previewSectionTabs = document.getElementById('preview-section-tabs');
+    const previewSectionPanels = document.getElementById('preview-section-panels');
+    const inputPreviewTabs = new Map();
+    const inputPreviewRequests = new Map();
+    const artifactSelectionOrder = new Map();
+    let inputPreviewTabId = 0;
+    const autoPreviewSelectedArtifacts =
+        taskForm.dataset.autoPreviewSelectedArtifacts === 'true';
+
+    function activatePreviewSection(panelId) {
+        previewSectionTabs.querySelectorAll('[data-preview-section-tab]').forEach(button => {
+            const active = button.dataset.previewSectionTab === panelId;
+            button.classList.toggle('active', active);
+        });
+        previewSectionPanels.querySelectorAll('.preview-section-panel, .input-preview-panel')
+            .forEach(panel => panel.style.display = panel.id === panelId ? 'flex' : 'none');
+    }
+
+    previewButton?.addEventListener('click', () => {
+        activatePreviewSection('task-preview-panel');
+    });
+
+    function selectedInputArtifacts(container) {
+        const source = container.querySelector('[data-adapter-source]');
+        if (!source) return { artifactIds: [], sourceReference: null };
+        if (source.dataset.adapterSource === 'multiple') {
+            const artifactIds = Array.from(container.querySelectorAll(
+                'input[data-adapter-source="multiple"]:checked'
+            )).map(input => input.value);
+            const inputName = container.querySelector('[data-adapter-preview]')?.dataset.inputName;
+            const order = artifactSelectionOrder.get(inputName) || [];
+            return {
+                artifactIds: [
+                    ...order.filter(id => artifactIds.includes(id)),
+                    ...artifactIds.filter(id => !order.includes(id)),
+                ],
+                sourceReference: null,
+            };
+        }
+        const value = source.value;
+        if (value.startsWith('ref:')) {
+            return { artifactIds: [], sourceReference: value };
+        }
+        return { artifactIds: value ? [value] : [], sourceReference: null };
+    }
+
+    function updateArtifactSelectionOrder(container, changedInput) {
+        if (changedInput?.dataset.adapterSource !== 'multiple') return;
+        const inputName = container.querySelector('[data-adapter-preview]')?.dataset.inputName;
+        if (!inputName) return;
+
+        const selectedIds = Array.from(container.querySelectorAll(
+            'input[data-adapter-source="multiple"]:checked'
+        )).map(input => input.value);
+        const order = (artifactSelectionOrder.get(inputName) || [])
+            .filter(id => selectedIds.includes(id));
+        selectedIds.forEach(id => {
+            if (id !== changedInput.value && !order.includes(id)) order.push(id);
+        });
+        if (changedInput.checked) {
+            const previousIndex = order.indexOf(changedInput.value);
+            if (previousIndex !== -1) order.splice(previousIndex, 1);
+            order.push(changedInput.value);
+        }
+        artifactSelectionOrder.set(inputName, order);
+    }
+
+    function updateInputPreviewButton(container) {
+        const button = container.querySelector('[data-adapter-preview]');
+        if (!button) return;
+        if (inputPreviewTabs.has(button.dataset.inputName)) {
+            button.disabled = false;
+            button.textContent = 'Hide preview';
+            return;
+        }
+        button.textContent = 'Preview';
+        const adapterSelect = container.querySelector('[data-adapter-select]');
+        const selection = selectedInputArtifacts(container);
+        button.disabled = (
+            (!selection.artifactIds.length && !selection.sourceReference)
+            || !adapterSelect
+            || adapterSelect.disabled
+            || !adapterSelect.value
+        );
+    }
+
+    async function loadInputPreview(inputName, panel, adapterButton, strategy = 'peek') {
+        const previousRequest = inputPreviewRequests.get(inputName);
+        previousRequest?.abort();
+
+        const content = panel.querySelector('.input-preview-content');
+        const container = adapterButton.closest('.task-input-container');
+        const adapterSelect = container?.querySelector('[data-adapter-select]');
+        const selection = container && selectedInputArtifacts(container);
+        if (!container || !adapterSelect || !selection
+                || (!selection.artifactIds.length && !selection.sourceReference)) {
+            content.textContent = 'Select an artifact to preview.';
+            return;
+        }
+
+        const controller = new AbortController();
+        inputPreviewRequests.set(inputName, controller);
+        content.textContent = 'Loading adapted preview...';
+        const requestBody = {
+            adapter_name: adapterSelect.value,
+            artifact_ids: selection.artifactIds,
+            source_reference: selection.sourceReference,
+            strategy,
+        };
+
+        try {
+            const response = await fetch(adapterButton.dataset.previewUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+            });
+            const html = await response.text();
+            if (!response.ok) {
+                if (response.headers.get('content-type')?.includes('text/html')) {
+                    content.innerHTML = html;
+                } else {
+                    let message = html || `Preview failed (${response.status}).`;
+                    try {
+                        message = JSON.parse(html).detail || message;
+                    } catch (error) {
+                        console.warn('Could not parse input preview error response:', error);
+                    }
+                    content.textContent = message;
+                }
+                return;
+            }
+
+            window.viewerScripts = window.viewerScripts || [];
+            const oldScripts = window.viewerScripts.filter(script =>
+                script.scope && content.contains(script.scope)
+            );
+            oldScripts.forEach(script => script.destroy());
+            window.viewerScripts = window.viewerScripts.filter(script =>
+                !oldScripts.includes(script)
+            );
+
+            content.innerHTML = html;
+            content.querySelectorAll('script').forEach(oldScript => {
+                const newScript = document.createElement('script');
+                Array.from(oldScript.attributes).forEach(attribute =>
+                    newScript.setAttribute(attribute.name, attribute.value)
+                );
+                newScript.textContent = oldScript.textContent;
+                oldScript.replaceWith(newScript);
+            });
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                content.textContent = `Preview failed: ${error.message}`;
+            }
+        } finally {
+            if (inputPreviewRequests.get(inputName) === controller) {
+                inputPreviewRequests.delete(inputName);
+            }
+        }
+    }
+
+    function createInputPreviewTab(inputName, adapterButton) {
+        const panelId = `input-preview-${inputPreviewTabId++}`;
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'btn-tab';
+        tab.dataset.previewSectionTab = panelId;
+        tab.textContent = `Input: ${adapterButton.dataset.inputLabel}`;
+        previewSectionTabs.appendChild(tab);
+
+        const panel = document.createElement('div');
+        panel.id = panelId;
+        panel.className = 'preview-section-panel input-preview-panel column fill';
+        panel.style.minHeight = '0';
+        panel.innerHTML = '<div class="card fill input-preview-content">Loading adapted preview...</div>';
+        previewSectionPanels.appendChild(panel);
+        inputPreviewTabs.set(inputName, { tab, panel });
+        updateInputPreviewButton(adapterButton.closest('.task-input-container'));
+        activatePreviewSection(panelId);
+        loadInputPreview(inputName, panel, adapterButton);
+    }
+
+    previewSectionTabs.addEventListener('click', event => {
+        const button = event.target.closest('[data-preview-section-tab]');
+        if (button) activatePreviewSection(button.dataset.previewSectionTab);
+    });
+
+    previewSectionPanels.addEventListener('click', event => {
+        const loadFullButton = event.target.closest('.btn-load-full');
+        if (loadFullButton) {
+            event.preventDefault();
+            const tabEntry = Array.from(inputPreviewTabs.entries())
+                .find(([, preview]) => preview.panel.contains(loadFullButton));
+            if (!tabEntry) return;
+            const [inputName, preview] = tabEntry;
+            const adapterButton = Array.from(
+                taskForm.querySelectorAll('[data-adapter-preview]')
+            ).find(button => button.dataset.inputName === inputName);
+            if (adapterButton) {
+                loadInputPreview(inputName, preview.panel, adapterButton, 'full');
+            }
+            return;
+        }
+
+        const button = event.target.closest('[data-input-preview-target]');
+        if (!button) return;
+        const results = button.closest('.input-preview-results');
+        results.querySelectorAll('.input-artifact-tab').forEach(tab => {
+            tab.style.display = tab.id === button.dataset.inputPreviewTarget ? 'flex' : 'none';
+        });
+        results.querySelectorAll('[data-input-preview-target]').forEach(tabButton => {
+            const active = tabButton === button;
+            tabButton.classList.toggle('active', active);
+        });
+    });
+
+    taskForm.addEventListener('click', event => {
+        const button = event.target.closest('[data-adapter-preview]');
+        if (!button) return;
+        event.preventDefault();
+        const inputName = button.dataset.inputName;
+        const existing = inputPreviewTabs.get(inputName);
+        if (existing) {
+            inputPreviewRequests.get(inputName)?.abort();
+            existing.tab.remove();
+            existing.panel.remove();
+            inputPreviewTabs.delete(inputName);
+            updateInputPreviewButton(button.closest('.task-input-container'));
+            if (existing.tab.classList.contains('active')) {
+                activatePreviewSection('task-preview-panel');
+            }
+            return;
+        }
+        createInputPreviewTab(inputName, button);
+    });
+
+    taskForm.addEventListener('change', event => {
+        const container = event.target.closest('.task-input-container');
+        if (!container) return;
+        updateArtifactSelectionOrder(container, event.target);
+        updateInputPreviewButton(container);
+        const inputName = container.querySelector('[data-adapter-preview]')?.dataset.inputName;
+        const openTab = inputName && inputPreviewTabs.get(inputName);
+        if (openTab) {
+            activatePreviewSection(openTab.panel.id);
+            const adapterButton = container.querySelector('[data-adapter-preview]');
+            if (adapterButton?.disabled) {
+                inputPreviewRequests.get(inputName)?.abort();
+                openTab.panel.querySelector('.input-preview-content').textContent =
+                    'Select an artifact and adapter to preview.';
+            } else {
+                loadInputPreview(inputName, openTab.panel, adapterButton);
+            }
+        } else if (autoPreviewSelectedArtifacts
+                && event.target.matches('[data-adapter-source]')) {
+            const adapterButton = container.querySelector('[data-adapter-preview]');
+            const selection = selectedInputArtifacts(container);
+            if (adapterButton && !adapterButton.disabled
+                    && (selection.artifactIds.length || selection.sourceReference)) {
+                createInputPreviewTab(inputName, adapterButton);
+            }
+        }
+    });
 
     function excludeNonFieldTabStops() {
         taskForm.querySelectorAll('button, a[href], summary, [tabindex="0"], [contenteditable="true"]')

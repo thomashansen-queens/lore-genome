@@ -7,7 +7,7 @@
     <title>{% block title %}LoRē Genome{% endblock %}</title>
 
     {# One global CSS file for LoRe UI #}
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}?v={{ main_css_version() }}" />
     {# DEBUG: Uncomment for flexbox outlines for layout troubleshooting #}
     {# <link rel="stylesheet" href="{{ url_for('static', path='/css/debug.css') }}" /> #}
 
