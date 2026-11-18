@@ -81,7 +81,7 @@ def elink(
     clean_uids = []
     for u in uid:
         if u:
-            clean_uids += u.split()
+            clean_uids.extend(u.split())
 
     @retry(tries=1, delay=api_delay, default_logger=ctx.logger)
     def _execute_link_batch(uids: list[str]):
@@ -173,7 +173,8 @@ def elink(
     # 3. Process the retrieved linksets and prepare output table
     table_data = []
     for linkset in linksets:
-        source_uid = linkset.get("ids", [None])[0]  # Get the first UID from the source
+        source_uid = linkset.get("ids", [None])
+        source_uid = None if not source_uid else source_uid[0]  # Get the first UID from the source
         query_uid = str(linkset.get("_query_uid") or source_uid) if (
             linkset.get("_query_uid") is not None or source_uid is not None
         ) else None

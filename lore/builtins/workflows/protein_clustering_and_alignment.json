@@ -1,0 +1,350 @@
+{
+  "id": "protein_clustering_and_alignment",
+  "name": "Protein Clustering and Alignment Pipeline",
+  "description": "Given a list of protein accessions and an aa sequence to align with, this pipeline will determine the number of genomes which each protein can be derived from and cluster them based on the provided alignment, producing a final clustered result which displays the number of genomes from which each cluster can be derived from.",
+  "created_at": "2026-11-17T20:56:44.072854Z",
+  "tasks": [
+    {
+      "id": "11d14bcf-9672-43dc-8479-2607cebb5e77",
+      "registry_key": "ncbi.entrez.efetch_protein",
+      "name": "Fetch Protein FASTAs",
+      "description": "",
+      "input_labels": {},
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "reference",
+            "source_id": "a2e6b043-1192-476a-879f-b4ebf51c982c",
+            "output_key": "column",
+            "artifact_id": null
+          }
+        ],
+        "fetch_format": [
+          {
+            "type": "literal",
+            "value": "FASTA Sequence"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.062427Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "6b586a83-160b-42a3-8765-3ec78a26de7a",
+      "registry_key": "data.deduplicate_accessions",
+      "name": "Deduplicate by accession",
+      "description": "",
+      "input_labels": {},
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "identifier_column": [
+          {
+            "type": "literal",
+            "value": "representative_protein_accession"
+          }
+        ],
+        "use_nucleotide_accession": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "source": [
+          {
+            "type": "reference",
+            "source_id": "63d4af98-4d32-4d38-bcb4-4d7b2541aa6b",
+            "output_key": "ipg_clusters",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.064307Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "63d4af98-4d32-4d38-bcb4-4d7b2541aa6b",
+      "registry_key": "ncbi.entrez.efetch_protein",
+      "name": "Fetch Protein IPG Records",
+      "description": "",
+      "input_labels": {},
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "uid": [
+          {
+            "type": "user_input",
+            "input_key": "uid",
+            "value": null
+          }
+        ],
+        "fetch_format": [
+          {
+            "type": "literal",
+            "value": "IPG Table"
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.067252Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "847d2959-d6ef-419a-974d-f79edff8e044",
+      "registry_key": "workflow_specific.resolve_protein_clusters",
+      "name": "Resolve protein clusters",
+      "description": "",
+      "input_labels": {},
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "input_adapters": {},
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "protein_cluster_table": [
+          {
+            "type": "reference",
+            "source_id": "a641b34b-29a9-44b3-a97a-53fa1563c835",
+            "output_key": "cluster_table",
+            "artifact_id": null
+          }
+        ],
+        "alignment_scores": [
+          {
+            "type": "reference",
+            "source_id": "a641b34b-29a9-44b3-a97a-53fa1563c835",
+            "output_key": "alignment_scores",
+            "artifact_id": null
+          }
+        ],
+        "mmseqs_cluster_map": [
+          {
+            "type": "reference",
+            "source_id": "70bbca01-62d0-4dce-93cf-31945532fe0d",
+            "output_key": "cluster_tsv",
+            "artifact_id": null
+          }
+        ],
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "70bbca01-62d0-4dce-93cf-31945532fe0d",
+            "output_key": "representative_fasta",
+            "artifact_id": null
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.068686Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "70bbca01-62d0-4dce-93cf-31945532fe0d",
+      "registry_key": "mmseqs.easy_cluster",
+      "name": "MMseqs2 easy-cluster",
+      "description": "",
+      "input_labels": {},
+      "status": "template",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "coverage": [
+          {
+            "type": "literal",
+            "value": 0.8
+          }
+        ],
+        "sensitivity": [
+          {
+            "type": "literal",
+            "value": 4.0
+          }
+        ],
+        "source_fasta": [
+          {
+            "type": "reference",
+            "source_id": "a641b34b-29a9-44b3-a97a-53fa1563c835",
+            "output_key": "fasta",
+            "artifact_id": null
+          }
+        ],
+        "min_seq_id": [
+          {
+            "type": "literal",
+            "value": 0.9
+          }
+        ],
+        "cluster_window": [],
+        "keep_truncated": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "strict_window": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "keep_representative_fasta": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.070018Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "a641b34b-29a9-44b3-a97a-53fa1563c835",
+      "registry_key": "aleyssu.gene_from_protein_workflow.match_protein_protein",
+      "name": "Match Protein Sequences to Protein Subsequence",
+      "description": "",
+      "input_labels": {},
+      "status": "draft",
+      "integrity": "unknown",
+      "exec_config": {},
+      "inputs": {
+        "protein_fasta": [
+          {
+            "type": "reference",
+            "source_id": "11d14bcf-9672-43dc-8479-2607cebb5e77",
+            "output_key": "protein_fasta",
+            "artifact_id": null
+          }
+        ],
+        "compare_seq": [
+          {
+            "type": "user_input",
+            "input_key": "compare_seq",
+            "value": null
+          }
+        ],
+        "cluster_table": [
+          {
+            "type": "reference",
+            "source_id": "6b586a83-160b-42a3-8765-3ec78a26de7a",
+            "output_key": "deduplicated_data",
+            "artifact_id": null
+          }
+        ],
+        "preserve_length": [
+          {
+            "type": "literal",
+            "value": false
+          }
+        ],
+        "open_gap_score": [
+          {
+            "type": "literal",
+            "value": -12.0
+          }
+        ],
+        "extend_gap_score": [
+          {
+            "type": "literal",
+            "value": -1.0
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.071435Z",
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "id": "a2e6b043-1192-476a-879f-b4ebf51c982c",
+      "registry_key": "extract_column",
+      "name": "Extract Protein Accession Column",
+      "description": "",
+      "input_labels": {},
+      "status": "ready",
+      "integrity": "unknown",
+      "exec_config": {
+        "adapter": {
+          "view_state": {},
+          "strategy": "auto",
+          "options": {}
+        },
+        "input_adapters": {},
+        "execution": {},
+        "task": {}
+      },
+      "inputs": {
+        "table": [
+          {
+            "type": "reference",
+            "source_id": "6b586a83-160b-42a3-8765-3ec78a26de7a",
+            "output_key": "deduplicated_data",
+            "artifact_id": null
+          }
+        ],
+        "column_name": [
+          {
+            "type": "literal",
+            "value": "representative_protein_accession"
+          }
+        ],
+        "new_name": [
+          {
+            "type": "literal",
+            "value": "protein_accession"
+          }
+        ],
+        "deduplicate": [
+          {
+            "type": "literal",
+            "value": true
+          }
+        ]
+      },
+      "outputs": {},
+      "parent_artifact_ids": [],
+      "error": null,
+      "process_pid": null,
+      "created_at": "2026-11-17T20:56:44.072730Z",
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}

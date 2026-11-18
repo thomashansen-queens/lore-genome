@@ -157,7 +157,7 @@ def _fetch_single_annotation_package(
     name="Fetch NCBI Genome Annotation Packages",
     category="NCBI",
     icon="📦︎",
-    preview_mode="dry_run",
+    preview_mode="full",
 )
 def fetch_genome_annotation_package_handler(
     ctx: lore.ExecutionContext,

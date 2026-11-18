@@ -6,11 +6,16 @@ Defaults to Identical Protein Groups (IPG) database records, which contain
 various linked metadata for a given protein accession (assembly, nucleotide,
 taxonomy, etc.).)
 """
+import csv
+from collections import defaultdict
 from enum import StrEnum
-import lore
+from io import StringIO
 from time import sleep
-from .entrez_client import Retmode, entrez_client
+
+import lore
+
 from .config import retry
+from .entrez_client import Retmode, entrez_client
 
 
 class ProteinFormat(StrEnum):
@@ -41,6 +46,63 @@ def _parse_ipg_tsv(raw_text: str, is_first_chunk: bool) -> list[str]:
     if not lines:
         return []
     return lines if is_first_chunk else lines[1:]  # Skip header
+
+
+def _parse_ipg_records(raw_text: str) -> list[tuple[str, str, str]]:
+    """Return protein, nucleotide, and assembly accessions in IPG table order."""
+    rows = list(csv.reader(raw_text.splitlines(), delimiter="\t"))
+    if not rows:
+        return []
+
+    protein_headers = {"protein", "protein accession", "protein_accession"}
+    nucleotide_headers = {"nucleotide accession", "nucleotide_accession"}
+    assembly_headers = {"assembly", "assembly accession", "assembly_accession"}
+    header_index = next(
+        (
+            index
+            for index, row in enumerate(rows)
+            if any(cell.strip().lstrip("#").strip().casefold() in protein_headers for cell in row)
+        ),
+        None,
+    )
+    if header_index is None:
+        raise ValueError("NCBI IPG response did not contain a Protein column header.")
+
+    header = [cell.strip().lstrip("#").strip().casefold() for cell in rows[header_index]]
+    protein_index = next(i for i, cell in enumerate(header) if cell in protein_headers)
+    nucleotide_index = next(
+        (i for i, cell in enumerate(header) if cell in nucleotide_headers),
+        None,
+    )
+    assembly_index = next(
+        (i for i, cell in enumerate(header) if cell in assembly_headers),
+        None,
+    )
+    records = []
+    for row in rows[header_index + 1:]:
+        if protein_index < len(row):
+            protein = row[protein_index].strip()
+            if protein:
+                nucleotide = (
+                    row[nucleotide_index].strip()
+                    if nucleotide_index is not None and nucleotide_index < len(row)
+                    else ""
+                )
+                assembly = (
+                    row[assembly_index].strip()
+                    if assembly_index is not None and assembly_index < len(row)
+                    else ""
+                )
+                records.append((protein, nucleotide, assembly))
+    return records
+
+
+# Selects the representative accession for a cluster of identical proteins, preferring WP_* accessions.
+def _select_ipg_cluster_representative(cluster: dict[str, int]) -> str:
+    return max(
+        cluster,
+        key=lambda accession: (cluster[accession], accession.startswith("WP")),
+    )
 
 
 def _parse_standard(raw_text: str, is_first_chunk: bool) -> list[str]:
@@ -79,7 +141,15 @@ class EfetchProteinOutputs:
     ipg_records = lore.TaskOutput(
         data_type="ipg_records",
         label="Protein records",
-        description="Identical Protein Groups (IPG) records, containing linked metadata for each protein.",
+        description=(
+            "Identical Protein Groups (IPG) records, containing linked metadata for each protein."
+        ),
+    )
+    ipg_clusters = lore.TaskOutput(
+        data_type="protein_nucleotide_assembly_mapping",
+        label="IPG Protein Clusters",
+        description="Unique protein accessions grouped under each queried protein accession.",
+        yields="optional",
     )
     feature_table = lore.TaskOutput(
         data_type="feature_table",
@@ -119,13 +189,15 @@ def efetch_protein(
     api_key = config.get("api_key")
     email = config.get("email")
 
-    clean_uids = [u.strip() for u in uid if u.strip()]
+    clean_uids = []
+    for u in uid:
+        clean_uids.extend(u.split())
     if not clean_uids:
         raise ValueError("No valid UIDs provided.")
 
     rettype, retmode, extension, out_type = _FORMAT_MAP[fetch_format]
 
-    # 1. Chunking logic (NCBI limits EFetch POSTs to avoid timeouts)
+    # IPG results need to retain the relationship to each queried accession.
     chunk_size = 200
     uid_chunks = [clean_uids[i:i + chunk_size] for i in range(0, len(clean_uids), chunk_size)]
 
@@ -150,15 +222,41 @@ def efetch_protein(
             response.raise_for_status()
             return response.text
 
+    acc_to_cluster_map = defaultdict(lambda: defaultdict(int))
+    acc_to_metadata = defaultdict(dict)
+
     for i, chunk in enumerate(uid_chunks):
-        ctx.logger.info(f"Fetching chunk {i+1}/{len(uid_chunks)} ({len(chunk)} accessions) as {fetch_format.value}...")
+        ctx.logger.info(
+            f"Fetching chunk {i+1}/{len(uid_chunks)} "
+            f"({len(chunk)} accessions) as {fetch_format.value}..."
+        )
         raw_text = _execute_efetch(chunk)
 
-        is_first = (i == 0)
+        is_first = not accumulated_data
 
         if fetch_format == ProteinFormat.IPG:
             parsed = _parse_ipg_tsv(raw_text, is_first)
             accumulated_data.extend(parsed)
+            query_accessions = iter(chunk)
+            parent_acc = next(query_accessions, None)
+            next_acc = next(query_accessions, None)
+
+            ipg_records = _parse_ipg_records(raw_text)
+            for acc, nucleotide, assembly in ipg_records:
+                acc_to_metadata[acc].setdefault((nucleotide, assembly), None)
+                if acc in acc_to_cluster_map:
+                    if not acc == parent_acc and id(acc_to_cluster_map[acc]) != id(acc_to_cluster_map[parent_acc]):
+                        # Merge the two dictionaries
+                        for key in acc_to_cluster_map[acc].keys():
+                            acc_to_cluster_map[parent_acc][key] += acc_to_cluster_map[acc][key]
+                            acc_to_cluster_map[key] = acc_to_cluster_map[parent_acc]
+                    acc_to_cluster_map[acc][acc] += 1
+                else:
+                    if acc == next_acc:
+                        parent_acc = next_acc
+                        next_acc = next(query_accessions, None)
+                    acc_to_cluster_map[parent_acc][acc] += 1
+
             join_char = "\n"
         else:
             parsed = _parse_standard(raw_text, is_first)
@@ -170,17 +268,54 @@ def efetch_protein(
 
     if not accumulated_data:
         ctx.logger.warning(f"No {fetch_format.value} results found for the provided accessions.")
-        return ctx.materialize_content("", output_key=out_type, extension=extension)
+        final_content = ""
+    else:
+        final_content = join_char.join(accumulated_data) + "\n"  # Ensure final newline
 
-    final_content = join_char.join(accumulated_data) + "\n"  # Ensure final newline
     file_prefix = "ipg_mapping" if fetch_format == ProteinFormat.IPG else "protein_records"
 
-    ctx.logger.info(f"Successfully fetched {len(accumulated_data) - 1} rows of {fetch_format.value}.")
+    if accumulated_data:
+        ctx.logger.info(
+            f"Successfully fetched {len(accumulated_data) - 1} rows of {fetch_format.value}."
+        )
 
-    return ctx.materialize_content(
+    primary_output = ctx.materialize_content(
         content=final_content,
         output_key=out_type,
         name=file_prefix,
         extension=extension,
         data_type=out_type,
     )
+
+    if fetch_format == ProteinFormat.IPG:
+        cluster_csv = StringIO()
+        writer = csv.writer(cluster_csv, lineterminator="\n")
+        writer.writerow([
+            "representative_protein_accession",
+            "protein_accession",
+            "nucleotide_accession",
+            "assembly_accession",
+        ])
+        clusters = []
+        seen = set()
+        for cluster in acc_to_cluster_map.values():
+            if id(cluster) not in seen:
+                seen.add(id(cluster))
+                clusters.append((_select_ipg_cluster_representative(cluster), cluster.keys()))
+        for representative, accessions in clusters:
+            for accession in accessions:
+                metadata = acc_to_metadata.get(accession) or {("", ""): None}
+                writer.writerows(
+                    (representative, accession, nucleotide, assembly)
+                    for nucleotide, assembly in metadata
+                )
+
+        ctx.materialize_content(
+            content=cluster_csv.getvalue(),
+            output_key="ipg_clusters",
+            name="ipg_clusters",
+            extension="csv",
+            data_type="protein_nucleotide_assembly_mapping",
+        )
+
+    return primary_output

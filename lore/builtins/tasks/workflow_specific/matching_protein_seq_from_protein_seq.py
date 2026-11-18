@@ -1,11 +1,12 @@
 """
 Helper task for matching protein sequences by pairwise protein alignment.
 """
-from collections.abc import Iterator
-from collections import defaultdict
 import csv
+from collections import defaultdict
+from collections.abc import Iterator
 
 from Bio import Align
+
 import lore
 
 
@@ -24,8 +25,8 @@ class Inputs:
         description="The protein sequence to match against the protein sequences.",
     )
 
-    entrez_cluster_table = lore.ArtifactInput(
-        accepted_data=["protein_nuucore_elink_cluster_table"],
+    cluster_table = lore.ArtifactInput(
+        accepted_data=["protein_nucleotide_assembly_mapping"],
         select="optional",
         load_as="adapted",
         label="Protein cluster table"
@@ -35,7 +36,9 @@ class Inputs:
         bool,
         default=False,
         label="Preserve Length for Alignment",
-        description="If true, extends the selected subsequence toward the length of the query sequence.",
+        description=(
+            "If true, extends the selected subsequence toward the length of the query sequence."
+        ),
     )
 
     open_gap_score = lore.ValueInput(
@@ -58,8 +61,14 @@ class Outputs:
         is_primary=True,
     )
 
+    alignment_scores = lore.TaskOutput(
+        label="Protein Match Alignment Scores",
+        data_type = "alignment_scores",
+        is_primary=False,
+    )
+
     cluster_table = lore.TaskOutput(
-        data_type="csv",
+        data_type="protein_nucleotide_assembly_mapping",
         label="Match Cluster Table",
         is_primary=False,
     )
@@ -87,17 +96,37 @@ def task(
     preserve_length: bool = False,
     extend_gap_score: float = -1.0,
     open_gap_score: float = -12.0,
-    entrez_cluster_table = None
+    cluster_table=None
 ):
     """Match and trim protein sequences against a protein query using local BLASTP alignment."""
     sequences = dict()
     failed_matches = []
-    full_span_seqs = set()
+    full_span_scores = {}
 
-    e_cluster_table = defaultdict(lambda: 1)  # Default to cluster size of 1 if missing
-    if entrez_cluster_table:
-        for entry in entrez_cluster_table:
-            e_cluster_table[entry["protein_accession"]] = int(entry['cluster_size'])
+    cluster_map = defaultdict(lambda: [0, []])
+    member_to_representative = {}
+    if cluster_table:
+        cluster_members = defaultdict(dict)
+        for entry in cluster_table:
+            representative = str(
+                entry.get("representative_protein_accession")
+                or entry.get("protein_accession")
+                or ""
+            ).strip()
+            if not representative:
+                continue
+            members = entry.get("members") or [entry]
+            for member_entry in members:
+                member = str(member_entry.get("protein_accession") or "").strip()
+                if not member:
+                    continue
+                nucleotide = str(member_entry.get("nucleotide_accession") or "").strip()
+                cluster_members[representative][(member, nucleotide)] = member_entry
+                member_to_representative[member] = representative
+
+        for representative, members in cluster_members.items():
+            cluster_map[representative][0] = len(members)
+            cluster_map[representative][1].extend(members.values())
 
     compare_seq = "".join(compare_seq.strip().split()).upper()
     if not compare_seq:
@@ -109,69 +138,129 @@ def task(
     aligner.extend_gap_score = extend_gap_score
     aligner.open_gap_score = open_gap_score
 
+    processed_clusters = set()
     for entry in protein_fasta:
-        accession = entry.get("protein_accession") or entry.get("accession", "unknown_entry")
-        description = entry.get("protein_description") or entry.get("description") or ""
+        accession = str(
+            entry.get("protein_accession") or entry.get("accession", "unknown_entry")
+        ).strip()
+        cluster_representative = member_to_representative.get(accession, accession)
+        if cluster_map and cluster_representative in processed_clusters:
+            continue
+        if cluster_map:
+            processed_clusters.add(cluster_representative)
+
         seq = entry["protein_sequence"]
         seq = "".join(seq.strip().split()).upper()
-
-        duplicate = any(subseq in seq for subseq in full_span_seqs)
+        full_matches = [candidate for candidate in full_span_scores if candidate in seq]
+        duplicate = len(full_matches) > 0
         if duplicate:
-            idx = next(seq.find(subseq) for subseq in full_span_seqs if subseq in seq)
-            subseq = next(candidate for candidate in full_span_seqs if candidate in seq)
-            m_start = m_end = 0
+            idx = next(seq.find(subseq) for subseq in full_span_scores if subseq in seq)
+            subseq = full_matches[0]
+            score = full_span_scores[subseq]
         else:
             alignment = aligner.align(compare_seq, seq)
             if not alignment:
-                failed_matches.append([accession, e_cluster_table[accession], seq])
+                failed_matches.append([accession, cluster_map[cluster_representative][0], seq])
+                continue
 
             best_alignment = alignment[0]
+            score = best_alignment.score
             target_blocks = best_alignment.aligned[1]
             query_blocks = best_alignment.aligned[0]
             t_start = target_blocks[0][0]
             t_end = target_blocks[-1][1]
             m_start = query_blocks[0][0]
-            m_end = query_blocks[-1][1]
-
             if preserve_length:
-                subseq = seq[max(0, t_start - m_start):max(t_end, t_start - m_start + compare_seq_len)]
+                subseq = seq[
+                    max(0, t_start - m_start):max(
+                        t_end, t_start - m_start + compare_seq_len
+                    )
+                ]
             else:
                 subseq = seq[t_start:t_end]
 
             if compare_seq_len <= t_end - t_start:
-                full_span_seqs.add(subseq)
+                full_span_scores[subseq] = score
 
             idx = t_start
 
-        cluster = sequences.setdefault(subseq, [[], [], []])
+        cluster = sequences.setdefault(subseq, [[], [], [], [], []])
         cluster[0].append(accession)
-        cluster[1].append(e_cluster_table[accession])
+        cluster[1].append(cluster_map[cluster_representative])
         cluster[2].append(f"{idx}-{idx + len(subseq)}")
+        cluster[3].append(score)
+        cluster[4].append(cluster_representative)
 
     out_path = ctx.get_temp_path("protein_fasta.faa")
     out_path_csv = ctx.get_temp_path("match_table.csv")
+    out_path_scores = ctx.get_temp_path("alignment_scores.csv")
     out_path_fails = ctx.get_temp_path("failed_match_table.csv")
 
     with open(out_path_csv, "w", newline="", encoding="utf-8") as f_csv:
         writer = csv.writer(f_csv)
-        writer.writerow(["representative_protein_accession", "protein_accession", "cluster_size_contribution", "selected_region_in_protein"])
+        writer.writerow(
+            [
+                "representative_protein_accession",
+                "protein_accession",
+                "nucleotide_accession",
+                "assembly_accession",
+                "selected_region_in_protein",
+            ]
+        )
 
         with open(out_path, "w", encoding="utf-8") as f:
+            fasta_records = []
             for subseq, headers in sequences.items():
-                representative_index = max(range(len(headers[0])), key=lambda index: headers[1][index])
-                representative = headers[0][representative_index]
+                representative_index = max(
+                    range(len(headers[0])),
+                    key=lambda i: cluster_map[headers[4][i]][0],
+                )
+                representative = headers[4][representative_index]
                 representative_range = headers[2][representative_index]
-                cluster_total = sum(headers[1])
+                score = headers[3][representative_index]
 
-                f.write(f">{representative} {representative_range} ({cluster_total} total)\n{subseq}\n")
-
+                cluster_total = 0
                 for i, accession in enumerate(headers[0]):
-                    cluster_size_contribution = headers[1][i]
                     selected_range = headers[2][i]
-                    writer.writerow([representative, accession, cluster_size_contribution, selected_range])
+                    cluster_entries = headers[1][i][1]
+                    cluster_size = headers[1][i][0]
+                    if cluster_size > 0:
+                        cluster_total += cluster_size
+                        for entry in cluster_entries:
+                            member_accession = entry.get("protein_accession") or accession
+                            nucleotide_accession = entry.get("nucleotide_accession", "")
+                            assembly_accession = entry.get("assembly_accession", "")
+                            writer.writerow(
+                                [
+                                    representative,
+                                    member_accession,
+                                    nucleotide_accession,
+                                    assembly_accession,
+                                    selected_range,
+                                ]
+                            )
+                    else:
+                        cluster_total += 1
+                        writer.writerow([representative, accession, "", "", selected_range])
+
+                fasta_records.append(
+                    (score, representative, representative_range, cluster_total, subseq)
+                )
+
+            with open(out_path_scores, "w", encoding="utf-8") as scores_file:
+                scores_file.write("accession,score\n")
+                for score, representative, representative_range, cluster_total, subseq in sorted(
+                    fasta_records, key=lambda record: record[0], reverse=True
+                ):
+                    f.write(
+                        f">{representative} {representative_range} ({cluster_total} total) "
+                        f"score={score:g}\n{subseq}\n"
+                    )
+                    scores_file.write(f"{representative},{score:g}\n")
     
     ctx.materialize_file(source=out_path_csv, output_key="cluster_table")
     ctx.materialize_file(source=out_path, output_key="fasta")
+    ctx.materialize_file(source=out_path_scores, output_key="alignment_scores")
 
     if failed_matches:
         with open(out_path_fails, 'w', encoding='utf-8') as f:
